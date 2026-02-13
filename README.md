@@ -1,4 +1,4 @@
-Next.js webapp for [Magister Marketing](https://magister.marketing).
+Next.js webapp for [Magister Marketing](https://magistermarketing.com).
 
 ## Getting Started
 
