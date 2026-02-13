@@ -1,17 +1,27 @@
-Next.js webapp for [Magister Marketing](https://magistermarketing.com).
+# Magister Marketing
 
-## Getting Started
+Monorepo for the Magister Marketing platform.
 
-First, install dependencies:
+## Structure
 
-```bash
-make install
+```
+webapp/   — Next.js marketing site
 ```
 
-Then start the development server:
+## Getting Started with the webapp
+
+First, navigate to the webapp directory:
 
 ```bash
-make dev
+cd webapp
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then, run the following commands:
+
+```bash
+make install   # install dependencies
+make dev       # start dev server
+make build     # production build
+make lint      # run linter
+make clean     # remove build artifacts and node_modules
+```
