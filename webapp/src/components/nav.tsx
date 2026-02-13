@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 
 export function Nav() {
@@ -27,18 +28,8 @@ export function Nav() {
           href="#"
           className="flex items-center gap-2 font-[family-name:var(--font-space-grotesk)] font-bold text-xl text-white"
         >
-          <span>Magister Marketing</span>
-          <span className="flex items-center gap-[2px]">
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="block h-3.5 w-[2px] -rotate-[20deg] rounded-full"
-                style={{
-                  background: "linear-gradient(to bottom, #f59e0b, #ea580c)",
-                }}
-              />
-            ))}
-          </span>
+          <Image src="/magister-logo-white.svg" alt="Magister Marketing" width={32} height={35} />
+          <span>Magister</span>
         </a>
         <Button
           className="bg-amber-accent hover:bg-orange-accent text-black font-semibold cursor-pointer"
