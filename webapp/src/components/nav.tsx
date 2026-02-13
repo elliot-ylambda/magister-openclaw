@@ -28,7 +28,7 @@ export function Nav() {
           href="#"
           className="flex items-center gap-2 font-[family-name:var(--font-space-grotesk)] font-bold text-xl text-white"
         >
-          <Image src="/magister-logo-white.svg" alt="Magister Marketing" width={32} height={35} />
+          <Image src="/magister-logo-white.svg" alt="Magister" width={33} height={36} />
           <span>Magister</span>
         </a>
         <Button
