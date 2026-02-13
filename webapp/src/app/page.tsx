@@ -1,106 +1,217 @@
 "use client";
 
-import { useRef } from "react";
+import { useState, useRef, useEffect, useCallback, FormEvent } from "react";
 import Image from "next/image";
 import {
   motion,
   useInView,
   useScroll,
   useTransform,
+  AnimatePresence,
 } from "motion/react";
 import {
   PenTool,
   Search,
-  Share2,
-  Radar,
-  Star,
-  BarChart3,
-  Shield,
-  Cpu,
-  Users,
+  TrendingUp,
+  Megaphone,
+  Zap,
+  Lightbulb,
+  X,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Minus,
+  ChevronDown,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
 
-const agents = [
+const skills = [
   {
     icon: PenTool,
-    name: "Content Architect",
+    name: "Copywriting & Content",
     description:
-      "Crafts blog posts, landing pages, and email campaigns that convert.",
+      "Landing pages, homepage, feature pages, email copy, social posts.",
   },
   {
     icon: Search,
-    name: "SEO Strategist",
+    name: "SEO & Discovery",
     description:
-      "Optimizes rankings with keyword research, audits, and content gaps.",
+      "Audits, programmatic pages, competitor alternatives, schema markup.",
   },
   {
-    icon: Share2,
-    name: "Social Operator",
+    icon: TrendingUp,
+    name: "Conversion Optimization",
     description:
-      "Manages posting schedules, engagement, and cross-platform presence.",
+      "Page CRO, signup flows, onboarding, forms, popups, paywalls.",
   },
   {
-    icon: Radar,
-    name: "Competitor Scout",
+    icon: Megaphone,
+    name: "Paid & Distribution",
     description:
-      "Tracks competitor moves, pricing changes, and market positioning.",
+      "Google Ads, Meta, LinkedIn campaign creation and management.",
   },
   {
-    icon: Star,
-    name: "Review Commander",
-    description: "Monitors and responds to reviews across every platform.",
+    icon: Zap,
+    name: "Growth Engineering",
+    description:
+      "Free tools, referral programs, A/B tests, analytics setup.",
   },
   {
-    icon: BarChart3,
-    name: "Analytics Decoder",
+    icon: Lightbulb,
+    name: "Strategy & Planning",
     description:
-      "Turns raw data into actionable growth insights and reports.",
+      "Pricing, launch plans, marketing psychology, competitive intel.",
   },
 ];
 
 const steps = [
   {
     number: "01",
-    title: "Deploy",
+    title: "Talk to it",
     description:
-      "Spin up your autonomous marketing team in minutes. One command, fully configured.",
+      "Open Magister on the web or in Slack. Describe what you need in plain English.",
   },
   {
     number: "02",
-    title: "Configure",
+    title: "It plans and executes",
     description:
-      "Set your brand voice, target audience, and strategy. Each agent adapts to your context.",
+      "Magister taps into 25 specialized marketing skills to do the actual work — writing copy, auditing your SEO, building email sequences, optimizing pages.",
   },
   {
     number: "03",
-    title: "Monitor",
+    title: "You review and ship",
     description:
-      "Watch your agents execute across every channel. Intervene only when you want to.",
+      "Check what it built, tweak if you want, and push it live. You stay in control.",
   },
 ];
 
-const credibilityItems = [
+const roleOptions = [
+  "Founder / CEO",
+  "Head of Marketing / Marketing Lead",
+  "Growth / Product Marketer",
+  "Freelancer / Consultant",
+  "Developer / Engineer",
+  "Other",
+];
+
+const technicalOptions = [
+  "Not very — I stick to no-code tools and GUIs",
+  "Somewhat — I can edit code and use the terminal",
+  "Very — I write code regularly",
+  "I already use Claude Code or similar AI coding tools",
+];
+
+const aiSetupOptions = [
+  "I have Claude Max ($100/mo or $200/mo)",
+  "I have Claude Pro ($20/mo) but not Max",
+  "I use other AI tools (ChatGPT, Cursor, etc.)",
+  "I don't pay for AI tools yet",
+];
+
+const budgetOptions = [
+  "Free tier only",
+  "Up to $50/mo",
+  "$50–100/mo",
+  "$100–200/mo",
+  "$200+/mo",
+];
+
+const useCaseOptions = [
+  "Copywriting (landing pages, emails, ads)",
+  "SEO (audits, keywords, programmatic pages)",
+  "Email marketing (sequences, drip campaigns)",
+  "Conversion optimization (A/B tests, CRO, signup flows)",
+  "Social media content (LinkedIn, Twitter/X)",
+  "Paid ads (Google, Meta, LinkedIn)",
+  "Competitive intelligence (tracking, comparison pages)",
+  "Growth strategy (pricing, launches, referral programs)",
+];
+
+const personas = [
   {
-    icon: Shield,
-    headline: "Your data never leaves",
+    title: "SaaS founders",
+    subtitle: "wearing the marketing hat",
     description:
-      "Runs entirely on your infrastructure. No third-party data sharing, ever.",
+      "You've got 30 minutes between product calls. Magister turns that into a fully written landing page or email sequence.",
   },
   {
-    icon: Cpu,
-    headline: "Built for autonomy",
+    title: "Solo marketers",
+    subtitle: "doing the job of five",
     description:
-      "Agents collaborate, learn, and adapt without constant supervision.",
+      "You know what needs to happen. You just can't get to all of it. Magister handles the execution so you can focus on strategy.",
   },
   {
-    icon: Users,
-    headline: "Open source, transparent",
+    title: "Growth teams",
+    subtitle: "that move fast",
     description:
-      "Fully auditable. Backed by a community that demands better marketing tools.",
+      "Your backlog of marketing tasks keeps growing. Magister works through it while you focus on what only humans can do.",
+  },
+];
+
+const comparisonRows = [
+  { label: "Gives you advice", chatbot: true, agency: true, magister: true },
+  { label: "Actually does the work", chatbot: false, agency: true, magister: true },
+  { label: "Works in your tools", chatbot: false, agency: "Sometimes", magister: true },
+  { label: "Available 24/7", chatbot: true, agency: false, magister: true },
+  { label: "Knows your brand context", chatbot: "Per session", agency: "Eventually", magister: true },
+  { label: "Cost", chatbot: "$20/mo + your time", agency: "$2k–10k/mo", magister: "Early access" },
+];
+
+const faqItems = [
+  {
+    question: "Do I need a Claude Code Max subscription?",
+    answer:
+      "Not necessarily. We're figuring out the best setup for different users — that's partly why we're asking in the survey.",
+  },
+  {
+    question: "How is this different from just using ChatGPT or Claude?",
+    answer:
+      "Chatbots give you text in a window. Magister is an autonomous agent that works in your actual tools — writing real pages, updating real files, running real audits.",
+  },
+  {
+    question: "What can it actually do right now?",
+    answer:
+      "We're starting with one agent that covers 25 marketing skills — copywriting, SEO, CRO, email, ads, and more. We're expanding to a full team of specialized agents.",
+  },
+  {
+    question: "Is my data safe?",
+    answer:
+      "Magister is built on Claude Code and OpenClaw. Your data is processed through Anthropic's API with their privacy guarantees.",
+  },
+  {
+    question: "Can I use it in Slack?",
+    answer:
+      "Yes. You can interact with Magister on the web or directly in your Slack workspace.",
+  },
+];
+
+type ChatMessage = {
+  type: "user" | "bot";
+  content: string;
+};
+
+const chatScript: ChatMessage[] = [
+  {
+    type: "user",
+    content: "Our pricing page converts at 2%. Can you take a look?",
+  },
+  {
+    type: "bot",
+    content:
+      "Auditing your pricing page now. Checking copy, layout, and conversion patterns...",
+  },
+  {
+    type: "bot",
+    content:
+      "Found 3 issues:\n\n1. Headline focuses on features, not outcomes\n2. Too many plan options — decision fatigue\n3. No social proof near the CTA\n\nRewriting now.",
+  },
+  {
+    type: "bot",
+    content:
+      'Done. Updated copy is in your staging environment:\n\n• New headline: "Start closing more deals today"\n• Consolidated 4 plans to 3 with a recommended badge\n• Added customer quote above the CTA\n\nReady to review?',
   },
 ];
 
@@ -134,6 +245,426 @@ function FadeUp({
 }
 
 // ---------------------------------------------------------------------------
+// Email Form (reused in Hero and CTA)
+// ---------------------------------------------------------------------------
+
+function EmailForm({
+  onSubmit,
+  id,
+}: {
+  onSubmit: (email: string) => void;
+  id: string;
+}) {
+  const [email, setEmail] = useState("");
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (email.trim()) {
+      onSubmit(email.trim());
+      setEmail("");
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex w-full max-w-md gap-3">
+      <input
+        id={id}
+        type="email"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="you@company.com"
+        className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors"
+        style={{
+          fontFamily: "var(--font-dm-sans)",
+          borderColor: "rgba(255,255,255,0.15)",
+        }}
+      />
+      <button
+        type="submit"
+        className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap"
+        style={{ fontFamily: "var(--font-dm-sans)" }}
+      >
+        Get early access
+      </button>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Survey Popup
+// ---------------------------------------------------------------------------
+
+function SurveyPopup({
+  email,
+  onClose,
+}: {
+  email: string;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({
+    role: "",
+    technical: "",
+    aiSetup: "",
+    budget: "",
+    useCases: [] as string[],
+  });
+  const [submitted, setSubmitted] = useState(false);
+
+  const totalSteps = 4;
+
+  const handleUseCaseToggle = (useCase: string) => {
+    setAnswers((prev) => ({
+      ...prev,
+      useCases: prev.useCases.includes(useCase)
+        ? prev.useCases.filter((u) => u !== useCase)
+        : prev.useCases.length < 3
+          ? [...prev.useCases, useCase]
+          : prev.useCases,
+    }));
+  };
+
+  const canProceed = () => {
+    switch (step) {
+      case 0:
+        return answers.role !== "";
+      case 1:
+        return answers.technical !== "";
+      case 2:
+        return answers.aiSetup !== "" && answers.budget !== "";
+      case 3:
+        return answers.useCases.length > 0;
+      default:
+        return false;
+    }
+  };
+
+  const handleNext = () => {
+    if (step < totalSteps - 1) {
+      setStep(step + 1);
+    } else {
+      // TODO: Replace with actual API call to store survey responses
+      console.log("Survey submitted:", { email, ...answers });
+      setSubmitted(true);
+    }
+  };
+
+  const optionButtonStyle = (selected: boolean, disabled = false) => ({
+    fontFamily: "var(--font-dm-sans)",
+    border: `1px solid ${selected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.08)"}`,
+    color: disabled
+      ? "rgba(255,255,255,0.2)"
+      : selected
+        ? "white"
+        : "rgba(255,255,255,0.6)",
+    backgroundColor: selected ? "rgba(255,255,255,0.05)" : "transparent",
+    cursor: disabled ? ("not-allowed" as const) : ("pointer" as const),
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+      style={{
+        backgroundColor: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)",
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.3 }}
+        className="relative w-full max-w-lg rounded-2xl p-8"
+        style={{
+          backgroundColor: "rgb(12,12,12)",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1 transition-colors"
+          style={{ color: "rgba(255,255,255,0.3)" }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.color = "rgba(255,255,255,0.7)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.color = "rgba(255,255,255,0.3)")
+          }
+        >
+          <X size={18} />
+        </button>
+
+        {submitted ? (
+          <div className="text-center py-8">
+            <h3
+              className="text-xl text-white mb-3"
+              style={{
+                fontFamily: "var(--font-dm-sans)",
+                fontWeight: 600,
+              }}
+            >
+              You&apos;re on the list
+            </h3>
+            <p
+              className="text-base"
+              style={{
+                fontFamily: "var(--font-dm-sans)",
+                color: "rgba(255,255,255,0.5)",
+              }}
+            >
+              We&apos;ll be in touch soon. Thanks for the info — it helps us
+              build the right thing.
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-6 rounded-full bg-white px-6 py-3 text-[15px] font-medium text-black transition-opacity hover:opacity-90"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Progress bar */}
+            <div className="mb-8 flex gap-1.5">
+              {Array.from({ length: totalSteps }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-1 flex-1 rounded-full transition-colors duration-300"
+                  style={{
+                    backgroundColor:
+                      i <= step
+                        ? "rgba(255,255,255,0.6)"
+                        : "rgba(255,255,255,0.08)",
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Step 0: Role */}
+            {step === 0 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What best describes you?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Quick survey so we can tailor your experience.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {roleOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, role: option })
+                      }
+                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                      style={optionButtonStyle(answers.role === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 1: Technical level */}
+            {step === 1 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  How technical are you?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Helps us calibrate the onboarding.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {technicalOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, technical: option })
+                      }
+                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                      style={optionButtonStyle(answers.technical === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: AI setup + budget */}
+            {step === 2 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What&apos;s your current AI setup?
+                </h3>
+                <p
+                  className="text-sm mb-4"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Select the option that fits best.
+                </p>
+                <div className="flex flex-col gap-2 mb-6">
+                  {aiSetupOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, aiSetup: option })
+                      }
+                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                      style={optionButtonStyle(answers.aiSetup === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Monthly budget for an AI marketing agent?
+                </h3>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {budgetOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, budget: option })
+                      }
+                      className="rounded-full px-4 py-2 text-[13px] transition-colors"
+                      style={optionButtonStyle(answers.budget === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Use cases */}
+            {step === 3 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What would you use it for first?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Pick up to 3 that matter most.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {useCaseOptions.map((option) => {
+                    const selected = answers.useCases.includes(option);
+                    const disabled = !selected && answers.useCases.length >= 3;
+                    return (
+                      <button
+                        key={option}
+                        onClick={() => handleUseCaseToggle(option)}
+                        disabled={disabled}
+                        className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                        style={optionButtonStyle(selected, disabled)}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="mt-8 flex items-center justify-between">
+              {step > 0 ? (
+                <button
+                  onClick={() => setStep(step - 1)}
+                  className="flex items-center gap-1 text-[14px] transition-colors"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.color = "rgba(255,255,255,0.7)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.color = "rgba(255,255,255,0.4)")
+                  }
+                >
+                  <ChevronLeft size={16} />
+                  Back
+                </button>
+              ) : (
+                <div />
+              )}
+              <button
+                onClick={handleNext}
+                disabled={!canProceed()}
+                className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{ fontFamily: "var(--font-dm-sans)" }}
+              >
+                {step === totalSteps - 1 ? "Submit" : "Next"}
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Nav
 // ---------------------------------------------------------------------------
 
@@ -162,7 +693,6 @@ function Nav() {
       }}
     >
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 md:px-10">
-        {/* Left — Logo + Name */}
         <a href="#" className="flex items-center gap-2.5">
           <Image
             src="/magister-logo-white.svg"
@@ -178,12 +708,11 @@ function Nav() {
           </span>
         </a>
 
-        {/* Center — Links (desktop) */}
         <div
           className="hidden md:flex items-center gap-10"
           style={{ fontFamily: "var(--font-dm-sans)" }}
         >
-          {["Agents", "How It Works", "Open Source"].map((label) => (
+          {["How It Works", "Skills", "About"].map((label) => (
             <a
               key={label}
               href={`#${label.toLowerCase().replace(/\s+/g, "-")}`}
@@ -201,7 +730,6 @@ function Nav() {
           ))}
         </div>
 
-        {/* Right — CTA */}
         <a
           href="#request-access"
           className="rounded-full px-5 py-2 text-[13px] font-medium text-white transition-all duration-300 hover:bg-white hover:text-black"
@@ -210,7 +738,7 @@ function Nav() {
             border: "1px solid rgba(255,255,255,0.2)",
           }}
         >
-          Request Access
+          Request Early Access
         </a>
       </div>
     </motion.nav>
@@ -221,7 +749,11 @@ function Nav() {
 // Hero
 // ---------------------------------------------------------------------------
 
-function Hero() {
+function Hero({
+  onEmailSubmit,
+}: {
+  onEmailSubmit: (email: string) => void;
+}) {
   return (
     <section className="relative flex flex-col items-center px-6 pt-48 pb-32 md:pt-56 md:pb-48 text-center overflow-hidden">
       {/* Animated gradient orbs */}
@@ -233,7 +765,8 @@ function Hero() {
           transform: "translateX(-50%)",
           width: "min(1000px, 100vw)",
           height: "700px",
-          background: "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 40%, transparent 70%)",
+          background:
+            "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 40%, transparent 70%)",
           filter: "blur(40px)",
           animation: "heroGlow 10s ease-in-out infinite",
         }}
@@ -245,7 +778,8 @@ function Hero() {
           left: "35%",
           width: "600px",
           height: "400px",
-          background: "radial-gradient(ellipse at center, rgba(120,119,198,0.08) 0%, transparent 60%)",
+          background:
+            "radial-gradient(ellipse at center, rgba(120,119,198,0.08) 0%, transparent 60%)",
           filter: "blur(50px)",
           animation: "orbFloat1 14s ease-in-out infinite",
         }}
@@ -257,20 +791,24 @@ function Hero() {
           left: "60%",
           width: "500px",
           height: "450px",
-          background: "radial-gradient(ellipse at center, rgba(99,102,241,0.06) 0%, transparent 55%)",
+          background:
+            "radial-gradient(ellipse at center, rgba(99,102,241,0.06) 0%, transparent 55%)",
           filter: "blur(50px)",
           animation: "orbFloat2 18s ease-in-out infinite",
         }}
       />
 
-      {/* Dot grid pattern — fades from center */}
+      {/* Dot grid pattern */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
-          backgroundImage: "radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px)",
+          backgroundImage:
+            "radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px)",
           backgroundSize: "28px 28px",
-          maskImage: "radial-gradient(ellipse 50% 45% at 50% 40%, black 10%, transparent 60%)",
-          WebkitMaskImage: "radial-gradient(ellipse 50% 45% at 50% 40%, black 10%, transparent 60%)",
+          maskImage:
+            "radial-gradient(ellipse 50% 45% at 50% 40%, black 10%, transparent 60%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 50% 45% at 50% 40%, black 10%, transparent 60%)",
         }}
       />
 
@@ -302,18 +840,20 @@ function Hero() {
           fontSize: "13px",
         }}
       >
-        <span>Open Source</span>
-        <span style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
-        <span>6 AI Agents</span>
-        <span style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
-        <span>Local-First</span>
+        <span>Open Source Foundation</span>
+        <span style={{ color: "rgba(255,255,255,0.2)" }}>&middot;</span>
+        <span>Powered by OpenClaw</span>
       </motion.div>
 
       {/* Headline */}
       <motion.h1
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        transition={{
+          duration: 0.8,
+          delay: 0.25,
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
         className="max-w-4xl text-white"
         style={{
           fontFamily: "var(--font-instrument-serif)",
@@ -323,16 +863,20 @@ function Hero() {
           fontWeight: 400,
         }}
       >
-        The first autonomous
+        Ship more marketing this week
         <br />
-        marketing team
+        than most teams do in a year
       </motion.h1>
 
       {/* Subtext */}
       <motion.p
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, delay: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
+        transition={{
+          duration: 0.7,
+          delay: 0.45,
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
         className="mt-7 max-w-xl text-lg leading-relaxed"
         style={{
           fontFamily: "var(--font-dm-sans)",
@@ -340,24 +884,24 @@ function Hero() {
           fontWeight: 400,
         }}
       >
-        Six AI agents that handle content, SEO, social media, competitor
-        intelligence, and reviews. Running locally, working autonomously.
+        Other AI tools give you a draft and send you on your way. Magister
+        is an autonomous marketing agent that works in your tools — writing
+        copy, auditing SEO, building email sequences. You give it a task.
+        It gets it done.
       </motion.p>
 
-      {/* CTA */}
+      {/* Email CTA */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.65, ease: [0.25, 0.1, 0.25, 1] }}
+        transition={{
+          duration: 0.6,
+          delay: 0.65,
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
         className="mt-10"
       >
-        <a
-          href="#request-access"
-          className="inline-block rounded-full bg-white px-8 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90"
-          style={{ fontFamily: "var(--font-dm-sans)" }}
-        >
-          Request early access
-        </a>
+        <EmailForm onSubmit={onEmailSubmit} id="hero-email" />
       </motion.div>
 
       {/* Divider */}
@@ -393,85 +937,38 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
-// Agents Section
+// Problem Section
 // ---------------------------------------------------------------------------
 
-function AgentsSection() {
+function ProblemSection() {
   return (
-    <section id="agents" className="px-6 py-32 md:py-48">
-      <div className="mx-auto max-w-6xl">
-        <FadeUp className="text-center">
-          <SectionLabel>The team</SectionLabel>
-          <h2
-            className="text-white"
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-2xl text-center">
+        <FadeUp>
+          <SectionLabel>Sound familiar?</SectionLabel>
+          <p
+            className="text-xl leading-relaxed md:text-2xl"
             style={{
-              fontFamily: "var(--font-instrument-serif)",
-              fontSize: "clamp(32px, 4vw, 56px)",
-              lineHeight: 1.1,
-              letterSpacing: "-0.02em",
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.7)",
               fontWeight: 400,
             }}
           >
-            Six agents, every function.
-          </h2>
+            You ask AI for help with your marketing. It gives you a plan, a
+            draft, maybe some suggestions. Then you close the chat and spend
+            the next 3 hours implementing it yourself.
+          </p>
           <p
-            className="mx-auto mt-6 max-w-lg text-base"
+            className="mt-8 text-xl md:text-2xl text-white"
             style={{
-              fontFamily: "var(--font-dm-sans)",
-              color: "rgba(255,255,255,0.6)",
+              fontFamily: "var(--font-instrument-serif)",
+              fontStyle: "italic",
+              fontWeight: 400,
             }}
           >
-            Each agent is a specialist. Together, they cover the full marketing
-            surface.
+            What if the AI could just... do it?
           </p>
         </FadeUp>
-
-        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {agents.map((agent, i) => (
-            <FadeUp key={agent.name} delay={0.08 * i}>
-              <div
-                className="rounded-lg p-10 transition-colors duration-300"
-                style={{
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.borderColor =
-                    "rgba(255,255,255,0.12)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.borderColor =
-                    "rgba(255,255,255,0.06)")
-                }
-              >
-                <agent.icon
-                  size={20}
-                  strokeWidth={1.5}
-                  style={{ color: "rgba(255,255,255,0.6)" }}
-                  className="mb-5"
-                />
-                <h3
-                  className="mb-2.5 text-lg text-white"
-                  style={{
-                    fontFamily: "var(--font-dm-sans)",
-                    fontWeight: 600,
-                  }}
-                >
-                  {agent.name}
-                </h3>
-                <p
-                  className="text-sm leading-relaxed"
-                  style={{
-                    fontFamily: "var(--font-dm-sans)",
-                    color: "rgba(255,255,255,0.5)",
-                    fontWeight: 400,
-                  }}
-                >
-                  {agent.description}
-                </p>
-              </div>
-            </FadeUp>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -486,7 +983,7 @@ function HowItWorksSection() {
     <section id="how-it-works" className="px-6 py-32 md:py-48">
       <div className="mx-auto max-w-6xl">
         <FadeUp className="text-center">
-          <SectionLabel>The process</SectionLabel>
+          <SectionLabel>How it works</SectionLabel>
           <h2
             className="text-white"
             style={{
@@ -497,7 +994,7 @@ function HowItWorksSection() {
               fontWeight: 400,
             }}
           >
-            Three steps.
+            Tell it what you need. It gets to work.
           </h2>
         </FadeUp>
 
@@ -555,57 +1052,873 @@ function HowItWorksSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Credibility
+// Skills Section
 // ---------------------------------------------------------------------------
 
-function CredibilitySection() {
+function SkillsSection() {
   return (
-    <section id="open-source" className="px-6 py-32 md:py-48">
-      <div className="mx-auto max-w-3xl">
+    <section id="skills" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
         <FadeUp className="text-center">
-          <SectionLabel>Why Magister</SectionLabel>
+          <SectionLabel>25 marketing skills</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            One agent. 25 specialized skills.
+          </h2>
+          <p
+            className="mx-auto mt-6 max-w-lg text-base"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.6)",
+            }}
+          >
+            Built on Claude Code and OpenClaw. Enhanced by{" "}
+            <a
+              href="https://github.com/coreyhaines31/marketingskills"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 decoration-white/30 hover:decoration-white/60 transition-colors"
+              style={{ color: "rgba(255,255,255,0.8)" }}
+            >
+              Marketing Skills
+            </a>
+            , an open source, crowdsourced knowledge base that gets smarter
+            with every user.
+          </p>
         </FadeUp>
 
-        <div className="mt-8 flex flex-col items-center">
-          {credibilityItems.map((item, i) => (
-            <FadeUp
-              key={item.headline}
-              delay={0.12 * i}
-              className={`flex flex-col items-center text-center ${
-                i < credibilityItems.length - 1 ? "mb-24" : ""
-              }`}
-            >
-              <item.icon
-                size={24}
-                strokeWidth={1.5}
-                className="mb-6"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-              />
-              <h3
-                className="text-white"
+        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {skills.map((skill, i) => (
+            <FadeUp key={skill.name} delay={0.08 * i}>
+              <div
+                className="rounded-lg p-10 transition-colors duration-300"
                 style={{
-                  fontFamily: "var(--font-instrument-serif)",
-                  fontSize: "clamp(24px, 3vw, 32px)",
-                  lineHeight: 1.2,
-                  letterSpacing: "-0.02em",
-                  fontWeight: 400,
-                  fontStyle: "italic",
+                  border: "1px solid rgba(255,255,255,0.06)",
                 }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor =
+                    "rgba(255,255,255,0.12)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor =
+                    "rgba(255,255,255,0.06)")
+                }
               >
-                {item.headline}
-              </h3>
-              <p
-                className="mt-4 max-w-md text-base"
+                <skill.icon
+                  size={20}
+                  strokeWidth={1.5}
+                  style={{ color: "rgba(255,255,255,0.6)" }}
+                  className="mb-5"
+                />
+                <h3
+                  className="mb-2.5 text-lg text-white"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {skill.name}
+                </h3>
+                <p
+                  className="text-sm leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {skill.description}
+                </p>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Demo Section (animated chat)
+// ---------------------------------------------------------------------------
+
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1.5 px-4 py-3">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="h-1.5 w-1.5 rounded-full"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.4)",
+            animation: `typingDot 1.4s ease-in-out ${i * 0.2}s infinite`,
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes typingDot {
+          0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+          30% { opacity: 1; transform: translateY(-4px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function DemoSection() {
+  const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hasStarted = useRef(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(sectionRef, { once: true, margin: "-100px" });
+
+  const runChat = useCallback(() => {
+    setVisibleMessages([]);
+    setIsTyping(false);
+
+    let currentIndex = 0;
+
+    const showNext = () => {
+      if (currentIndex >= chatScript.length) {
+        setTimeout(() => {
+          setVisibleMessages([]);
+          currentIndex = 0;
+          setTimeout(showNext, 1000);
+        }, 6000);
+        return;
+      }
+
+      setIsTyping(true);
+
+      const typingDelay = chatScript[currentIndex].type === "bot" ? 1800 : 800;
+
+      setTimeout(() => {
+        setIsTyping(false);
+        const msg = chatScript[currentIndex];
+        if (msg) {
+          setVisibleMessages((prev) => [...prev, msg]);
+        }
+        currentIndex++;
+        setTimeout(showNext, 1200);
+      }, typingDelay);
+    };
+
+    setTimeout(showNext, 800);
+  }, []);
+
+  useEffect(() => {
+    if (inView && !hasStarted.current) {
+      hasStarted.current = true;
+      runChat();
+    }
+  }, [inView, runChat]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [visibleMessages, isTyping]);
+
+  return (
+    <section ref={sectionRef} className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-3xl">
+        <FadeUp className="text-center">
+          <SectionLabel>See it in action</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            You talk. It works.
+          </h2>
+        </FadeUp>
+
+        <FadeUp delay={0.15}>
+          <div
+            className="mt-16 rounded-xl overflow-hidden"
+            style={{
+              border: "1px solid rgba(255,255,255,0.08)",
+              backgroundColor: "rgba(255,255,255,0.02)",
+            }}
+          >
+            {/* Chat header */}
+            <div
+              className="flex items-center gap-3 px-5 py-4"
+              style={{
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <div
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: "rgba(74,222,128,0.8)" }}
+              />
+              <span
+                className="text-[13px]"
                 style={{
                   fontFamily: "var(--font-dm-sans)",
                   color: "rgba(255,255,255,0.5)",
-                  fontWeight: 400,
+                  fontWeight: 500,
                 }}
               >
-                {item.description}
-              </p>
+                Magister
+              </span>
+            </div>
+
+            {/* Chat messages */}
+            <div
+              ref={scrollRef}
+              className="flex flex-col gap-4 p-5 overflow-y-auto"
+              style={{ minHeight: 320, maxHeight: 420 }}
+            >
+              {visibleMessages.map((msg, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex ${msg.type === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className="max-w-[85%] rounded-xl px-4 py-3 text-[14px] leading-relaxed"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      backgroundColor:
+                        msg.type === "user"
+                          ? "rgba(255,255,255,0.1)"
+                          : "rgba(255,255,255,0.04)",
+                      color:
+                        msg.type === "user"
+                          ? "rgba(255,255,255,0.9)"
+                          : "rgba(255,255,255,0.7)",
+                      border:
+                        msg.type === "user"
+                          ? "1px solid rgba(255,255,255,0.12)"
+                          : "1px solid rgba(255,255,255,0.06)",
+                      whiteSpace: "pre-line",
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                </motion.div>
+              ))}
+
+              {isTyping && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex justify-start"
+                >
+                  <div
+                    className="rounded-xl"
+                    style={{
+                      backgroundColor: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <TypingIndicator />
+                  </div>
+                </motion.div>
+              )}
+
+            </div>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Personas Section
+// ---------------------------------------------------------------------------
+
+function PersonasSection() {
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Who it&apos;s for</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Built for marketers who&apos;d rather ship than plan.
+          </h2>
+        </FadeUp>
+
+        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-3">
+          {personas.map((persona, i) => (
+            <FadeUp key={persona.title} delay={0.1 * i}>
+              <div
+                className="rounded-lg p-10 h-full"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {persona.title}
+                </h3>
+                <p
+                  className="text-sm mb-4"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {persona.subtitle}
+                </p>
+                <p
+                  className="text-sm leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {persona.description}
+                </p>
+              </div>
             </FadeUp>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Comparison Section
+// ---------------------------------------------------------------------------
+
+function ComparisonCell({ value }: { value: boolean | string }) {
+  if (value === true) {
+    return (
+      <Check
+        size={16}
+        strokeWidth={2}
+        style={{ color: "rgba(74,222,128,0.8)" }}
+      />
+    );
+  }
+  if (value === false) {
+    return (
+      <Minus
+        size={16}
+        strokeWidth={2}
+        style={{ color: "rgba(255,255,255,0.15)" }}
+      />
+    );
+  }
+  return (
+    <span
+      className="text-[13px]"
+      style={{
+        fontFamily: "var(--font-dm-sans)",
+        color: "rgba(255,255,255,0.5)",
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
+function ComparisonSection() {
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-4xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Why Magister</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Not another chatbot.
+          </h2>
+        </FadeUp>
+
+        <FadeUp delay={0.15}>
+          <div
+            className="mt-16 overflow-x-auto rounded-xl"
+            style={{
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <table
+              className="w-full text-left"
+              style={{ fontFamily: "var(--font-dm-sans)", minWidth: 560 }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  <th
+                    className="px-6 py-4 text-[13px] font-normal"
+                    style={{ color: "rgba(255,255,255,0.3)" }}
+                  />
+                  <th
+                    className="px-6 py-4 text-[13px] font-medium text-center"
+                    style={{ color: "rgba(255,255,255,0.4)" }}
+                  >
+                    ChatGPT / Claude
+                  </th>
+                  <th
+                    className="px-6 py-4 text-[13px] font-medium text-center"
+                    style={{ color: "rgba(255,255,255,0.4)" }}
+                  >
+                    Agency / Freelancer
+                  </th>
+                  <th
+                    className="px-6 py-4 text-[13px] font-medium text-center text-white"
+                  >
+                    Magister
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonRows.map((row, i) => (
+                  <tr
+                    key={row.label}
+                    style={{
+                      borderBottom:
+                        i < comparisonRows.length - 1
+                          ? "1px solid rgba(255,255,255,0.04)"
+                          : "none",
+                    }}
+                  >
+                    <td
+                      className="px-6 py-4 text-[14px]"
+                      style={{ color: "rgba(255,255,255,0.6)" }}
+                    >
+                      {row.label}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <ComparisonCell value={row.chatbot} />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <ComparisonCell value={row.agency} />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <ComparisonCell value={row.magister} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pricing Section
+// ---------------------------------------------------------------------------
+
+const pricingPlans = [
+  {
+    name: "CMO",
+    price: "$299",
+    period: "/mo",
+    description: "One autonomous marketing agent with 25 specialized skills.",
+    cta: "Get early access",
+    highlighted: true,
+    badge: null,
+  },
+  {
+    name: "CMO + Specialists",
+    price: "$999",
+    period: "/mo",
+    description:
+      "10+ agents working together — strategy, copy, SEO, ads, email, and more.",
+    cta: "Get early access",
+    highlighted: false,
+    badge: null,
+  },
+  {
+    name: "Custom Install",
+    price: "$24,999",
+    period: " one-time",
+    description:
+      "We set it up on your infrastructure. You own and host everything.",
+    cta: "Get early access",
+    highlighted: false,
+    badge: null,
+  },
+];
+
+function PricingSection() {
+  return (
+    <section id="pricing" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Pricing</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Simple pricing. No seat math.
+          </h2>
+        </FadeUp>
+
+        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-3">
+          {pricingPlans.map((plan, i) => (
+            <FadeUp key={plan.name} delay={0.1 * i}>
+              <div
+                className="relative flex flex-col rounded-xl p-8 h-full"
+                style={{
+                  border: plan.highlighted
+                    ? "1px solid rgba(255,255,255,0.2)"
+                    : "1px solid rgba(255,255,255,0.06)",
+                  backgroundColor: plan.highlighted
+                    ? "rgba(255,255,255,0.03)"
+                    : "transparent",
+                }}
+              >
+                {plan.badge && (
+                  <span
+                    className="absolute top-4 right-4 rounded-full px-3 py-1 text-[11px] uppercase"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      color: "rgba(255,255,255,0.5)",
+                      backgroundColor: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    {plan.badge}
+                  </span>
+                )}
+
+                <h3
+                  className="text-lg text-white mb-4"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {plan.name}
+                </h3>
+
+                <div className="mb-4 flex items-baseline gap-1">
+                  <span
+                    className="text-white"
+                    style={{
+                      fontFamily: "var(--font-instrument-serif)",
+                      fontSize: "clamp(36px, 4vw, 48px)",
+                      lineHeight: 1,
+                      letterSpacing: "-0.02em",
+                      fontWeight: 400,
+                    }}
+                  >
+                    {plan.price}
+                  </span>
+                  <span
+                    className="text-[15px]"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      color: "rgba(255,255,255,0.4)",
+                    }}
+                  >
+                    {plan.period}
+                  </span>
+                </div>
+
+                <p
+                  className="text-sm leading-relaxed mb-8 flex-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {plan.description}
+                </p>
+
+                <button
+                  onClick={() => {
+                    const el = document.getElementById("request-access");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className={`w-full rounded-full py-3 text-[14px] font-medium transition-opacity duration-300 hover:opacity-90 ${
+                    plan.highlighted
+                      ? "bg-white text-black"
+                      : "bg-transparent text-white"
+                  }`}
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    border: plan.highlighted
+                      ? "none"
+                      : "1px solid rgba(255,255,255,0.15)",
+                  }}
+                >
+                  {plan.cta}
+                </button>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FAQ Section
+// ---------------------------------------------------------------------------
+
+function FaqSection() {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-2xl">
+        <FadeUp className="text-center">
+          <SectionLabel>FAQ</SectionLabel>
+          <h2
+            className="text-white mb-16"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Questions
+          </h2>
+        </FadeUp>
+
+        <div className="flex flex-col">
+          {faqItems.map((item, i) => (
+            <FadeUp key={i} delay={0.06 * i}>
+              <div
+                style={{
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setOpenIndex(openIndex === i ? null : i)
+                  }
+                  className="flex w-full items-center justify-between py-6 text-left"
+                >
+                  <span
+                    className="text-[15px] text-white pr-4"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {item.question}
+                  </span>
+                  <ChevronDown
+                    size={18}
+                    strokeWidth={1.5}
+                    className="shrink-0 transition-transform duration-300"
+                    style={{
+                      color: "rgba(255,255,255,0.3)",
+                      transform:
+                        openIndex === i ? "rotate(180deg)" : "rotate(0deg)",
+                    }}
+                  />
+                </button>
+                <AnimatePresence>
+                  {openIndex === i && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <p
+                        className="pb-6 text-[14px] leading-relaxed"
+                        style={{
+                          fontFamily: "var(--font-dm-sans)",
+                          color: "rgba(255,255,255,0.5)",
+                        }}
+                      >
+                        {item.answer}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// About Section
+// ---------------------------------------------------------------------------
+
+function AboutSection() {
+  return (
+    <section id="about" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-3xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Built by marketers</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Not another AI tool built by people who&apos;ve never run a
+            campaign.
+          </h2>
+        </FadeUp>
+
+        <div className="mt-16 flex flex-col gap-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-12">
+            <FadeUp delay={0.1}>
+              <div className="text-center">
+                <Image
+                  src="/corey.jpeg"
+                  alt="Corey Haines"
+                  width={96}
+                  height={96}
+                  className="mx-auto mb-5 rounded-full object-cover"
+                  style={{ filter: "grayscale(100%)", width: 96, height: 96 }}
+                />
+                <h3
+                  className="text-lg text-white mb-2"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Corey Haines
+                </h3>
+                <p
+                  className="text-base leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  Founder of Conversion Factory, a SaaS marketing agency.
+                  Creator of{" "}
+                  <a
+                    href="https://github.com/coreyhaines31/marketingskills"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4 decoration-white/30 hover:decoration-white/60 transition-colors"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+                  >
+                    Marketing Skills
+                  </a>
+                  , the most-starred open source repo for marketing AI agents
+                  (7,500+ stars, 900+ forks).
+                </p>
+              </div>
+            </FadeUp>
+
+            <FadeUp delay={0.2}>
+              <div className="text-center">
+                <Image
+                  src="/elliot.jpeg"
+                  alt="Elliot Eckholm"
+                  width={96}
+                  height={96}
+                  className="mx-auto mb-5 rounded-full object-cover"
+                  style={{ filter: "grayscale(100%)", width: 96, height: 96 }}
+                />
+                <h3
+                  className="text-lg text-white mb-2"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Elliot Eckholm
+                </h3>
+                <p
+                  className="text-base leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  Co-founder and OpenClaw power user. Has led machine learning
+                  engineering for startups serving millions of users. Also
+                  building SwipeWell.
+                </p>
+              </div>
+            </FadeUp>
+          </div>
+
+          <FadeUp delay={0.3}>
+            <p
+              className="text-center text-xl md:text-2xl mt-4"
+              style={{
+                fontFamily: "var(--font-instrument-serif)",
+                color: "rgba(255,255,255,0.8)",
+                fontStyle: "italic",
+                fontWeight: 400,
+              }}
+            >
+              &ldquo;We&apos;ve spent years doing SaaS marketing by hand.
+              Magister is the tool we wish we had.&rdquo;
+            </p>
+          </FadeUp>
         </div>
       </div>
     </section>
@@ -616,7 +1929,11 @@ function CredibilitySection() {
 // CTA Section
 // ---------------------------------------------------------------------------
 
-function CtaSection() {
+function CtaSection({
+  onEmailSubmit,
+}: {
+  onEmailSubmit: (email: string) => void;
+}) {
   return (
     <section id="request-access" className="px-6 py-32 md:py-48">
       <div className="mx-auto max-w-3xl text-center">
@@ -631,7 +1948,7 @@ function CtaSection() {
               fontWeight: 400,
             }}
           >
-            Ready to deploy?
+            Get early access
           </h2>
           <p
             className="mx-auto mt-6 max-w-md text-base"
@@ -641,17 +1958,11 @@ function CtaSection() {
               fontWeight: 400,
             }}
           >
-            Join the teams replacing their marketing stack with six autonomous
-            agents.
+            We&apos;re opening this up gradually. Drop your email and
+            we&apos;ll be in touch.
           </p>
-          <div className="mt-10">
-            <a
-              href="#"
-              className="inline-block rounded-full bg-white px-8 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90"
-              style={{ fontFamily: "var(--font-dm-sans)" }}
-            >
-              Request early access
-            </a>
+          <div className="mt-10 flex justify-center">
+            <EmailForm onSubmit={onEmailSubmit} id="cta-email" />
           </div>
         </FadeUp>
       </div>
@@ -691,7 +2002,7 @@ function Footer() {
             color: "rgba(255,255,255,0.3)",
           }}
         >
-          Built on OpenClaw
+          Powered by Claude Code &middot; Built on OpenClaw
         </p>
       </div>
     </footer>
@@ -703,9 +2014,17 @@ function Footer() {
 // ---------------------------------------------------------------------------
 
 export default function Home() {
+  const [showSurvey, setShowSurvey] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
+
+  const handleEmailSubmit = (email: string) => {
+    setSubmittedEmail(email);
+    setShowSurvey(true);
+  };
+
   return (
     <main className="relative min-h-screen bg-black selection:bg-white/10">
-      {/* Subtle grain texture across entire page */}
+      {/* Subtle grain texture */}
       <div
         className="pointer-events-none fixed inset-0 z-50"
         style={{
@@ -716,12 +2035,27 @@ export default function Home() {
         }}
       />
       <Nav />
-      <Hero />
-      <AgentsSection />
+      <Hero onEmailSubmit={handleEmailSubmit} />
+      <ProblemSection />
       <HowItWorksSection />
-      <CredibilitySection />
-      <CtaSection />
+      <DemoSection />
+      <SkillsSection />
+      <PersonasSection />
+      <ComparisonSection />
+      <PricingSection />
+      <AboutSection />
+      <FaqSection />
+      <CtaSection onEmailSubmit={handleEmailSubmit} />
       <Footer />
+
+      <AnimatePresence>
+        {showSurvey && (
+          <SurveyPopup
+            email={submittedEmail}
+            onClose={() => setShowSurvey(false)}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
