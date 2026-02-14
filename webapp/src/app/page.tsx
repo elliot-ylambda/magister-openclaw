@@ -1,26 +1,2061 @@
-import { Nav } from "@/components/nav";
-import { Hero } from "@/components/hero";
-import { Agents } from "@/components/agents";
-import { HowItWorks } from "@/components/how-it-works";
-import { Credibility } from "@/components/credibility";
-import { Waitlist } from "@/components/waitlist";
-import { Footer } from "@/components/footer";
-import { ClawMarks } from "@/components/claw-marks";
+"use client";
+
+import { useState, useRef, useEffect, useCallback, FormEvent } from "react";
+import Image from "next/image";
+import {
+  motion,
+  useInView,
+  useScroll,
+  useTransform,
+  AnimatePresence,
+} from "motion/react";
+import {
+  PenTool,
+  Search,
+  TrendingUp,
+  Megaphone,
+  Zap,
+  Lightbulb,
+  X,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Minus,
+  ChevronDown,
+} from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------------
+
+const skills = [
+  {
+    icon: PenTool,
+    name: "Copywriting & Content",
+    description:
+      "Landing pages, homepage, feature pages, email copy, social posts.",
+  },
+  {
+    icon: Search,
+    name: "SEO & Discovery",
+    description:
+      "Audits, programmatic pages, competitor alternatives, schema markup.",
+  },
+  {
+    icon: TrendingUp,
+    name: "Conversion Optimization",
+    description:
+      "Page CRO, signup flows, onboarding, forms, popups, paywalls.",
+  },
+  {
+    icon: Megaphone,
+    name: "Paid & Distribution",
+    description:
+      "Google Ads, Meta, LinkedIn campaign creation and management.",
+  },
+  {
+    icon: Zap,
+    name: "Growth Engineering",
+    description:
+      "Free tools, referral programs, A/B tests, analytics setup.",
+  },
+  {
+    icon: Lightbulb,
+    name: "Strategy & Planning",
+    description:
+      "Pricing, launch plans, marketing psychology, competitive intel.",
+  },
+];
+
+const steps = [
+  {
+    number: "01",
+    title: "Talk to it",
+    description:
+      "Open Magister on the web or in Slack. Describe what you need in plain English.",
+  },
+  {
+    number: "02",
+    title: "It plans and executes",
+    description:
+      "Magister taps into 25 specialized marketing skills to do the actual work — writing copy, auditing your SEO, building email sequences, optimizing pages.",
+  },
+  {
+    number: "03",
+    title: "You review and ship",
+    description:
+      "Check what it built, tweak if you want, and push it live. You stay in control.",
+  },
+];
+
+const roleOptions = [
+  "Founder / CEO",
+  "Head of Marketing / Marketing Lead",
+  "Growth / Product Marketer",
+  "Freelancer / Consultant",
+  "Developer / Engineer",
+  "Other",
+];
+
+const technicalOptions = [
+  "Not very — I stick to no-code tools and GUIs",
+  "Somewhat — I can edit code and use the terminal",
+  "Very — I write code regularly",
+  "I already use Claude Code or similar AI coding tools",
+];
+
+const aiSetupOptions = [
+  "I have Claude Max ($100/mo or $200/mo)",
+  "I have Claude Pro ($20/mo) but not Max",
+  "I use other AI tools (ChatGPT, Cursor, etc.)",
+  "I don't pay for AI tools yet",
+];
+
+const budgetOptions = [
+  "Free tier only",
+  "Up to $50/mo",
+  "$50–100/mo",
+  "$100–200/mo",
+  "$200+/mo",
+];
+
+const useCaseOptions = [
+  "Copywriting (landing pages, emails, ads)",
+  "SEO (audits, keywords, programmatic pages)",
+  "Email marketing (sequences, drip campaigns)",
+  "Conversion optimization (A/B tests, CRO, signup flows)",
+  "Social media content (LinkedIn, Twitter/X)",
+  "Paid ads (Google, Meta, LinkedIn)",
+  "Competitive intelligence (tracking, comparison pages)",
+  "Growth strategy (pricing, launches, referral programs)",
+];
+
+const personas = [
+  {
+    title: "SaaS founders",
+    subtitle: "wearing the marketing hat",
+    description:
+      "You've got 30 minutes between product calls. Magister turns that into a fully written landing page or email sequence.",
+  },
+  {
+    title: "Solo marketers",
+    subtitle: "doing the job of five",
+    description:
+      "You know what needs to happen. You just can't get to all of it. Magister handles the execution so you can focus on strategy.",
+  },
+  {
+    title: "Growth teams",
+    subtitle: "that move fast",
+    description:
+      "Your backlog of marketing tasks keeps growing. Magister works through it while you focus on what only humans can do.",
+  },
+];
+
+const comparisonRows = [
+  { label: "Gives you advice", chatbot: true, agency: true, magister: true },
+  { label: "Actually does the work", chatbot: false, agency: true, magister: true },
+  { label: "Works in your tools", chatbot: false, agency: "Sometimes", magister: true },
+  { label: "Available 24/7", chatbot: true, agency: false, magister: true },
+  { label: "Knows your brand context", chatbot: "Per session", agency: "Eventually", magister: true },
+  { label: "Cost", chatbot: "$20/mo + your time", agency: "$2k–10k/mo", magister: "Early access" },
+];
+
+const faqItems = [
+  {
+    question: "Do I need a Claude Code Max subscription?",
+    answer:
+      "Not necessarily. We're figuring out the best setup for different users — that's partly why we're asking in the survey.",
+  },
+  {
+    question: "How is this different from just using ChatGPT or Claude?",
+    answer:
+      "Chatbots give you text in a window. Magister is an autonomous agent that works in your actual tools — writing real pages, updating real files, running real audits.",
+  },
+  {
+    question: "What can it actually do right now?",
+    answer:
+      "We're starting with one agent that covers 25 marketing skills — copywriting, SEO, CRO, email, ads, and more. We're expanding to a full team of specialized agents.",
+  },
+  {
+    question: "Is my data safe?",
+    answer:
+      "Magister is built on Claude Code and OpenClaw. Your data is processed through Anthropic's API with their privacy guarantees.",
+  },
+  {
+    question: "Can I use it in Slack?",
+    answer:
+      "Yes. You can interact with Magister on the web or directly in your Slack workspace.",
+  },
+];
+
+type ChatMessage = {
+  type: "user" | "bot";
+  content: string;
+};
+
+const chatScript: ChatMessage[] = [
+  {
+    type: "user",
+    content: "Our pricing page converts at 2%. Can you take a look?",
+  },
+  {
+    type: "bot",
+    content:
+      "Auditing your pricing page now. Checking copy, layout, and conversion patterns...",
+  },
+  {
+    type: "bot",
+    content:
+      "Found 3 issues:\n\n1. Headline focuses on features, not outcomes\n2. Too many plan options — decision fatigue\n3. No social proof near the CTA\n\nRewriting now.",
+  },
+  {
+    type: "bot",
+    content:
+      'Done. Updated copy is in your staging environment:\n\n• New headline: "Start closing more deals today"\n• Consolidated 4 plans to 3 with a recommended badge\n• Added customer quote above the CTA\n\nReady to review?',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Animation helpers
+// ---------------------------------------------------------------------------
+
+function FadeUp({
+  children,
+  delay = 0,
+  className = "",
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-60px" });
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 32 }}
+      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
+      transition={{ duration: 0.7, delay, ease: [0.25, 0.1, 0.25, 1] }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Email Form (reused in Hero and CTA)
+// ---------------------------------------------------------------------------
+
+function EmailForm({
+  onSubmit,
+  id,
+}: {
+  onSubmit: (email: string) => void;
+  id: string;
+}) {
+  const [email, setEmail] = useState("");
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (email.trim()) {
+      onSubmit(email.trim());
+      setEmail("");
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="flex w-full max-w-md gap-3">
+      <input
+        id={id}
+        type="email"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="you@company.com"
+        className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors"
+        style={{
+          fontFamily: "var(--font-dm-sans)",
+          borderColor: "rgba(255,255,255,0.15)",
+        }}
+      />
+      <button
+        type="submit"
+        className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap"
+        style={{ fontFamily: "var(--font-dm-sans)" }}
+      >
+        Get early access
+      </button>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Survey Popup
+// ---------------------------------------------------------------------------
+
+function SurveyPopup({
+  email,
+  onClose,
+}: {
+  email: string;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({
+    role: "",
+    technical: "",
+    aiSetup: "",
+    budget: "",
+    useCases: [] as string[],
+  });
+  const [submitted, setSubmitted] = useState(false);
+
+  const totalSteps = 4;
+
+  const handleUseCaseToggle = (useCase: string) => {
+    setAnswers((prev) => ({
+      ...prev,
+      useCases: prev.useCases.includes(useCase)
+        ? prev.useCases.filter((u) => u !== useCase)
+        : prev.useCases.length < 3
+          ? [...prev.useCases, useCase]
+          : prev.useCases,
+    }));
+  };
+
+  const canProceed = () => {
+    switch (step) {
+      case 0:
+        return answers.role !== "";
+      case 1:
+        return answers.technical !== "";
+      case 2:
+        return answers.aiSetup !== "" && answers.budget !== "";
+      case 3:
+        return answers.useCases.length > 0;
+      default:
+        return false;
+    }
+  };
+
+  const handleNext = () => {
+    if (step < totalSteps - 1) {
+      setStep(step + 1);
+    } else {
+      // TODO: Replace with actual API call to store survey responses
+      console.log("Survey submitted:", { email, ...answers });
+      setSubmitted(true);
+    }
+  };
+
+  const optionButtonStyle = (selected: boolean, disabled = false) => ({
+    fontFamily: "var(--font-dm-sans)",
+    border: `1px solid ${selected ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.08)"}`,
+    color: disabled
+      ? "rgba(255,255,255,0.2)"
+      : selected
+        ? "white"
+        : "rgba(255,255,255,0.6)",
+    backgroundColor: selected ? "rgba(255,255,255,0.05)" : "transparent",
+    cursor: disabled ? ("not-allowed" as const) : ("pointer" as const),
+  });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+      style={{
+        backgroundColor: "rgba(0,0,0,0.8)",
+        backdropFilter: "blur(8px)",
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.3 }}
+        className="relative w-full max-w-lg rounded-2xl p-8"
+        style={{
+          backgroundColor: "rgb(12,12,12)",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1 transition-colors"
+          style={{ color: "rgba(255,255,255,0.3)" }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.color = "rgba(255,255,255,0.7)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.color = "rgba(255,255,255,0.3)")
+          }
+        >
+          <X size={18} />
+        </button>
+
+        {submitted ? (
+          <div className="text-center py-8">
+            <h3
+              className="text-xl text-white mb-3"
+              style={{
+                fontFamily: "var(--font-dm-sans)",
+                fontWeight: 600,
+              }}
+            >
+              You&apos;re on the list
+            </h3>
+            <p
+              className="text-base"
+              style={{
+                fontFamily: "var(--font-dm-sans)",
+                color: "rgba(255,255,255,0.5)",
+              }}
+            >
+              We&apos;ll be in touch soon. Thanks for the info — it helps us
+              build the right thing.
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-6 rounded-full bg-white px-6 py-3 text-[15px] font-medium text-black transition-opacity hover:opacity-90"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Progress bar */}
+            <div className="mb-8 flex gap-1.5">
+              {Array.from({ length: totalSteps }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-1 flex-1 rounded-full transition-colors duration-300"
+                  style={{
+                    backgroundColor:
+                      i <= step
+                        ? "rgba(255,255,255,0.6)"
+                        : "rgba(255,255,255,0.08)",
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Step 0: Role */}
+            {step === 0 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What best describes you?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Quick survey so we can tailor your experience.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {roleOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, role: option })
+                      }
+                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                      style={optionButtonStyle(answers.role === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 1: Technical level */}
+            {step === 1 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  How technical are you?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Helps us calibrate the onboarding.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {technicalOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, technical: option })
+                      }
+                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                      style={optionButtonStyle(answers.technical === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: AI setup + budget */}
+            {step === 2 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What&apos;s your current AI setup?
+                </h3>
+                <p
+                  className="text-sm mb-4"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Select the option that fits best.
+                </p>
+                <div className="flex flex-col gap-2 mb-6">
+                  {aiSetupOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, aiSetup: option })
+                      }
+                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                      style={optionButtonStyle(answers.aiSetup === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Monthly budget for an AI marketing agent?
+                </h3>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {budgetOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() =>
+                        setAnswers({ ...answers, budget: option })
+                      }
+                      className="rounded-full px-4 py-2 text-[13px] transition-colors"
+                      style={optionButtonStyle(answers.budget === option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Use cases */}
+            {step === 3 && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What would you use it for first?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Pick up to 3 that matter most.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {useCaseOptions.map((option) => {
+                    const selected = answers.useCases.includes(option);
+                    const disabled = !selected && answers.useCases.length >= 3;
+                    return (
+                      <button
+                        key={option}
+                        onClick={() => handleUseCaseToggle(option)}
+                        disabled={disabled}
+                        className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                        style={optionButtonStyle(selected, disabled)}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="mt-8 flex items-center justify-between">
+              {step > 0 ? (
+                <button
+                  onClick={() => setStep(step - 1)}
+                  className="flex items-center gap-1 text-[14px] transition-colors"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.color = "rgba(255,255,255,0.7)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.color = "rgba(255,255,255,0.4)")
+                  }
+                >
+                  <ChevronLeft size={16} />
+                  Back
+                </button>
+              ) : (
+                <div />
+              )}
+              <button
+                onClick={handleNext}
+                disabled={!canProceed()}
+                className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                style={{ fontFamily: "var(--font-dm-sans)" }}
+              >
+                {step === totalSteps - 1 ? "Submit" : "Next"}
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Nav
+// ---------------------------------------------------------------------------
+
+function Nav() {
+  const { scrollY } = useScroll();
+  const bgOpacity = useTransform(scrollY, [0, 100], [0, 0.85]);
+  const borderOpacity = useTransform(scrollY, [0, 100], [0, 0.06]);
+
+  return (
+    <motion.nav
+      className="fixed top-0 left-0 right-0 z-50 h-[72px] flex items-center"
+      style={{
+        backgroundColor: useTransform(bgOpacity, (v) => `rgba(0,0,0,${v})`),
+        borderBottom: useTransform(
+          borderOpacity,
+          (v) => `1px solid rgba(255,255,255,${v})`
+        ),
+        backdropFilter: useTransform(scrollY, [0, 100], [
+          "blur(0px)",
+          "blur(12px)",
+        ]),
+        WebkitBackdropFilter: useTransform(scrollY, [0, 100], [
+          "blur(0px)",
+          "blur(12px)",
+        ]),
+      }}
+    >
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 md:px-10">
+        <a href="#" className="flex items-center gap-2.5">
+          <Image
+            src="/magister-logo-white.svg"
+            alt="Magister"
+            width={28}
+            height={30}
+          />
+          <span
+            className="text-[15px] font-medium text-white tracking-[0.12em] uppercase"
+            style={{ fontFamily: "var(--font-dm-sans)" }}
+          >
+            Magister
+          </span>
+        </a>
+
+        <div
+          className="hidden md:flex items-center gap-10"
+          style={{ fontFamily: "var(--font-dm-sans)" }}
+        >
+          {["How It Works", "Skills", "About"].map((label) => (
+            <a
+              key={label}
+              href={`#${label.toLowerCase().replace(/\s+/g, "-")}`}
+              className="text-[14px] transition-colors duration-300"
+              style={{ color: "rgba(255,255,255,0.6)" }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.color = "rgba(255,255,255,1)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.color = "rgba(255,255,255,0.6)")
+              }
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+
+        <a
+          href="#request-access"
+          className="rounded-full px-5 py-2 text-[13px] font-medium text-white transition-all duration-300 hover:bg-white hover:text-black"
+          style={{
+            fontFamily: "var(--font-dm-sans)",
+            border: "1px solid rgba(255,255,255,0.2)",
+          }}
+        >
+          Request Early Access
+        </a>
+      </div>
+    </motion.nav>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hero
+// ---------------------------------------------------------------------------
+
+function Hero({
+  onEmailSubmit,
+}: {
+  onEmailSubmit: (email: string) => void;
+}) {
+  return (
+    <section className="relative flex flex-col items-center px-6 pt-48 pb-32 md:pt-56 md:pb-48 text-center overflow-hidden">
+      {/* Animated gradient orbs */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: "5%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "min(1000px, 100vw)",
+          height: "700px",
+          background:
+            "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.02) 40%, transparent 70%)",
+          filter: "blur(40px)",
+          animation: "heroGlow 10s ease-in-out infinite",
+        }}
+      />
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: "15%",
+          left: "35%",
+          width: "600px",
+          height: "400px",
+          background:
+            "radial-gradient(ellipse at center, rgba(120,119,198,0.08) 0%, transparent 60%)",
+          filter: "blur(50px)",
+          animation: "orbFloat1 14s ease-in-out infinite",
+        }}
+      />
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: "10%",
+          left: "60%",
+          width: "500px",
+          height: "450px",
+          background:
+            "radial-gradient(ellipse at center, rgba(99,102,241,0.06) 0%, transparent 55%)",
+          filter: "blur(50px)",
+          animation: "orbFloat2 18s ease-in-out infinite",
+        }}
+      />
+
+      {/* Dot grid pattern */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px)",
+          backgroundSize: "28px 28px",
+          maskImage:
+            "radial-gradient(ellipse 50% 45% at 50% 40%, black 10%, transparent 60%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 50% 45% at 50% 40%, black 10%, transparent 60%)",
+        }}
+      />
+
+      <style>{`
+        @keyframes heroGlow {
+          0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; }
+          50% { transform: translateX(-50%) scale(1.1); opacity: 0.6; }
+        }
+        @keyframes orbFloat1 {
+          0%, 100% { transform: translate(0, 0); }
+          33% { transform: translate(40px, -25px); }
+          66% { transform: translate(-20px, 15px); }
+        }
+        @keyframes orbFloat2 {
+          0%, 100% { transform: translate(0, 0); }
+          50% { transform: translate(-35px, 20px); }
+        }
+      `}</style>
+
+      {/* Stats strip */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8, delay: 0.1 }}
+        className="mb-10 flex items-center gap-3"
+        style={{
+          fontFamily: "var(--font-dm-sans)",
+          color: "rgba(255,255,255,0.4)",
+          fontSize: "13px",
+        }}
+      >
+        <span>Open Source Foundation</span>
+        <span style={{ color: "rgba(255,255,255,0.2)" }}>&middot;</span>
+        <span>Powered by OpenClaw</span>
+      </motion.div>
+
+      {/* Headline */}
+      <motion.h1
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.8,
+          delay: 0.25,
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
+        className="max-w-4xl text-white"
+        style={{
+          fontFamily: "var(--font-instrument-serif)",
+          fontSize: "clamp(44px, 6vw, 80px)",
+          lineHeight: 1.1,
+          letterSpacing: "-0.02em",
+          fontWeight: 400,
+        }}
+      >
+        Ship more marketing this week
+        <br />
+        than most teams do in a year
+      </motion.h1>
+
+      {/* Subtext */}
+      <motion.p
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.7,
+          delay: 0.45,
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
+        className="mt-7 max-w-xl text-lg leading-relaxed"
+        style={{
+          fontFamily: "var(--font-dm-sans)",
+          color: "rgba(255,255,255,0.6)",
+          fontWeight: 400,
+        }}
+      >
+        Other AI tools give you a draft and send you on your way. Magister
+        is an autonomous marketing agent that works in your tools — writing
+        copy, auditing SEO, building email sequences. You give it a task.
+        It gets it done.
+      </motion.p>
+
+      {/* Email CTA */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: 0.6,
+          delay: 0.65,
+          ease: [0.25, 0.1, 0.25, 1],
+        }}
+        className="mt-10"
+      >
+        <EmailForm onSubmit={onEmailSubmit} id="hero-email" />
+      </motion.div>
+
+      {/* Divider */}
+      <motion.div
+        initial={{ opacity: 0, scaleX: 0 }}
+        animate={{ opacity: 1, scaleX: 1 }}
+        transition={{ duration: 0.8, delay: 0.9 }}
+        className="mt-32 h-px w-[200px]"
+        style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+      />
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section Label (reusable)
+// ---------------------------------------------------------------------------
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="mb-5 text-center text-xs uppercase"
+      style={{
+        fontFamily: "var(--font-dm-sans)",
+        color: "rgba(255,255,255,0.3)",
+        letterSpacing: "0.15em",
+        fontWeight: 400,
+      }}
+    >
+      {children}
+    </p>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Problem Section
+// ---------------------------------------------------------------------------
+
+function ProblemSection() {
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-2xl text-center">
+        <FadeUp>
+          <SectionLabel>Sound familiar?</SectionLabel>
+          <p
+            className="text-xl leading-relaxed md:text-2xl"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.7)",
+              fontWeight: 400,
+            }}
+          >
+            You ask AI for help with your marketing. It gives you a plan, a
+            draft, maybe some suggestions. Then you close the chat and spend
+            the next 3 hours implementing it yourself.
+          </p>
+          <p
+            className="mt-8 text-xl md:text-2xl text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontStyle: "italic",
+              fontWeight: 400,
+            }}
+          >
+            What if the AI could just... do it?
+          </p>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// How It Works
+// ---------------------------------------------------------------------------
+
+function HowItWorksSection() {
+  return (
+    <section id="how-it-works" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp className="text-center">
+          <SectionLabel>How it works</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Tell it what you need. It gets to work.
+          </h2>
+        </FadeUp>
+
+        <div className="mx-auto mt-20 grid max-w-5xl grid-cols-1 md:grid-cols-3">
+          {steps.map((step, i) => (
+            <FadeUp
+              key={step.number}
+              delay={0.12 * i}
+              className={`py-10 md:py-0 md:px-10 ${
+                i < steps.length - 1
+                  ? "border-b border-[rgba(255,255,255,0.06)] md:border-b-0 md:border-r"
+                  : ""
+              }`}
+            >
+              <div>
+                <p
+                  className="mb-5 text-sm"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.2)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {step.number}
+                </p>
+                <h3
+                  className="mb-4 text-white"
+                  style={{
+                    fontFamily: "var(--font-instrument-serif)",
+                    fontSize: "clamp(24px, 3vw, 32px)",
+                    lineHeight: 1.2,
+                    letterSpacing: "-0.02em",
+                    fontWeight: 400,
+                  }}
+                >
+                  {step.title}
+                </h3>
+                <p
+                  className="text-base leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {step.description}
+                </p>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Skills Section
+// ---------------------------------------------------------------------------
+
+function SkillsSection() {
+  return (
+    <section id="skills" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp className="text-center">
+          <SectionLabel>25 marketing skills</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            One agent. 25 specialized skills.
+          </h2>
+          <p
+            className="mx-auto mt-6 max-w-lg text-base"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.6)",
+            }}
+          >
+            Built on Claude Code and OpenClaw. Enhanced by{" "}
+            <a
+              href="https://github.com/coreyhaines31/marketingskills"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4 decoration-white/30 hover:decoration-white/60 transition-colors"
+              style={{ color: "rgba(255,255,255,0.8)" }}
+            >
+              Marketing Skills
+            </a>
+            , an open source, crowdsourced knowledge base that gets smarter
+            with every user.
+          </p>
+        </FadeUp>
+
+        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {skills.map((skill, i) => (
+            <FadeUp key={skill.name} delay={0.08 * i}>
+              <div
+                className="rounded-lg p-10 transition-colors duration-300"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor =
+                    "rgba(255,255,255,0.12)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor =
+                    "rgba(255,255,255,0.06)")
+                }
+              >
+                <skill.icon
+                  size={20}
+                  strokeWidth={1.5}
+                  style={{ color: "rgba(255,255,255,0.6)" }}
+                  className="mb-5"
+                />
+                <h3
+                  className="mb-2.5 text-lg text-white"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {skill.name}
+                </h3>
+                <p
+                  className="text-sm leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {skill.description}
+                </p>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Demo Section (animated chat)
+// ---------------------------------------------------------------------------
+
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1.5 px-4 py-3">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="h-1.5 w-1.5 rounded-full"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.4)",
+            animation: `typingDot 1.4s ease-in-out ${i * 0.2}s infinite`,
+          }}
+        />
+      ))}
+      <style>{`
+        @keyframes typingDot {
+          0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+          30% { opacity: 1; transform: translateY(-4px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function DemoSection() {
+  const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hasStarted = useRef(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(sectionRef, { once: true, margin: "-100px" });
+
+  const runChat = useCallback(() => {
+    setVisibleMessages([]);
+    setIsTyping(false);
+
+    let currentIndex = 0;
+
+    const showNext = () => {
+      if (currentIndex >= chatScript.length) {
+        setTimeout(() => {
+          setVisibleMessages([]);
+          currentIndex = 0;
+          setTimeout(showNext, 1000);
+        }, 6000);
+        return;
+      }
+
+      setIsTyping(true);
+
+      const typingDelay = chatScript[currentIndex].type === "bot" ? 1800 : 800;
+
+      setTimeout(() => {
+        setIsTyping(false);
+        const msg = chatScript[currentIndex];
+        if (msg) {
+          setVisibleMessages((prev) => [...prev, msg]);
+        }
+        currentIndex++;
+        setTimeout(showNext, 1200);
+      }, typingDelay);
+    };
+
+    setTimeout(showNext, 800);
+  }, []);
+
+  useEffect(() => {
+    if (inView && !hasStarted.current) {
+      hasStarted.current = true;
+      runChat();
+    }
+  }, [inView, runChat]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [visibleMessages, isTyping]);
+
+  return (
+    <section ref={sectionRef} className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-3xl">
+        <FadeUp className="text-center">
+          <SectionLabel>See it in action</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            You talk. It works.
+          </h2>
+        </FadeUp>
+
+        <FadeUp delay={0.15}>
+          <div
+            className="mt-16 rounded-xl overflow-hidden"
+            style={{
+              border: "1px solid rgba(255,255,255,0.08)",
+              backgroundColor: "rgba(255,255,255,0.02)",
+            }}
+          >
+            {/* Chat header */}
+            <div
+              className="flex items-center gap-3 px-5 py-4"
+              style={{
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <div
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: "rgba(74,222,128,0.8)" }}
+              />
+              <span
+                className="text-[13px]"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.5)",
+                  fontWeight: 500,
+                }}
+              >
+                Magister
+              </span>
+            </div>
+
+            {/* Chat messages */}
+            <div
+              ref={scrollRef}
+              className="flex flex-col gap-4 p-5 overflow-y-auto"
+              style={{ minHeight: 320, maxHeight: 420 }}
+            >
+              {visibleMessages.map((msg, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex ${msg.type === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className="max-w-[85%] rounded-xl px-4 py-3 text-[14px] leading-relaxed"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      backgroundColor:
+                        msg.type === "user"
+                          ? "rgba(255,255,255,0.1)"
+                          : "rgba(255,255,255,0.04)",
+                      color:
+                        msg.type === "user"
+                          ? "rgba(255,255,255,0.9)"
+                          : "rgba(255,255,255,0.7)",
+                      border:
+                        msg.type === "user"
+                          ? "1px solid rgba(255,255,255,0.12)"
+                          : "1px solid rgba(255,255,255,0.06)",
+                      whiteSpace: "pre-line",
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                </motion.div>
+              ))}
+
+              {isTyping && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex justify-start"
+                >
+                  <div
+                    className="rounded-xl"
+                    style={{
+                      backgroundColor: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <TypingIndicator />
+                  </div>
+                </motion.div>
+              )}
+
+            </div>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Personas Section
+// ---------------------------------------------------------------------------
+
+function PersonasSection() {
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Who it&apos;s for</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Built for marketers who&apos;d rather ship than plan.
+          </h2>
+        </FadeUp>
+
+        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-3">
+          {personas.map((persona, i) => (
+            <FadeUp key={persona.title} delay={0.1 * i}>
+              <div
+                className="rounded-lg p-10 h-full"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {persona.title}
+                </h3>
+                <p
+                  className="text-sm mb-4"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {persona.subtitle}
+                </p>
+                <p
+                  className="text-sm leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {persona.description}
+                </p>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Comparison Section
+// ---------------------------------------------------------------------------
+
+function ComparisonCell({ value }: { value: boolean | string }) {
+  if (value === true) {
+    return (
+      <Check
+        size={16}
+        strokeWidth={2}
+        style={{ color: "rgba(74,222,128,0.8)" }}
+      />
+    );
+  }
+  if (value === false) {
+    return (
+      <Minus
+        size={16}
+        strokeWidth={2}
+        style={{ color: "rgba(255,255,255,0.15)" }}
+      />
+    );
+  }
+  return (
+    <span
+      className="text-[13px]"
+      style={{
+        fontFamily: "var(--font-dm-sans)",
+        color: "rgba(255,255,255,0.5)",
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
+function ComparisonSection() {
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-4xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Why Magister</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Not another chatbot.
+          </h2>
+        </FadeUp>
+
+        <FadeUp delay={0.15}>
+          <div
+            className="mt-16 overflow-x-auto rounded-xl"
+            style={{
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <table
+              className="w-full text-left"
+              style={{ fontFamily: "var(--font-dm-sans)", minWidth: 560 }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  <th
+                    className="px-6 py-4 text-[13px] font-normal"
+                    style={{ color: "rgba(255,255,255,0.3)" }}
+                  />
+                  <th
+                    className="px-6 py-4 text-[13px] font-medium text-center"
+                    style={{ color: "rgba(255,255,255,0.4)" }}
+                  >
+                    ChatGPT / Claude
+                  </th>
+                  <th
+                    className="px-6 py-4 text-[13px] font-medium text-center"
+                    style={{ color: "rgba(255,255,255,0.4)" }}
+                  >
+                    Agency / Freelancer
+                  </th>
+                  <th
+                    className="px-6 py-4 text-[13px] font-medium text-center text-white"
+                  >
+                    Magister
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonRows.map((row, i) => (
+                  <tr
+                    key={row.label}
+                    style={{
+                      borderBottom:
+                        i < comparisonRows.length - 1
+                          ? "1px solid rgba(255,255,255,0.04)"
+                          : "none",
+                    }}
+                  >
+                    <td
+                      className="px-6 py-4 text-[14px]"
+                      style={{ color: "rgba(255,255,255,0.6)" }}
+                    >
+                      {row.label}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <ComparisonCell value={row.chatbot} />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <ComparisonCell value={row.agency} />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center">
+                        <ComparisonCell value={row.magister} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pricing Section
+// ---------------------------------------------------------------------------
+
+const pricingPlans = [
+  {
+    name: "CMO",
+    price: "$299",
+    period: "/mo",
+    description: "One autonomous marketing agent with 25 specialized skills.",
+    cta: "Get early access",
+    highlighted: true,
+    badge: null,
+  },
+  {
+    name: "CMO + Specialists",
+    price: "$999",
+    period: "/mo",
+    description:
+      "10+ agents working together — strategy, copy, SEO, ads, email, and more.",
+    cta: "Get early access",
+    highlighted: false,
+    badge: null,
+  },
+  {
+    name: "Custom Install",
+    price: "$24,999",
+    period: " one-time",
+    description:
+      "We set it up on your infrastructure. You own and host everything.",
+    cta: "Get early access",
+    highlighted: false,
+    badge: null,
+  },
+];
+
+function PricingSection() {
+  return (
+    <section id="pricing" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-6xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Pricing</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Simple pricing. No seat math.
+          </h2>
+        </FadeUp>
+
+        <div className="mx-auto mt-16 grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-3">
+          {pricingPlans.map((plan, i) => (
+            <FadeUp key={plan.name} delay={0.1 * i}>
+              <div
+                className="relative flex flex-col rounded-xl p-8 h-full"
+                style={{
+                  border: plan.highlighted
+                    ? "1px solid rgba(255,255,255,0.2)"
+                    : "1px solid rgba(255,255,255,0.06)",
+                  backgroundColor: plan.highlighted
+                    ? "rgba(255,255,255,0.03)"
+                    : "transparent",
+                }}
+              >
+                {plan.badge && (
+                  <span
+                    className="absolute top-4 right-4 rounded-full px-3 py-1 text-[11px] uppercase"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      color: "rgba(255,255,255,0.5)",
+                      backgroundColor: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    {plan.badge}
+                  </span>
+                )}
+
+                <h3
+                  className="text-lg text-white mb-4"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {plan.name}
+                </h3>
+
+                <div className="mb-4 flex items-baseline gap-1">
+                  <span
+                    className="text-white"
+                    style={{
+                      fontFamily: "var(--font-instrument-serif)",
+                      fontSize: "clamp(36px, 4vw, 48px)",
+                      lineHeight: 1,
+                      letterSpacing: "-0.02em",
+                      fontWeight: 400,
+                    }}
+                  >
+                    {plan.price}
+                  </span>
+                  <span
+                    className="text-[15px]"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      color: "rgba(255,255,255,0.4)",
+                    }}
+                  >
+                    {plan.period}
+                  </span>
+                </div>
+
+                <p
+                  className="text-sm leading-relaxed mb-8 flex-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                    fontWeight: 400,
+                  }}
+                >
+                  {plan.description}
+                </p>
+
+                <button
+                  onClick={() => {
+                    const el = document.getElementById("request-access");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className={`w-full rounded-full py-3 text-[14px] font-medium transition-opacity duration-300 hover:opacity-90 ${
+                    plan.highlighted
+                      ? "bg-white text-black"
+                      : "bg-transparent text-white"
+                  }`}
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    border: plan.highlighted
+                      ? "none"
+                      : "1px solid rgba(255,255,255,0.15)",
+                  }}
+                >
+                  {plan.cta}
+                </button>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FAQ Section
+// ---------------------------------------------------------------------------
+
+function FaqSection() {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-2xl">
+        <FadeUp className="text-center">
+          <SectionLabel>FAQ</SectionLabel>
+          <h2
+            className="text-white mb-16"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Questions
+          </h2>
+        </FadeUp>
+
+        <div className="flex flex-col">
+          {faqItems.map((item, i) => (
+            <FadeUp key={i} delay={0.06 * i}>
+              <div
+                style={{
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    setOpenIndex(openIndex === i ? null : i)
+                  }
+                  className="flex w-full items-center justify-between py-6 text-left"
+                >
+                  <span
+                    className="text-[15px] text-white pr-4"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {item.question}
+                  </span>
+                  <ChevronDown
+                    size={18}
+                    strokeWidth={1.5}
+                    className="shrink-0 transition-transform duration-300"
+                    style={{
+                      color: "rgba(255,255,255,0.3)",
+                      transform:
+                        openIndex === i ? "rotate(180deg)" : "rotate(0deg)",
+                    }}
+                  />
+                </button>
+                <AnimatePresence>
+                  {openIndex === i && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <p
+                        className="pb-6 text-[14px] leading-relaxed"
+                        style={{
+                          fontFamily: "var(--font-dm-sans)",
+                          color: "rgba(255,255,255,0.5)",
+                        }}
+                      >
+                        {item.answer}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// About Section
+// ---------------------------------------------------------------------------
+
+function AboutSection() {
+  return (
+    <section id="about" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-3xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Built by marketers</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Not another AI tool built by people who&apos;ve never run a
+            campaign.
+          </h2>
+        </FadeUp>
+
+        <div className="mt-16 flex flex-col gap-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-12">
+            <FadeUp delay={0.1}>
+              <div className="text-center">
+                <Image
+                  src="/corey.jpeg"
+                  alt="Corey Haines"
+                  width={96}
+                  height={96}
+                  className="mx-auto mb-5 rounded-full object-cover"
+                  style={{ filter: "grayscale(100%)", width: 96, height: 96 }}
+                />
+                <h3
+                  className="text-lg text-white mb-2"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Corey Haines
+                </h3>
+                <p
+                  className="text-base leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  Founder of Conversion Factory, a SaaS marketing agency.
+                  Creator of{" "}
+                  <a
+                    href="https://github.com/coreyhaines31/marketingskills"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4 decoration-white/30 hover:decoration-white/60 transition-colors"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+                  >
+                    Marketing Skills
+                  </a>
+                  , the most-starred open source repo for marketing AI agents
+                  (7,500+ stars, 900+ forks).
+                </p>
+              </div>
+            </FadeUp>
+
+            <FadeUp delay={0.2}>
+              <div className="text-center">
+                <Image
+                  src="/elliot.jpeg"
+                  alt="Elliot Eckholm"
+                  width={96}
+                  height={96}
+                  className="mx-auto mb-5 rounded-full object-cover"
+                  style={{ filter: "grayscale(100%)", width: 96, height: 96 }}
+                />
+                <h3
+                  className="text-lg text-white mb-2"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Elliot Eckholm
+                </h3>
+                <p
+                  className="text-base leading-relaxed"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  Co-founder and OpenClaw power user. Has led machine learning
+                  engineering for startups serving millions of users. Also
+                  building SwipeWell.
+                </p>
+              </div>
+            </FadeUp>
+          </div>
+
+          <FadeUp delay={0.3}>
+            <p
+              className="text-center text-xl md:text-2xl mt-4"
+              style={{
+                fontFamily: "var(--font-instrument-serif)",
+                color: "rgba(255,255,255,0.8)",
+                fontStyle: "italic",
+                fontWeight: 400,
+              }}
+            >
+              &ldquo;We&apos;ve spent years doing SaaS marketing by hand.
+              Magister is the tool we wish we had.&rdquo;
+            </p>
+          </FadeUp>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CTA Section
+// ---------------------------------------------------------------------------
+
+function CtaSection({
+  onEmailSubmit,
+}: {
+  onEmailSubmit: (email: string) => void;
+}) {
+  return (
+    <section id="request-access" className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-3xl text-center">
+        <FadeUp>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Get early access
+          </h2>
+          <p
+            className="mx-auto mt-6 max-w-md text-base"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.6)",
+              fontWeight: 400,
+            }}
+          >
+            We&apos;re opening this up gradually. Drop your email and
+            we&apos;ll be in touch.
+          </p>
+          <div className="mt-10 flex justify-center">
+            <EmailForm onSubmit={onEmailSubmit} id="cta-email" />
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Footer
+// ---------------------------------------------------------------------------
+
+function Footer() {
+  return (
+    <footer
+      className="px-6 py-10"
+      style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+    >
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
+        <a href="#" className="flex items-center gap-2.5">
+          <Image
+            src="/magister-logo-white.svg"
+            alt="Magister"
+            width={22}
+            height={24}
+          />
+          <span
+            className="text-[14px] font-medium text-white"
+            style={{ fontFamily: "var(--font-dm-sans)" }}
+          >
+            Magister
+          </span>
+        </a>
+        <p
+          className="text-[13px]"
+          style={{
+            fontFamily: "var(--font-dm-sans)",
+            color: "rgba(255,255,255,0.3)",
+          }}
+        >
+          Powered by Claude Code &middot; Built on OpenClaw
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default function Home() {
+  const [showSurvey, setShowSurvey] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
+
+  const handleEmailSubmit = (email: string) => {
+    setSubmittedEmail(email);
+    setShowSurvey(true);
+  };
+
   return (
-    <main className="bg-midnight text-white min-h-screen">
+    <main className="relative min-h-screen bg-black selection:bg-white/10">
+      {/* Subtle grain texture */}
+      <div
+        className="pointer-events-none fixed inset-0 z-50"
+        style={{
+          opacity: 0.06,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+          backgroundRepeat: "repeat",
+          backgroundSize: "128px 128px",
+        }}
+      />
       <Nav />
-      <Hero />
-      <ClawMarks className="my-16" />
-      <Agents />
-      <ClawMarks className="my-16" />
-      <HowItWorks />
-      <ClawMarks className="my-16" />
-      <Credibility />
-      <ClawMarks className="my-16" />
-      <Waitlist />
+      <Hero onEmailSubmit={handleEmailSubmit} />
+      <ProblemSection />
+      <HowItWorksSection />
+      <DemoSection />
+      <SkillsSection />
+      <PersonasSection />
+      <ComparisonSection />
+      <PricingSection />
+      <AboutSection />
+      <FaqSection />
+      <CtaSection onEmailSubmit={handleEmailSubmit} />
       <Footer />
+
+      <AnimatePresence>
+        {showSurvey && (
+          <SurveyPopup
+            email={submittedEmail}
+            onClose={() => setShowSurvey(false)}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
