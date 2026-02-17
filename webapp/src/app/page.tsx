@@ -88,47 +88,9 @@ const steps = [
   },
 ];
 
-const roleOptions = [
-  "Founder / CEO",
-  "Head of Marketing / Marketing Lead",
-  "Growth / Product Marketer",
-  "Freelancer / Consultant",
-  "Developer / Engineer",
-  "Other",
-];
-
-const technicalOptions = [
-  "Not very — I stick to no-code tools and GUIs",
-  "Somewhat — I can edit code and use the terminal",
-  "Very — I write code regularly",
-  "I already use Claude Code or similar AI coding tools",
-];
-
-const aiSetupOptions = [
-  "I have Claude Max ($100/mo or $200/mo)",
-  "I have Claude Pro ($20/mo) but not Max",
-  "I use other AI tools (ChatGPT, Cursor, etc.)",
-  "I don't pay for AI tools yet",
-];
-
-const budgetOptions = [
-  "Free tier only",
-  "Up to $50/mo",
-  "$50–100/mo",
-  "$100–200/mo",
-  "$200+/mo",
-];
-
-const useCaseOptions = [
-  "Copywriting (landing pages, emails, ads)",
-  "SEO (audits, keywords, programmatic pages)",
-  "Email marketing (sequences, drip campaigns)",
-  "Conversion optimization (A/B tests, CRO, signup flows)",
-  "Social media content (LinkedIn, Twitter/X)",
-  "Paid ads (Google, Meta, LinkedIn)",
-  "Competitive intelligence (tracking, comparison pages)",
-  "Growth strategy (pricing, launches, referral programs)",
-];
+const jobRoleOptions = ["Developer", "Marketer", "Founder", "Designer"];
+const experienceOptions = ["Beginner", "Intermediate", "Advanced", "Expert"];
+const aiProviderOptions = ["Claude Code", "Codex", "OpenClaw", "None"];
 
 const personas = [
   {
@@ -248,6 +210,8 @@ function FadeUp({
 // Email Form (reused in Hero and CTA)
 // ---------------------------------------------------------------------------
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function EmailForm({
   onSubmit,
   id,
@@ -256,38 +220,74 @@ function EmailForm({
   id: string;
 }) {
   const [email, setEmail] = useState("");
+  const [shaking, setShaking] = useState(false);
+  const [error, setError] = useState(false);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (email.trim()) {
-      onSubmit(email.trim());
+    const trimmed = email.trim();
+    if (!EMAIL_REGEX.test(trimmed)) {
+      setShaking(true);
+      setError(true);
       setEmail("");
+      setTimeout(() => setShaking(false), 500);
+      setTimeout(() => setError(false), 3000);
+      return;
     }
+    onSubmit(trimmed);
+    setEmail("");
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-md gap-3">
-      <input
-        id={id}
-        type="email"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="you@company.com"
-        className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors"
-        style={{
-          fontFamily: "var(--font-dm-sans)",
-          borderColor: "rgba(255,255,255,0.15)",
-        }}
-      />
-      <button
-        type="submit"
-        className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap"
-        style={{ fontFamily: "var(--font-dm-sans)" }}
-      >
-        Get early access
-      </button>
-    </form>
+    <div className="w-full max-w-md">
+      <form onSubmit={handleSubmit} noValidate className="flex w-full gap-3">
+        <input
+          id={id}
+          type="email"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (error) setError(false);
+          }}
+          placeholder="you@company.com"
+          className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors"
+          style={{
+            fontFamily: "var(--font-dm-sans)",
+            borderColor: "rgba(255,255,255,0.15)",
+          }}
+        />
+        <motion.button
+          type="submit"
+          className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap"
+          style={{ fontFamily: "var(--font-dm-sans)" }}
+          animate={
+            shaking
+              ? { x: [0, -8, 8, -6, 6, -3, 3, 0] }
+              : { x: 0 }
+          }
+          transition={{ duration: 0.5 }}
+        >
+          Get early access
+        </motion.button>
+      </form>
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2 }}
+            className="mt-2.5 text-center text-[13px]"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,100,100,0.8)",
+            }}
+          >
+            Please enter a valid email address.
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -304,37 +304,58 @@ function SurveyPopup({
 }) {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({
-    role: "",
-    technical: "",
-    aiSetup: "",
-    budget: "",
-    useCases: [] as string[],
+    roles: [] as string[],
+    experience: [] as string[],
+    aiProviders: [] as string[],
   });
+  const [otherAiProvider, setOtherAiProvider] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
-  const totalSteps = 4;
+  const showExperience = !answers.aiProviders.includes("None");
+  const totalSteps = showExperience ? 3 : 2;
 
-  const handleUseCaseToggle = (useCase: string) => {
-    setAnswers((prev) => ({
-      ...prev,
-      useCases: prev.useCases.includes(useCase)
-        ? prev.useCases.filter((u) => u !== useCase)
-        : prev.useCases.length < 3
-          ? [...prev.useCases, useCase]
-          : prev.useCases,
-    }));
+  const handleToggle = (field: keyof typeof answers, value: string) => {
+    setAnswers((prev) => {
+      const current = prev[field];
+      if (field === "aiProviders") {
+        if (value === "None") {
+          setOtherAiProvider("");
+          return { ...prev, [field]: current.includes("None") ? [] : ["None"] };
+        }
+        if (value === "Other") {
+          if (current.includes("Other")) {
+            setOtherAiProvider("");
+            return { ...prev, [field]: current.filter((v) => v !== "Other") };
+          }
+          return { ...prev, [field]: [...current.filter((v) => v !== "None"), "Other"] };
+        }
+        const without = current.filter((v) => v !== "None");
+        return {
+          ...prev,
+          [field]: without.includes(value)
+            ? without.filter((v) => v !== value)
+            : [...without, value],
+        };
+      }
+      return {
+        ...prev,
+        [field]: current.includes(value)
+          ? current.filter((v) => v !== value)
+          : [...current, value],
+      };
+    });
   };
 
   const canProceed = () => {
     switch (step) {
       case 0:
-        return answers.role !== "";
+        return answers.roles.length > 0;
       case 1:
-        return answers.technical !== "";
+        if (answers.aiProviders.length === 0) return false;
+        if (answers.aiProviders.includes("Other") && otherAiProvider.trim() === "") return false;
+        return true;
       case 2:
-        return answers.aiSetup !== "" && answers.budget !== "";
-      case 3:
-        return answers.useCases.length > 0;
+        return answers.experience.length > 0;
       default:
         return false;
     }
@@ -345,7 +366,7 @@ function SurveyPopup({
       setStep(step + 1);
     } else {
       // TODO: Replace with actual API call to store survey responses
-      console.log("Survey submitted:", { email, ...answers });
+      console.log("Survey submitted:", { email, ...answers, ...(otherAiProvider.trim() && { otherAiProvider: otherAiProvider.trim() }) });
       setSubmitted(true);
     }
   };
@@ -386,7 +407,7 @@ function SurveyPopup({
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1 transition-colors"
+          className="absolute top-4 right-4 z-10 p-1 transition-colors"
           style={{ color: "rgba(255,255,255,0.3)" }}
           onMouseEnter={(e) =>
             (e.currentTarget.style.color = "rgba(255,255,255,0.7)")
@@ -430,7 +451,7 @@ function SurveyPopup({
         ) : (
           <>
             {/* Progress bar */}
-            <div className="mb-8 flex gap-1.5">
+            <div className="mt-4 mb-8 flex gap-1.5">
               {Array.from({ length: totalSteps }).map((_, i) => (
                 <div
                   key={i}
@@ -464,26 +485,36 @@ function SurveyPopup({
                     color: "rgba(255,255,255,0.4)",
                   }}
                 >
-                  Quick survey so we can tailor your experience.
+                  Select all that apply.
                 </p>
                 <div className="flex flex-col gap-2">
-                  {roleOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() =>
-                        setAnswers({ ...answers, role: option })
-                      }
-                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
-                      style={optionButtonStyle(answers.role === option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
+                  {jobRoleOptions.map((option) => {
+                    const selected = answers.roles.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        onClick={() => handleToggle("roles", option)}
+                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                        style={optionButtonStyle(selected)}
+                      >
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                          style={{
+                            border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
+                            backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
+                          }}
+                        >
+                          {selected && <Check size={14} strokeWidth={2} />}
+                        </span>
+                        {option}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Step 1: Technical level */}
+            {/* Step 1: AI providers */}
             {step === 1 && (
               <div>
                 <h3
@@ -493,7 +524,7 @@ function SurveyPopup({
                     fontWeight: 600,
                   }}
                 >
-                  How technical are you?
+                  AI Agents you currently use
                 </h3>
                 <p
                   className="text-sm mb-6"
@@ -502,27 +533,52 @@ function SurveyPopup({
                     color: "rgba(255,255,255,0.4)",
                   }}
                 >
-                  Helps us calibrate the onboarding.
+                  Select all that apply.
                 </p>
                 <div className="flex flex-col gap-2">
-                  {technicalOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() =>
-                        setAnswers({ ...answers, technical: option })
-                      }
-                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
-                      style={optionButtonStyle(answers.technical === option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
+                  {[...aiProviderOptions, "Other"].map((option) => {
+                    const selected = answers.aiProviders.includes(option);
+                    return (
+                      <div key={option}>
+                        <button
+                          onClick={() => handleToggle("aiProviders", option)}
+                          className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                          style={optionButtonStyle(selected)}
+                        >
+                          <span
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                            style={{
+                              border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
+                              backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
+                            }}
+                          >
+                            {selected && <Check size={14} strokeWidth={2} />}
+                          </span>
+                          {option}
+                        </button>
+                        {option === "Other" && selected && (
+                          <input
+                            type="text"
+                            value={otherAiProvider}
+                            onChange={(e) => setOtherAiProvider(e.target.value)}
+                            placeholder="Which AI agent?"
+                            autoFocus
+                            className="mt-2 w-full rounded-lg border px-4 py-2.5 text-[14px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/30 transition-colors"
+                            style={{
+                              fontFamily: "var(--font-dm-sans)",
+                              borderColor: "rgba(255,255,255,0.12)",
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Step 2: AI setup + budget */}
-            {step === 2 && (
+            {/* Step 2: Experience (only if they use AI agents) */}
+            {step === 2 && showExperience && (
               <div>
                 <h3
                   className="text-lg text-white mb-1"
@@ -531,69 +587,12 @@ function SurveyPopup({
                     fontWeight: 600,
                   }}
                 >
-                  What&apos;s your current AI setup?
-                </h3>
-                <p
-                  className="text-sm mb-4"
-                  style={{
-                    fontFamily: "var(--font-dm-sans)",
-                    color: "rgba(255,255,255,0.4)",
-                  }}
-                >
-                  Select the option that fits best.
-                </p>
-                <div className="flex flex-col gap-2 mb-6">
-                  {aiSetupOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() =>
-                        setAnswers({ ...answers, aiSetup: option })
-                      }
-                      className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
-                      style={optionButtonStyle(answers.aiSetup === option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-
-                <h3
-                  className="text-lg text-white mb-1"
-                  style={{
-                    fontFamily: "var(--font-dm-sans)",
-                    fontWeight: 600,
-                  }}
-                >
-                  Monthly budget for an AI marketing agent?
-                </h3>
-                <div className="flex flex-wrap gap-2 mt-4">
-                  {budgetOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() =>
-                        setAnswers({ ...answers, budget: option })
-                      }
-                      className="rounded-full px-4 py-2 text-[13px] transition-colors"
-                      style={optionButtonStyle(answers.budget === option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Use cases */}
-            {step === 3 && (
-              <div>
-                <h3
-                  className="text-lg text-white mb-1"
-                  style={{
-                    fontFamily: "var(--font-dm-sans)",
-                    fontWeight: 600,
-                  }}
-                >
-                  What would you use it for first?
+                  Level of experience with{" "}
+                  {answers.aiProviders
+                    .filter((v) => v !== "None")
+                    .map((v) => (v === "Other" ? otherAiProvider.trim() : v))
+                    .filter(Boolean)
+                    .join(", ")}
                 </h3>
                 <p
                   className="text-sm mb-6"
@@ -602,20 +601,27 @@ function SurveyPopup({
                     color: "rgba(255,255,255,0.4)",
                   }}
                 >
-                  Pick up to 3 that matter most.
+                  Select all that apply.
                 </p>
                 <div className="flex flex-col gap-2">
-                  {useCaseOptions.map((option) => {
-                    const selected = answers.useCases.includes(option);
-                    const disabled = !selected && answers.useCases.length >= 3;
+                  {experienceOptions.map((option) => {
+                    const selected = answers.experience.includes(option);
                     return (
                       <button
                         key={option}
-                        onClick={() => handleUseCaseToggle(option)}
-                        disabled={disabled}
-                        className="w-full rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
-                        style={optionButtonStyle(selected, disabled)}
+                        onClick={() => handleToggle("experience", option)}
+                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                        style={optionButtonStyle(selected)}
                       >
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                          style={{
+                            border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
+                            backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
+                          }}
+                        >
+                          {selected && <Check size={14} strokeWidth={2} />}
+                        </span>
                         {option}
                       </button>
                     );
