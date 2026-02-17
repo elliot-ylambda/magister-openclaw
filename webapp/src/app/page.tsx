@@ -94,10 +94,20 @@ const experienceOptions = ["Beginner", "Intermediate", "Advanced", "Expert"];
 const aiProviderOptions = ["Claude Code", "Codex", "OpenClaw", "None"];
 const channelOptions = ["Slack", "Email", "WhatsApp", "Discord"];
 const useCaseOptions = [
-  "Write landing pages & website copy",
-  "Run SEO audits & improvements",
-  "Create email sequences & campaigns",
-  "Manage paid ads (Google, Meta, LinkedIn)",
+  "Landing pages & website copy",
+  "SEO audits & improvements",
+  "Email sequences & campaigns",
+  "Paid ads management",
+  "Social media content",
+  "Conversion optimization",
+  "Competitor analysis",
+  "Content strategy",
+  "Analytics & reporting",
+  "Pricing & packaging",
+  "Launch strategy",
+  "Referral programs",
+  "Programmatic SEO",
+  "Free tool building",
 ];
 
 const personas = [
@@ -278,7 +288,7 @@ function EmailForm({
   };
 
   return (
-    <div className="w-full max-w-md">
+    <div className="w-full max-w-xl">
       <form onSubmit={handleSubmit} noValidate className="flex w-full gap-3">
         <input
           id={id}
@@ -290,7 +300,7 @@ function EmailForm({
           }}
           disabled={isLoading}
           placeholder="you@company.com"
-          className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors disabled:opacity-50"
+          className="flex-1 rounded-full border px-6 py-4 text-[16px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors disabled:opacity-50"
           style={{
             fontFamily: "var(--font-dm-sans)",
             borderColor: "rgba(255,255,255,0.15)",
@@ -299,16 +309,29 @@ function EmailForm({
         <motion.button
           type="submit"
           disabled={isLoading}
-          className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+          className="relative overflow-hidden rounded-full bg-white px-8 py-4 text-[16px] font-medium text-black whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ fontFamily: "var(--font-dm-sans)" }}
           animate={
             shaking
               ? { x: [0, -8, 8, -6, 6, -3, 3, 0] }
-              : { x: 0 }
+              : {}
           }
           transition={{ duration: 0.5 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.97 }}
         >
-          {isLoading ? "Joining..." : "Get early access"}
+          <span className="relative z-10">
+            {isLoading ? "Joining..." : "Get early access"}
+          </span>
+          <motion.span
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%)",
+            }}
+            initial={{ translateX: "-100%" }}
+            animate={{ translateX: "100%" }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut", repeatDelay: 2 }}
+          />
         </motion.button>
       </form>
       <AnimatePresence>
@@ -813,7 +836,7 @@ function SurveyPopup({
                     fontWeight: 600,
                   }}
                 >
-                  What do you want to use the agent for?
+                  What would you use it for first?
                 </h3>
                 <p
                   className="text-sm mb-6"
@@ -822,27 +845,27 @@ function SurveyPopup({
                     color: "rgba(255,255,255,0.4)",
                   }}
                 >
-                  Select all that apply.
+                  Pick your top 3.
                 </p>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
                   {useCaseOptions.map((option) => {
                     const selected = answers.useCases.includes(option);
+                    const disabled = !selected && answers.useCases.length >= 3;
                     return (
                       <button
                         key={option}
-                        onClick={() => handleToggle("useCases", option)}
-                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
-                        style={optionButtonStyle(selected)}
+                        onClick={() => {
+                          if (disabled) return;
+                          setAnswers((prev) => ({
+                            ...prev,
+                            useCases: selected
+                              ? prev.useCases.filter((u) => u !== option)
+                              : [...prev.useCases, option],
+                          }));
+                        }}
+                        className="rounded-full px-4 py-2 text-[13px] transition-colors"
+                        style={optionButtonStyle(selected, disabled)}
                       >
-                        <span
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
-                          style={{
-                            border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
-                            backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
-                          }}
-                        >
-                          {selected && <Check size={14} strokeWidth={2} />}
-                        </span>
                         {option}
                       </button>
                     );
@@ -1135,7 +1158,7 @@ function Hero({
           delay: 0.65,
           ease: [0.25, 0.1, 0.25, 1],
         }}
-        className="mt-10"
+        className="mt-10 w-full max-w-xl"
       >
         <EmailForm onSubmit={onEmailSubmit} id="hero-email" />
       </motion.div>
@@ -2273,7 +2296,7 @@ function CtaSection({
               fontWeight: 400,
             }}
           >
-            Get early access
+            Ready to stop doing it all yourself?
           </h2>
           <p
             className="mx-auto mt-6 max-w-md text-base"
