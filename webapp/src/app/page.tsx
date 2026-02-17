@@ -9,6 +9,7 @@ import {
   useTransform,
   AnimatePresence,
 } from "motion/react";
+import { insertWaitlistEmail, updateWaitlistSurvey } from "./actions";
 import {
   PenTool,
   Search,
@@ -91,6 +92,13 @@ const steps = [
 const jobRoleOptions = ["Developer", "Marketer", "Founder", "Designer"];
 const experienceOptions = ["Beginner", "Intermediate", "Advanced", "Expert"];
 const aiProviderOptions = ["Claude Code", "Codex", "OpenClaw", "None"];
+const channelOptions = ["Slack", "Email", "WhatsApp", "Discord"];
+const useCaseOptions = [
+  "Write landing pages & website copy",
+  "Run SEO audits & improvements",
+  "Create email sequences & campaigns",
+  "Manage paid ads (Google, Meta, LinkedIn)",
+];
 
 const personas = [
   {
@@ -216,26 +224,38 @@ function EmailForm({
   onSubmit,
   id,
 }: {
-  onSubmit: (email: string) => void;
+  onSubmit: (email: string) => Promise<{ success: boolean; error?: string }>;
   id: string;
 }) {
   const [email, setEmail] = useState("");
   const [shaking, setShaking] = useState(false);
-  const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
+  const triggerShake = () => {
+    setShaking(true);
+    setTimeout(() => setShaking(false), 500);
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = email.trim();
     if (!EMAIL_REGEX.test(trimmed)) {
-      setShaking(true);
-      setError(true);
+      triggerShake();
+      setErrorMessage("Please enter a valid email address.");
       setEmail("");
-      setTimeout(() => setShaking(false), 500);
-      setTimeout(() => setError(false), 3000);
+      setTimeout(() => setErrorMessage(null), 3000);
       return;
     }
-    onSubmit(trimmed);
-    setEmail("");
+    setIsLoading(true);
+    setErrorMessage(null);
+    const result = await onSubmit(trimmed);
+    setIsLoading(false);
+    if (!result.success) {
+      triggerShake();
+      setErrorMessage(result.error ?? "Something went wrong.");
+      setTimeout(() => setErrorMessage(null), 4000);
+    }
   };
 
   return (
@@ -247,10 +267,11 @@ function EmailForm({
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
-            if (error) setError(false);
+            if (errorMessage) setErrorMessage(null);
           }}
+          disabled={isLoading}
           placeholder="you@company.com"
-          className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors"
+          className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors disabled:opacity-50"
           style={{
             fontFamily: "var(--font-dm-sans)",
             borderColor: "rgba(255,255,255,0.15)",
@@ -258,7 +279,8 @@ function EmailForm({
         />
         <motion.button
           type="submit"
-          className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap"
+          disabled={isLoading}
+          className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ fontFamily: "var(--font-dm-sans)" }}
           animate={
             shaking
@@ -267,11 +289,11 @@ function EmailForm({
           }
           transition={{ duration: 0.5 }}
         >
-          Get early access
+          {isLoading ? "Joining..." : "Get early access"}
         </motion.button>
       </form>
       <AnimatePresence>
-        {error && (
+        {errorMessage && (
           <motion.p
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
@@ -283,7 +305,7 @@ function EmailForm({
               color: "rgba(255,100,100,0.8)",
             }}
           >
-            Please enter a valid email address.
+            {errorMessage}
           </motion.p>
         )}
       </AnimatePresence>
@@ -307,12 +329,17 @@ function SurveyPopup({
     roles: [] as string[],
     experience: [] as string[],
     aiProviders: [] as string[],
+    channels: [] as string[],
+    useCases: [] as string[],
   });
   const [otherAiProvider, setOtherAiProvider] = useState("");
+  const [otherChannel, setOtherChannel] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const showExperience = !answers.aiProviders.includes("None");
-  const totalSteps = showExperience ? 3 : 2;
+  const totalSteps = showExperience ? 5 : 4;
 
   const handleToggle = (field: keyof typeof answers, value: string) => {
     setAnswers((prev) => {
@@ -337,6 +364,21 @@ function SurveyPopup({
             : [...without, value],
         };
       }
+      if (field === "channels") {
+        if (value === "Other") {
+          if (current.includes("Other")) {
+            setOtherChannel("");
+            return { ...prev, [field]: current.filter((v) => v !== "Other") };
+          }
+          return { ...prev, [field]: [...current, "Other"] };
+        }
+        return {
+          ...prev,
+          [field]: current.includes(value)
+            ? current.filter((v) => v !== value)
+            : [...current, value],
+        };
+      }
       return {
         ...prev,
         [field]: current.includes(value)
@@ -346,27 +388,76 @@ function SurveyPopup({
     });
   };
 
+  // Map step index to logical field, accounting for conditional experience step
+  // showExperience=true:  0=roles, 1=aiProviders, 2=experience, 3=channels, 4=useCases
+  // showExperience=false: 0=roles, 1=aiProviders, 2=channels, 3=useCases
+  const getStepField = (s: number): string => {
+    if (s === 0) return "roles";
+    if (s === 1) return "aiProviders";
+    if (showExperience && s === 2) return "experience";
+    const offset = showExperience ? 3 : 2;
+    if (s === offset) return "channels";
+    if (s === offset + 1) return "useCases";
+    return "";
+  };
+
   const canProceed = () => {
-    switch (step) {
-      case 0:
+    const field = getStepField(step);
+    switch (field) {
+      case "roles":
         return answers.roles.length > 0;
-      case 1:
+      case "aiProviders":
         if (answers.aiProviders.length === 0) return false;
         if (answers.aiProviders.includes("Other") && otherAiProvider.trim() === "") return false;
         return true;
-      case 2:
+      case "experience":
         return answers.experience.length > 0;
+      case "channels":
+        if (answers.channels.length === 0) return false;
+        if (answers.channels.includes("Other") && otherChannel.trim() === "") return false;
+        return true;
+      case "useCases":
+        return answers.useCases.length > 0;
       default:
         return false;
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    let result: { success: boolean; error?: string };
+    const field = getStepField(step);
+
+    if (field === "roles") {
+      result = await updateWaitlistSurvey(email, { roles: answers.roles });
+    } else if (field === "aiProviders") {
+      const resolvedProviders = answers.aiProviders.map((v) =>
+        v === "Other" ? otherAiProvider.trim() : v
+      ).filter(Boolean);
+      result = await updateWaitlistSurvey(email, { ai_providers: resolvedProviders });
+    } else if (field === "experience") {
+      result = await updateWaitlistSurvey(email, { experience: answers.experience });
+    } else if (field === "channels") {
+      const resolvedChannels = answers.channels.map((v) =>
+        v === "Other" ? otherChannel.trim() : v
+      ).filter(Boolean);
+      result = await updateWaitlistSurvey(email, { channels: resolvedChannels });
+    } else {
+      result = await updateWaitlistSurvey(email, { use_cases: answers.useCases });
+    }
+
+    setIsSubmitting(false);
+
+    if (!result.success) {
+      setSubmitError(result.error ?? "Something went wrong.");
+      return;
+    }
+
     if (step < totalSteps - 1) {
       setStep(step + 1);
     } else {
-      // TODO: Replace with actual API call to store survey responses
-      console.log("Survey submitted:", { email, ...answers, ...(otherAiProvider.trim() && { otherAiProvider: otherAiProvider.trim() }) });
       setSubmitted(true);
     }
   };
@@ -578,7 +669,7 @@ function SurveyPopup({
             )}
 
             {/* Step 2: Experience (only if they use AI agents) */}
-            {step === 2 && showExperience && (
+            {getStepField(step) === "experience" && (
               <div>
                 <h3
                   className="text-lg text-white mb-1"
@@ -630,6 +721,117 @@ function SurveyPopup({
               </div>
             )}
 
+            {/* Channels step */}
+            {getStepField(step) === "channels" && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  How do you want to talk to your agent?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Select all that apply.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {[...channelOptions, "Other"].map((option) => {
+                    const selected = answers.channels.includes(option);
+                    return (
+                      <div key={option}>
+                        <button
+                          onClick={() => handleToggle("channels", option)}
+                          className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                          style={optionButtonStyle(selected)}
+                        >
+                          <span
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                            style={{
+                              border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
+                              backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
+                            }}
+                          >
+                            {selected && <Check size={14} strokeWidth={2} />}
+                          </span>
+                          {option}
+                        </button>
+                        {option === "Other" && selected && (
+                          <input
+                            type="text"
+                            value={otherChannel}
+                            onChange={(e) => setOtherChannel(e.target.value)}
+                            placeholder="Which channel?"
+                            autoFocus
+                            className="mt-2 w-full rounded-lg border px-4 py-2.5 text-[14px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/30 transition-colors"
+                            style={{
+                              fontFamily: "var(--font-dm-sans)",
+                              borderColor: "rgba(255,255,255,0.12)",
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Use cases step */}
+            {getStepField(step) === "useCases" && (
+              <div>
+                <h3
+                  className="text-lg text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    fontWeight: 600,
+                  }}
+                >
+                  What do you want to use the agent for?
+                </h3>
+                <p
+                  className="text-sm mb-6"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  Select all that apply.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {useCaseOptions.map((option) => {
+                    const selected = answers.useCases.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        onClick={() => handleToggle("useCases", option)}
+                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
+                        style={optionButtonStyle(selected)}
+                      >
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                          style={{
+                            border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
+                            backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
+                          }}
+                        >
+                          {selected && <Check size={14} strokeWidth={2} />}
+                        </span>
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Navigation */}
             <div className="mt-8 flex items-center justify-between">
               {step > 0 ? (
@@ -655,14 +857,23 @@ function SurveyPopup({
               )}
               <button
                 onClick={handleNext}
-                disabled={!canProceed()}
+                disabled={!canProceed() || isSubmitting}
                 className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-[14px] font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
                 style={{ fontFamily: "var(--font-dm-sans)" }}
               >
-                {step === totalSteps - 1 ? "Submit" : "Next"}
-                <ChevronRight size={16} />
+                {isSubmitting ? "Saving..." : step === totalSteps - 1 ? "Finish" : "Next"}
+                {!isSubmitting && <ChevronRight size={16} />}
               </button>
             </div>
+
+            {submitError && (
+              <p
+                className="mt-3 text-center text-sm"
+                style={{ fontFamily: "var(--font-dm-sans)", color: "rgba(239,68,68,0.9)" }}
+              >
+                {submitError}
+              </p>
+            )}
           </>
         )}
       </motion.div>
@@ -758,7 +969,7 @@ function Nav() {
 function Hero({
   onEmailSubmit,
 }: {
-  onEmailSubmit: (email: string) => void;
+  onEmailSubmit: (email: string) => Promise<{ success: boolean; error?: string }>;
 }) {
   return (
     <section className="relative flex flex-col items-center px-6 pt-48 pb-32 md:pt-56 md:pb-48 text-center overflow-hidden">
@@ -1938,7 +2149,7 @@ function AboutSection() {
 function CtaSection({
   onEmailSubmit,
 }: {
-  onEmailSubmit: (email: string) => void;
+  onEmailSubmit: (email: string) => Promise<{ success: boolean; error?: string }>;
 }) {
   return (
     <section id="request-access" className="px-6 py-32 md:py-48">
@@ -2023,9 +2234,15 @@ export default function Home() {
   const [showSurvey, setShowSurvey] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState("");
 
-  const handleEmailSubmit = (email: string) => {
-    setSubmittedEmail(email);
-    setShowSurvey(true);
+  const handleEmailSubmit = async (
+    email: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const result = await insertWaitlistEmail(email);
+    if (result.success) {
+      setSubmittedEmail(email.toLowerCase().trim());
+      setShowSurvey(true);
+    }
+    return result;
   };
 
   return (

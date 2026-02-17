@@ -14,6 +14,10 @@ Marketing landing page for **Magister Marketing** — an autonomous AI marketing
 | Dev server | `make dev` (runs on port 3020) |
 | Build | `make build` |
 | Lint | `make lint` |
+| Start local Supabase | `make supabase-start-local` |
+| Run migrations on local DB | `make supabase-migrate-local` |
+| Reset local DB | `make supabase-reset-local` |
+| Connect to local DB (psql) | `make connect-local-db` |
 
 Package manager is **pnpm** (not npm/yarn).
 
