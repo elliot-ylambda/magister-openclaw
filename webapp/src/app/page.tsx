@@ -94,10 +94,20 @@ const experienceOptions = ["Beginner", "Intermediate", "Advanced", "Expert"];
 const aiProviderOptions = ["Claude Code", "Codex", "OpenClaw", "None"];
 const channelOptions = ["Slack", "Email", "WhatsApp", "Discord"];
 const useCaseOptions = [
-  "Write landing pages & website copy",
-  "Run SEO audits & improvements",
-  "Create email sequences & campaigns",
-  "Manage paid ads (Google, Meta, LinkedIn)",
+  "Landing pages & website copy",
+  "SEO audits & improvements",
+  "Email sequences & campaigns",
+  "Paid ads management",
+  "Social media content",
+  "Conversion optimization",
+  "Competitor analysis",
+  "Content strategy",
+  "Analytics & reporting",
+  "Pricing & packaging",
+  "Launch strategy",
+  "Referral programs",
+  "Programmatic SEO",
+  "Free tool building",
 ];
 
 const personas = [
@@ -122,12 +132,12 @@ const personas = [
 ];
 
 const comparisonRows = [
-  { label: "Gives you advice", chatbot: true, agency: true, magister: true },
-  { label: "Actually does the work", chatbot: false, agency: true, magister: true },
-  { label: "Works in your tools", chatbot: false, agency: "Sometimes", magister: true },
-  { label: "Available 24/7", chatbot: true, agency: false, magister: true },
-  { label: "Knows your brand context", chatbot: "Per session", agency: "Eventually", magister: true },
-  { label: "Cost", chatbot: "$20/mo + your time", agency: "$2k–10k/mo", magister: "Early access" },
+  { label: "Gives you advice", chatbot: true, magister: true },
+  { label: "Actually does the work", chatbot: false, magister: true },
+  { label: "Works in your tools", chatbot: false, magister: true },
+  { label: "Available 24/7", chatbot: true, magister: true },
+  { label: "Knows your brand context", chatbot: "Per session", magister: true },
+  { label: "Cost", chatbot: "$20/mo + your time", magister: "Early access" },
 ];
 
 const faqItems = [
@@ -183,6 +193,25 @@ const chatScript: ChatMessage[] = [
     content:
       'Done. Updated copy is in your staging environment:\n\n• New headline: "Start closing more deals today"\n• Consolidated 4 plans to 3 with a recommended badge\n• Added customer quote above the CTA\n\nReady to review?',
   },
+];
+
+const integrations = [
+  { name: "Google Analytics", logo: "/integrations/googleanalytics.svg" },
+  { name: "Google Ads", logo: "/integrations/googleads.svg" },
+  { name: "Meta Ads", logo: "/integrations/meta.svg" },
+  { name: "HubSpot", logo: "/integrations/hubspot.svg" },
+  { name: "Kit", logo: "/integrations/kit.svg" },
+  { name: "Stripe", logo: "/integrations/stripe.svg" },
+  { name: "Ahrefs", logo: "/integrations/ahrefs.svg" },
+  { name: "Zapier", logo: "/integrations/zapier.svg" },
+  { name: "PostHog", logo: "/integrations/posthog.svg" },
+  { name: "Webflow", logo: "/integrations/webflow.svg" },
+  { name: "Buffer", logo: "/integrations/buffer.svg" },
+  { name: "Intercom", logo: "/integrations/intercom.svg" },
+  { name: "Notion", logo: "/integrations/notion.svg" },
+  { name: "Search Console", logo: "/integrations/googlesearchconsole.svg" },
+  { name: "Hotjar", logo: "/integrations/hotjar.svg" },
+  { name: "Mixpanel", logo: "/integrations/mixpanel.svg" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -259,7 +288,7 @@ function EmailForm({
   };
 
   return (
-    <div className="w-full max-w-md">
+    <div className="w-full max-w-xl">
       <form onSubmit={handleSubmit} noValidate className="flex w-full gap-3">
         <input
           id={id}
@@ -271,7 +300,7 @@ function EmailForm({
           }}
           disabled={isLoading}
           placeholder="you@company.com"
-          className="flex-1 rounded-full border px-5 py-3.5 text-[15px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors disabled:opacity-50"
+          className="flex-1 rounded-full border px-6 py-4 text-[16px] text-white placeholder:text-white/30 bg-transparent outline-none focus:border-white/40 transition-colors disabled:opacity-50"
           style={{
             fontFamily: "var(--font-dm-sans)",
             borderColor: "rgba(255,255,255,0.15)",
@@ -280,16 +309,29 @@ function EmailForm({
         <motion.button
           type="submit"
           disabled={isLoading}
-          className="rounded-full bg-white px-6 py-3.5 text-[15px] font-medium text-black transition-opacity duration-300 hover:opacity-90 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+          className="relative overflow-hidden rounded-full bg-white px-8 py-4 text-[16px] font-medium text-black whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ fontFamily: "var(--font-dm-sans)" }}
           animate={
             shaking
               ? { x: [0, -8, 8, -6, 6, -3, 3, 0] }
-              : { x: 0 }
+              : {}
           }
           transition={{ duration: 0.5 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.97 }}
         >
-          {isLoading ? "Joining..." : "Get early access"}
+          <span className="relative z-10">
+            {isLoading ? "Joining..." : "Get early access"}
+          </span>
+          <motion.span
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: "linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%)",
+            }}
+            initial={{ translateX: "-100%" }}
+            animate={{ translateX: "100%" }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut", repeatDelay: 2 }}
+          />
         </motion.button>
       </form>
       <AnimatePresence>
@@ -794,7 +836,7 @@ function SurveyPopup({
                     fontWeight: 600,
                   }}
                 >
-                  What do you want to use the agent for?
+                  What would you use it for first?
                 </h3>
                 <p
                   className="text-sm mb-6"
@@ -803,27 +845,27 @@ function SurveyPopup({
                     color: "rgba(255,255,255,0.4)",
                   }}
                 >
-                  Select all that apply.
+                  Pick your top 3.
                 </p>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
                   {useCaseOptions.map((option) => {
                     const selected = answers.useCases.includes(option);
+                    const disabled = !selected && answers.useCases.length >= 3;
                     return (
                       <button
                         key={option}
-                        onClick={() => handleToggle("useCases", option)}
-                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
-                        style={optionButtonStyle(selected)}
+                        onClick={() => {
+                          if (disabled) return;
+                          setAnswers((prev) => ({
+                            ...prev,
+                            useCases: selected
+                              ? prev.useCases.filter((u) => u !== option)
+                              : [...prev.useCases, option],
+                          }));
+                        }}
+                        className="rounded-full px-4 py-2 text-[13px] transition-colors"
+                        style={optionButtonStyle(selected, disabled)}
                       >
-                        <span
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
-                          style={{
-                            border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
-                            backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
-                          }}
-                        >
-                          {selected && <Check size={14} strokeWidth={2} />}
-                        </span>
                         {option}
                       </button>
                     );
@@ -1102,9 +1144,9 @@ function Hero({
         }}
       >
         Other AI tools give you a draft and send you on your way. Magister
-        is an autonomous marketing agent that works in your tools — writing
-        copy, auditing SEO, building email sequences. You give it a task.
-        It gets it done.
+        is an autonomous marketing agent that works in your tools — auditing
+        SEO, building email sequences, managing ads, building reports,
+        scheduling social content. You give it a task. It gets it done.
       </motion.p>
 
       {/* Email CTA */}
@@ -1116,7 +1158,7 @@ function Hero({
           delay: 0.65,
           ease: [0.25, 0.1, 0.25, 1],
         }}
-        className="mt-10"
+        className="mt-10 w-full max-w-xl"
       >
         <EmailForm onSubmit={onEmailSubmit} id="hero-email" />
       </motion.div>
@@ -1173,7 +1215,7 @@ function ProblemSection() {
           >
             You ask AI for help with your marketing. It gives you a plan, a
             draft, maybe some suggestions. Then you close the chat and spend
-            the next 3 hours implementing it yourself.
+            the next 3 days implementing it yourself.
           </p>
           <p
             className="mt-8 text-xl md:text-2xl text-white"
@@ -1560,6 +1602,86 @@ function DemoSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Integrations Section
+// ---------------------------------------------------------------------------
+
+function IntegrationsSection() {
+  return (
+    <section className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-5xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Integrations</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Works with the tools you already use.
+          </h2>
+        </FadeUp>
+
+        <FadeUp delay={0.15}>
+          <div className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {integrations.map((integration) => (
+              <div
+                key={integration.name}
+                className="flex flex-col items-center justify-center gap-3 rounded-lg py-8 px-4 transition-colors duration-300"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor =
+                    "rgba(255,255,255,0.12)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor =
+                    "rgba(255,255,255,0.06)")
+                }
+              >
+                <Image
+                  src={integration.logo}
+                  alt={integration.name}
+                  width={28}
+                  height={28}
+                  style={{ opacity: 0.6 }}
+                />
+                <span
+                  className="text-[12px] text-center"
+                  style={{
+                    fontFamily: "var(--font-dm-sans)",
+                    color: "rgba(255,255,255,0.4)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {integration.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        </FadeUp>
+
+        <FadeUp delay={0.25}>
+          <p
+            className="mt-8 text-center text-[14px]"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            And more coming soon.
+          </p>
+        </FadeUp>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Personas Section
 // ---------------------------------------------------------------------------
 
@@ -1714,12 +1836,6 @@ function ComparisonSection() {
                     ChatGPT / Claude
                   </th>
                   <th
-                    className="px-6 py-4 text-[13px] font-medium text-center"
-                    style={{ color: "rgba(255,255,255,0.4)" }}
-                  >
-                    Agency / Freelancer
-                  </th>
-                  <th
                     className="px-6 py-4 text-[13px] font-medium text-center text-white"
                   >
                     Magister
@@ -1746,11 +1862,6 @@ function ComparisonSection() {
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center">
                         <ComparisonCell value={row.chatbot} />
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex justify-center">
-                        <ComparisonCell value={row.agency} />
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center">
@@ -1821,7 +1932,7 @@ function PricingSection() {
               fontWeight: 400,
             }}
           >
-            Simple pricing. No seat math.
+            The marketing team you&apos;ve been putting off hiring.
           </h2>
         </FadeUp>
 
@@ -2071,7 +2182,17 @@ function AboutSection() {
                     color: "rgba(255,255,255,0.5)",
                   }}
                 >
-                  Founder of Conversion Factory, a SaaS marketing agency.
+                  Founder of{" "}
+                  <a
+                    href="https://conversionfactory.co"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4 decoration-white/30 hover:decoration-white/60 transition-colors"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+                  >
+                    Conversion Factory
+                  </a>
+                  , a SaaS marketing agency.
                   Creator of{" "}
                   <a
                     href="https://github.com/coreyhaines31/marketingskills"
@@ -2116,7 +2237,17 @@ function AboutSection() {
                 >
                   Co-founder and OpenClaw power user. Has led machine learning
                   engineering for startups serving millions of users. Also
-                  building SwipeWell.
+                  building{" "}
+                  <a
+                    href="https://swipewell.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4 decoration-white/30 hover:decoration-white/60 transition-colors"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+                  >
+                    SwipeWell
+                  </a>
+                  .
                 </p>
               </div>
             </FadeUp>
@@ -2165,7 +2296,7 @@ function CtaSection({
               fontWeight: 400,
             }}
           >
-            Get early access
+            Ready to stop doing it all yourself?
           </h2>
           <p
             className="mx-auto mt-6 max-w-md text-base"
@@ -2263,6 +2394,7 @@ export default function Home() {
       <HowItWorksSection />
       <DemoSection />
       <SkillsSection />
+      <IntegrationsSection />
       <PersonasSection />
       <ComparisonSection />
       <PricingSection />
