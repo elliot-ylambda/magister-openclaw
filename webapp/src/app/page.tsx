@@ -92,7 +92,7 @@ const steps = [
 const jobRoleOptions = ["Developer", "Marketer", "Founder", "Designer"];
 const experienceOptions = ["Beginner", "Intermediate", "Advanced", "Expert"];
 const aiProviderOptions = ["Claude Code", "Codex", "OpenClaw", "None"];
-const channelOptions = ["Slack", "Email", "WhatsApp", "Discord"];
+const channelOptions = ["Web App", "Slack", "Email", "WhatsApp", "Discord", "Text"];
 const useCaseOptions = [
   "Landing pages & website copy",
   "SEO audits & improvements",
@@ -289,7 +289,7 @@ function EmailForm({
 
   return (
     <div className="w-full max-w-xl">
-      <form onSubmit={handleSubmit} noValidate className="flex w-full gap-3">
+      <form onSubmit={handleSubmit} noValidate className="flex w-full flex-col sm:flex-row gap-3">
         <input
           id={id}
           type="email"
@@ -847,7 +847,7 @@ function SurveyPopup({
                 >
                   Pick your top 3.
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1">
                   {useCaseOptions.map((option) => {
                     const selected = answers.useCases.includes(option);
                     const disabled = !selected && answers.useCases.length >= 3;
@@ -863,9 +863,18 @@ function SurveyPopup({
                               : [...prev.useCases, option],
                           }));
                         }}
-                        className="rounded-full px-4 py-2 text-[13px] transition-colors"
+                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-[14px] transition-colors"
                         style={optionButtonStyle(selected, disabled)}
                       >
+                        <span
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                          style={{
+                            border: `1px solid ${selected ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.12)"}`,
+                            backgroundColor: selected ? "rgba(255,255,255,0.1)" : "transparent",
+                          }}
+                        >
+                          {selected && <Check size={14} strokeWidth={2} />}
+                        </span>
                         {option}
                       </button>
                     );
@@ -1014,7 +1023,7 @@ function Hero({
   onEmailSubmit: (email: string) => Promise<{ success: boolean; error?: string }>;
 }) {
   return (
-    <section className="relative flex flex-col items-center px-6 pt-48 pb-32 md:pt-56 md:pb-48 text-center overflow-hidden">
+    <section className="relative flex flex-col items-center px-6 pt-48 pb-16 md:pt-56 md:pb-32 text-center overflow-hidden">
       {/* Animated gradient orbs */}
       <div
         className="absolute pointer-events-none"
@@ -1168,7 +1177,7 @@ function Hero({
         initial={{ opacity: 0, scaleX: 0 }}
         animate={{ opacity: 1, scaleX: 1 }}
         transition={{ duration: 0.8, delay: 0.9 }}
-        className="mt-32 h-px w-[200px]"
+        className="mt-16 h-px w-[200px] md:mt-24"
         style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
       />
     </section>
@@ -1201,7 +1210,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function ProblemSection() {
   return (
-    <section className="px-6 py-32 md:py-48">
+    <section className="px-6 py-16 md:py-32">
       <div className="mx-auto max-w-2xl text-center">
         <FadeUp>
           <SectionLabel>Sound familiar?</SectionLabel>
