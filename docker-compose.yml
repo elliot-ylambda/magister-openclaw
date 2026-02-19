@@ -19,7 +19,7 @@ services:
       - "18789:18789"
     environment:
       - LLM_BASE_URL=http://gateway:8080/llm/v1
-      - MACHINE_TOKEN=${DEV_MACHINE_TOKEN}
+      - GATEWAY_TOKEN=${DEV_GATEWAY_TOKEN}
     depends_on:
       gateway:
         condition: service_healthy

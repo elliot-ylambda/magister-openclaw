@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.jobs.idle_sweep import start_idle_sweep
+from app.jobs.reconciliation import start_reconciliation
 from app.middleware.auth import create_api_key_dependency, create_jwt_dependency
 from app.middleware.rate_limit import RateLimiter
 from app.routes.chat import create_chat_router
@@ -81,14 +82,20 @@ async def lifespan(app: FastAPI):
 
     # ── Background jobs ───────────────────────────────────────
     sweep_task = start_idle_sweep(fly, supabase, rate_limiter)
-    logger.info("[gateway] All routes registered, idle sweep started")
+    reconciliation_task = start_reconciliation(fly, supabase)
+    logger.info("[gateway] All routes registered, background jobs started")
 
     yield
 
     # ── Shutdown ──────────────────────────────────────────────
     sweep_task.cancel()
+    reconciliation_task.cancel()
     try:
         await sweep_task
+    except Exception:
+        pass
+    try:
+        await reconciliation_task
     except Exception:
         pass
     await fly.close()

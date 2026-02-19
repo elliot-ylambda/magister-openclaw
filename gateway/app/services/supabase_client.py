@@ -5,7 +5,7 @@ All database access in the gateway goes through this class.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from supabase import acreate_client, AsyncClient
 
@@ -102,6 +102,23 @@ class SupabaseService:
             {"p_user_id": user_id},
         ).execute()
         return result.data or 0
+
+    # ── Reconciliation Queries ───────────────────────────────────
+
+    async def get_failed_machines(self, cooldown_minutes: int = 5) -> list[UserMachine]:
+        """Get machines that failed provisioning and have been in failed state
+        for longer than cooldown_minutes (prevents re-cleaning immediately)."""
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+        ).isoformat()
+        result = (
+            await self._client.table("user_machines")
+            .select("*")
+            .eq("status", "failed")
+            .lt("updated_at", cutoff)
+            .execute()
+        )
+        return [UserMachine(**row) for row in (result.data or [])]
 
     # ── Usage Tracking ───────────────────────────────────────────
 

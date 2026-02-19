@@ -41,6 +41,9 @@ importers:
       resend:
         specifier: ^6.9.2
         version: 6.9.2(@react-email/render@2.0.4(react-dom@19.2.3(react@19.2.3))(react@19.2.3))
+      stripe:
+        specifier: ^20.3.1
+        version: 20.3.1(@types/node@20.19.33)
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0
@@ -3728,6 +3731,15 @@ packages:
   strip-json-comments@3.1.1:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
+
+  stripe@20.3.1:
+    resolution: {integrity: sha512-k990yOT5G5rhX3XluRPw5Y8RLdJDW4dzQ29wWT66piHrbnM2KyamJ1dKgPsw4HzGHRWjDiSSdcI2WdxQUPV3aQ==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      '@types/node': '>=16'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   styled-jsx@5.1.6:
     resolution: {integrity: sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==}
@@ -7996,6 +8008,10 @@ snapshots:
   strip-final-newline@4.0.0: {}
 
   strip-json-comments@3.1.1: {}
+
+  stripe@20.3.1(@types/node@20.19.33):
+    optionalDependencies:
+      '@types/node': 20.19.33
 
   styled-jsx@5.1.6(@babel/core@7.29.0)(react@19.2.3):
     dependencies:
