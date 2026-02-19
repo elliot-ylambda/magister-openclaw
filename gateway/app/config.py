@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     # Server
     port: int = 8080
 
+    # Gateway API key (used by Vercel webhook for provision/destroy)
+    gateway_api_key: str = ""
+
     # Fly.io (optional for local dev — required in production)
     fly_api_token: str = ""
     fly_org: str = ""

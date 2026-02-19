@@ -14,6 +14,7 @@ def settings() -> Settings:
     """Settings instance with test values — no real env vars needed."""
     return Settings(
         port=8080,
+        gateway_api_key="test-gateway-api-key",
         fly_api_token="test-fly-token",
         fly_org="test-org",
         supabase_url="http://localhost:54321",
