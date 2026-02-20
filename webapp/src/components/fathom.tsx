@@ -9,7 +9,10 @@ function FathomTracker() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    load("XVAOIBYN", { auto: false });
+    load("XVAOIBYN", {
+      auto: false,
+      includedDomains: ["magistermarketing.com"],
+    });
   }, []);
 
   useEffect(() => {
