@@ -2539,20 +2539,32 @@ function Footer() {
       style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
     >
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
-        <a href="#" className="flex items-center gap-2.5">
-          <Image
-            src="/magister-logo-white.svg"
-            alt="Magister"
-            width={22}
-            height={24}
-          />
-          <span
-            className="text-[14px] font-medium text-white"
-            style={{ fontFamily: "var(--font-dm-sans)" }}
+        <div className="flex flex-col items-center gap-1.5 sm:items-start">
+          <a href="#" className="flex items-center gap-2.5">
+            <Image
+              src="/magister-logo-white.svg"
+              alt="Magister"
+              width={22}
+              height={24}
+            />
+            <span
+              className="text-[14px] font-medium text-white"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              Magister
+            </span>
+          </a>
+          <p
+            className="text-[12px] italic"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.25)",
+            }}
           >
-            Magister
-          </span>
-        </a>
+            Magister (n.) — Latin for &ldquo;master&rdquo; or
+            &ldquo;teacher&rdquo;
+          </p>
+        </div>
         <p
           className="text-[13px]"
           style={{
