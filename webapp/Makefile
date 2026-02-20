@@ -1,4 +1,4 @@
-.PHONY: clean install dev lint build
+.PHONY: clean install dev lint build supabase-start migrate-local supabase-reset
 
 clean:
 	rm -rf .next node_modules
@@ -21,3 +21,17 @@ lint:
 
 build:
 	pnpm run build
+
+supabase-start-local:
+	supabase start --local
+
+supabase-migrate-local:
+	supabase unlink || true
+	supabase migration up --local
+
+supabase-reset-local:
+	supabase db reset --local
+
+# Connect to local database
+connect-local-db:
+	psql 'postgresql://postgres:postgres@localhost:54322/postgres'
