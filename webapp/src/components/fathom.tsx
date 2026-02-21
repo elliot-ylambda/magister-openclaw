@@ -11,7 +11,7 @@ function FathomTracker() {
   useEffect(() => {
     load("XVAOIBYN", {
       auto: false,
-      includedDomains: ["magistermarketing.com"],
+      includedDomains: ["magistermarketing.com", "www.magistermarketing.com"],
     });
   }, []);
 
