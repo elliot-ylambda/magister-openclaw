@@ -31,6 +31,10 @@ yarn-error.log*
 # env files
 .env*
 !.env.example
+!.env.docker.example
+
+# worktrees
+.worktrees/
 
 # worktrees
 .worktrees/

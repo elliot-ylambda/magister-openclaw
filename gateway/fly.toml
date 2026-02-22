@@ -1,0 +1,21 @@
+app = "magister-gateway"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = 30          # 30s graceful drain for in-flight SSE streams
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"       # Gateway must always be reachable
+  auto_start_machines = true
+  min_machines_running = 2         # HA: two instances behind load balancer
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

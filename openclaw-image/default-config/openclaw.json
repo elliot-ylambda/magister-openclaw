@@ -1,0 +1,17 @@
+{
+  "agents": {
+    "list": [
+      {
+        "id": "marketing",
+        "name": "Magister Marketing Agent",
+        "workspace": "/data/.openclaw/workspace"
+      }
+    ],
+    "defaults": {
+      "maxConcurrent": 4,
+      "sandbox": {
+        "mode": "off"
+      }
+    }
+  }
+}

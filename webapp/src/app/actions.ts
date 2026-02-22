@@ -1,19 +1,15 @@
 "use server";
 
 import React from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createServiceClient } from "@/lib/supabase/server";
 import { resend } from "@/lib/resend";
 import { buildUnsubscribeUrl } from "@/lib/unsubscribe";
 import { WaitlistConfirmationEmail } from "@/emails/waitlist-confirmation";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function insertWaitlistEmail(
   email: string
 ): Promise<{ success: boolean; error?: string }> {
+  const supabase = createServiceClient();
   const normalizedEmail = email.toLowerCase().trim();
 
   const { error } = await supabase.from("waitlist").insert({
@@ -68,6 +64,7 @@ export async function updateWaitlistSurvey(
     use_cases?: string[];
   }
 ): Promise<{ success: boolean; error?: string }> {
+  const supabase = createServiceClient();
   const updates: Record<string, string[]> = {};
   if (data.roles) updates.roles = data.roles;
   if (data.experience) updates.experience = data.experience;

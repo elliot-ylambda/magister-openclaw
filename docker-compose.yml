@@ -1,0 +1,25 @@
+services:
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    env_file: .env.docker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  user-machine:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    ports:
+      - "18789:18789"
+    environment:
+      - LLM_BASE_URL=http://gateway:8080/llm/v1
+      - GATEWAY_TOKEN=${DEV_GATEWAY_TOKEN}
+    depends_on:
+      gateway:
+        condition: service_healthy
