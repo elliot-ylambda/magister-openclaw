@@ -22,6 +22,7 @@ async def _run_sweep(
     fly: FlyClient,
     supabase: SupabaseService,
     rate_limiter: RateLimiter | None,
+    dev_machine_url: str = "",
 ) -> None:
     """Single sweep iteration."""
     threshold = (
@@ -45,7 +46,8 @@ async def _run_sweep(
             try:
                 import httpx
 
-                url = f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789/health"
+                base = dev_machine_url if dev_machine_url else f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789"
+                url = f"{base}/health"
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.get(url)
                     if resp.status_code == 200:
@@ -63,14 +65,17 @@ async def _run_sweep(
                 # Health check failed — proceed with suspension
                 pass
 
-            # Suspend the machine
-            await fly.suspend_machine(
-                machine.fly_app_name, machine.fly_machine_id
-            )
-            await supabase.update_user_machine(
-                machine.id, status=MachineStatus.suspended.value
-            )
-            logger.info(f"[idle-sweep] Suspended machine {machine.id}")
+            # Suspend the machine (skip Fly API call in dev mode)
+            if dev_machine_url:
+                logger.info(f"[idle-sweep] Dev mode — skipping suspend for {machine.id}")
+            else:
+                await fly.suspend_machine(
+                    machine.fly_app_name, machine.fly_machine_id
+                )
+                await supabase.update_user_machine(
+                    machine.id, status=MachineStatus.suspended.value
+                )
+                logger.info(f"[idle-sweep] Suspended machine {machine.id}")
 
         except Exception:
             logger.exception(f"[idle-sweep] Failed to suspend machine {machine.id}")
@@ -91,6 +96,7 @@ async def _sweep_loop(
     fly: FlyClient,
     supabase: SupabaseService,
     rate_limiter: RateLimiter | None,
+    dev_machine_url: str = "",
 ) -> None:
     """Run sweeps forever with SWEEP_INTERVAL_SECONDS between each."""
     logger.info(
@@ -99,7 +105,7 @@ async def _sweep_loop(
     )
     while True:
         try:
-            await _run_sweep(fly, supabase, rate_limiter)
+            await _run_sweep(fly, supabase, rate_limiter, dev_machine_url)
         except Exception:
             logger.exception("[idle-sweep] Sweep iteration failed")
         await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
@@ -109,9 +115,10 @@ def start_idle_sweep(
     fly: FlyClient,
     supabase: SupabaseService,
     rate_limiter: RateLimiter | None = None,
+    dev_machine_url: str = "",
 ) -> asyncio.Task:
     """Launch the idle sweep as a background asyncio task."""
     return asyncio.create_task(
-        _sweep_loop(fly, supabase, rate_limiter),
+        _sweep_loop(fly, supabase, rate_limiter, dev_machine_url),
         name="idle-sweep",
     )

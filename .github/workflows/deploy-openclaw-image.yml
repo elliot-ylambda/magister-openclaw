@@ -1,0 +1,35 @@
+name: Build OpenClaw Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openclaw-image/**"
+      - "marketingskills/**"
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Copy marketing skills into the Docker build context
+      - name: Copy marketing skills
+        run: mkdir -p openclaw-image/skills && cp -r marketingskills/. openclaw-image/skills/
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Build and push to Fly registry (used by user machines)
+      - name: Build and push image
+        working-directory: openclaw-image
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          flyctl auth docker
+          docker build -t registry.fly.io/magister-openclaw:latest \
+            -t "registry.fly.io/magister-openclaw:${IMAGE_TAG}" .
+          docker push registry.fly.io/magister-openclaw:latest
+          docker push "registry.fly.io/magister-openclaw:${IMAGE_TAG}"
