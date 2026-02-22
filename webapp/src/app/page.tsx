@@ -137,14 +137,13 @@ const comparisonRows = [
   { label: "Works in your tools", chatbot: false, magister: true },
   { label: "Available 24/7", chatbot: true, magister: true },
   { label: "Knows your brand context", chatbot: "Per session", magister: true },
-  { label: "Cost", chatbot: "$20/mo + your time", magister: "Early access" },
 ];
 
 const faqItems = [
   {
-    question: "Do I need a Claude Code Max subscription?",
+    question: "Do I need to bring my own API keys?",
     answer:
-      "Not necessarily. We're figuring out the best setup for different users — that's partly why we're asking in the survey.",
+      "You can bring your own API keys or use ours. Using ours means simpler billing and access to a versatile selection of LLM models without managing multiple provider accounts.",
   },
   {
     question: "How is this different from just using ChatGPT or Claude?",
@@ -173,25 +172,160 @@ type ChatMessage = {
   content: string;
 };
 
-const chatScript: ChatMessage[] = [
+type DemoTab = {
+  label: string;
+  script: ChatMessage[];
+};
+
+const demoTabs: DemoTab[] = [
   {
-    type: "user",
-    content: "Our pricing page converts at 2%. Can you take a look?",
+    label: "CRO",
+    script: [
+      {
+        type: "user",
+        content: "Our pricing page converts at 2%. Can you take a look?",
+      },
+      {
+        type: "bot",
+        content:
+          "Auditing your pricing page now. Checking copy, layout, and conversion patterns...",
+      },
+      {
+        type: "bot",
+        content:
+          "Found 3 issues:\n\n1. Headline focuses on features, not outcomes\n2. Too many plan options — decision fatigue\n3. No social proof near the CTA\n\nRewriting now.",
+      },
+      {
+        type: "bot",
+        content:
+          'Done. Updated copy is in your staging environment:\n\n• New headline: "Start closing more deals today"\n• Consolidated 4 plans to 3 with a recommended badge\n• Added customer quote above the CTA\n\nReady to review?',
+      },
+    ],
   },
   {
-    type: "bot",
-    content:
-      "Auditing your pricing page now. Checking copy, layout, and conversion patterns...",
+    label: "Paid Ads",
+    script: [
+      {
+        type: "user",
+        content:
+          "We're spending $3k/mo on Google Ads but barely getting leads. Can you help?",
+      },
+      {
+        type: "bot",
+        content:
+          "Pulling your Google Ads account now. Analyzing campaigns, keywords, and landing pages...",
+      },
+      {
+        type: "bot",
+        content:
+          "Found the problem:\n\n1. 60% of spend is on broad match keywords with <1% CTR\n2. Ad copy doesn't match landing page headline\n3. No negative keywords filtering out junk clicks\n\nRestructuring your campaigns now.",
+      },
+      {
+        type: "bot",
+        content:
+          "Done. Here's what I changed:\n\n• Paused 12 low-performing keywords, added 34 negative keywords\n• Rewrote 3 ad variants with landing page-matched headlines\n• Set up conversion tracking that was missing\n\nProjected: 2-3x more leads at the same budget.",
+      },
+    ],
   },
   {
-    type: "bot",
-    content:
-      "Found 3 issues:\n\n1. Headline focuses on features, not outcomes\n2. Too many plan options — decision fatigue\n3. No social proof near the CTA\n\nRewriting now.",
+    label: "Content",
+    script: [
+      {
+        type: "user",
+        content:
+          "We need a content strategy for our blog. Right now we just publish randomly.",
+      },
+      {
+        type: "bot",
+        content:
+          "Analyzing your site, competitors, and keyword opportunities...",
+      },
+      {
+        type: "bot",
+        content:
+          "Here's what I found:\n\n1. Your top 3 competitors rank for 2,400 keywords you don't\n2. You have 8 existing posts that could rank on page 1 with updates\n3. Three topic clusters align perfectly with your product.\n\nBuilding your content calendar now.",
+      },
+      {
+        type: "bot",
+        content:
+          "Done. Created a 90-day content plan:\n\n• 8 existing posts updated with better keywords and internal links\n• 12 new articles targeting high-intent keywords\n• 3 pillar pages to anchor each topic cluster\n\nFirst article draft is ready for review.",
+      },
+    ],
   },
   {
-    type: "bot",
-    content:
-      'Done. Updated copy is in your staging environment:\n\n• New headline: "Start closing more deals today"\n• Consolidated 4 plans to 3 with a recommended badge\n• Added customer quote above the CTA\n\nReady to review?',
+    label: "Email",
+    script: [
+      {
+        type: "user",
+        content:
+          "Our trial-to-paid conversion is 4%. Can you build an email sequence to improve it?",
+      },
+      {
+        type: "bot",
+        content:
+          "Reviewing your current onboarding flow and user activation data...",
+      },
+      {
+        type: "bot",
+        content:
+          "Spotted 3 gaps:\n\n1. No email until day 3 — most drop-off happens in 24 hours\n2. Emails talk about features, not the outcomes users want\n3. No re-engagement for users who stall after signup.\n\nWriting a new 7-email sequence now.",
+      },
+      {
+        type: "bot",
+        content:
+          "Done. Here's the new sequence:\n\n• Day 0: Welcome + quick-win tutorial (get value in 5 min)\n• Day 1: Case study showing their use case\n• Day 3: \"Did you try X?\" based on their activity\n• Day 5, 7, 10, 14: Progressive nudges with social proof\n\nAll emails are drafted and ready to load into your ESP.",
+      },
+    ],
+  },
+  {
+    label: "SEO",
+    script: [
+      {
+        type: "user",
+        content:
+          "We're on page 3 for our main keyword. What's going on?",
+      },
+      {
+        type: "bot",
+        content:
+          "Running a full SEO audit — checking technical issues, content gaps, and backlink profile...",
+      },
+      {
+        type: "bot",
+        content:
+          "Found 4 issues holding you back:\n\n1. Page speed is 2.8s — needs to be under 1.5s\n2. Title tag and H1 don't include the target keyword\n3. Thin content — your page is 400 words, top 3 results average 2,200\n4. Zero internal links pointing to this page.",
+      },
+      {
+        type: "bot",
+        content:
+          "Done. Here's what I fixed:\n\n• Optimized images and deferred scripts — load time now 1.2s\n• Rewrote title, meta description, and H1 with target keyword\n• Expanded content to 2,100 words with FAQ schema\n• Added 6 internal links from your highest-authority pages\n\nShould start climbing within 2-3 weeks.",
+      },
+    ],
+  },
+  {
+    label: "Social",
+    script: [
+      {
+        type: "user",
+        content:
+          "We post on LinkedIn 3x/week but get almost no engagement. Help?",
+      },
+      {
+        type: "bot",
+        content:
+          "Analyzing your last 30 posts — looking at format, timing, hooks, and audience signals...",
+      },
+      {
+        type: "bot",
+        content:
+          "Here's what's off:\n\n1. Posts are company announcements — LinkedIn rewards personal stories and insights\n2. No hook in the first line — 80% of people scroll past\n3. Posting at 4pm — your audience is most active at 8-9am.\n\nRewriting your next week of posts now.",
+      },
+      {
+        type: "bot",
+        content:
+          "Done. 5 posts ready to go:\n\n• Mon: Founder story with a contrarian take on your industry\n• Tue: Carousel breaking down a customer win\n• Wed: Short poll about a pain point your product solves\n• Thu: Behind-the-scenes on a recent product decision\n• Fri: Quick tip thread with a clear CTA\n\nAll scheduled for 8:30am in your timezone.",
+      },
+    ],
   },
 ];
 
@@ -998,16 +1132,34 @@ function Nav() {
           ))}
         </div>
 
-        <a
-          href="#request-access"
-          className="rounded-full px-5 py-2 text-[13px] font-medium text-white transition-all duration-300 hover:bg-white hover:text-black"
-          style={{
-            fontFamily: "var(--font-dm-sans)",
-            border: "1px solid rgba(255,255,255,0.2)",
-          }}
-        >
-          Request Early Access
-        </a>
+        <div className="flex items-center gap-4">
+          <a
+            href="/login"
+            className="text-[13px] font-medium transition-colors duration-300"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.6)",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.color = "rgba(255,255,255,1)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.color = "rgba(255,255,255,0.6)")
+            }
+          >
+            Sign In
+          </a>
+          <a
+            href="/signup"
+            className="rounded-full px-5 py-2 text-[13px] font-medium text-white transition-all duration-300 hover:bg-white hover:text-black"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              border: "1px solid rgba(255,255,255,0.2)",
+            }}
+          >
+            Get Started
+          </a>
+        </div>
       </div>
     </motion.nav>
   );
@@ -1017,11 +1169,7 @@ function Nav() {
 // Hero
 // ---------------------------------------------------------------------------
 
-function Hero({
-  onEmailSubmit,
-}: {
-  onEmailSubmit: (email: string) => Promise<{ success: boolean; error?: string }>;
-}) {
+function Hero() {
   return (
     <section className="relative flex flex-col items-center px-6 pt-48 pb-16 md:pt-56 md:pb-32 text-center overflow-hidden">
       {/* Animated gradient orbs */}
@@ -1158,7 +1306,7 @@ function Hero({
         scheduling social content. You give it a task. It gets it done.
       </motion.p>
 
-      {/* Email CTA */}
+      {/* CTA Button */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1167,9 +1315,15 @@ function Hero({
           delay: 0.65,
           ease: [0.25, 0.1, 0.25, 1],
         }}
-        className="mt-10 w-full max-w-xl"
+        className="mt-10"
       >
-        <EmailForm onSubmit={onEmailSubmit} id="hero-email" />
+        <a
+          href="/signup"
+          className="inline-block rounded-full bg-white px-10 py-4 text-[16px] font-medium text-black transition-opacity duration-300 hover:opacity-90"
+          style={{ fontFamily: "var(--font-dm-sans)" }}
+        >
+          Get Started
+        </a>
       </motion.div>
 
       {/* Divider */}
@@ -1224,7 +1378,7 @@ function ProblemSection() {
           >
             You ask AI for help with your marketing. It gives you a plan, a
             draft, maybe some suggestions. Then you close the chat and spend
-            the next 3 days implementing it yourself.
+            the next several weeks implementing it yourself.
           </p>
           <p
             className="mt-8 text-xl md:text-2xl text-white"
@@ -1442,36 +1596,52 @@ function TypingIndicator() {
 }
 
 function DemoSection() {
+  const [activeTab, setActiveTab] = useState(0);
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasStarted = useRef(false);
   const sectionRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
   const inView = useInView(sectionRef, { once: true, margin: "-100px" });
 
-  const runChat = useCallback(() => {
+  const runChat = useCallback((tabIndex: number) => {
+    // Cancel any in-progress animation
+    if (cancelRef.current) cancelRef.current();
+
+    const script = demoTabs[tabIndex].script;
+    setActiveTab(tabIndex);
     setVisibleMessages([]);
     setIsTyping(false);
+
+    let cancelled = false;
+    cancelRef.current = () => {
+      cancelled = true;
+    };
 
     let currentIndex = 0;
 
     const showNext = () => {
-      if (currentIndex >= chatScript.length) {
+      if (cancelled) return;
+
+      if (currentIndex >= script.length) {
+        // Done with this tab — wait, then advance to next
         setTimeout(() => {
-          setVisibleMessages([]);
-          currentIndex = 0;
-          setTimeout(showNext, 1000);
-        }, 6000);
+          if (cancelled) return;
+          const nextTab = (tabIndex + 1) % demoTabs.length;
+          runChat(nextTab);
+        }, 3000);
         return;
       }
 
       setIsTyping(true);
 
-      const typingDelay = chatScript[currentIndex].type === "bot" ? 1800 : 800;
+      const typingDelay = script[currentIndex].type === "bot" ? 1800 : 800;
 
       setTimeout(() => {
+        if (cancelled) return;
         setIsTyping(false);
-        const msg = chatScript[currentIndex];
+        const msg = script[currentIndex];
         if (msg) {
           setVisibleMessages((prev) => [...prev, msg]);
         }
@@ -1483,10 +1653,17 @@ function DemoSection() {
     setTimeout(showNext, 800);
   }, []);
 
+  const handleTabClick = useCallback(
+    (tabIndex: number) => {
+      runChat(tabIndex);
+    },
+    [runChat],
+  );
+
   useEffect(() => {
     if (inView && !hasStarted.current) {
       hasStarted.current = true;
-      runChat();
+      runChat(0);
     }
   }, [inView, runChat]);
 
@@ -1511,7 +1688,7 @@ function DemoSection() {
               fontWeight: 400,
             }}
           >
-            You talk. It works.
+            You talk. It markets.
           </h2>
         </FadeUp>
 
@@ -1544,13 +1721,36 @@ function DemoSection() {
               >
                 Magister
               </span>
+              <div className="ml-auto flex gap-1">
+                {demoTabs.map((tab, i) => (
+                  <button
+                    key={tab.label}
+                    onClick={() => handleTabClick(i)}
+                    className="px-3 py-1 rounded-md text-[12px] transition-colors"
+                    style={{
+                      fontFamily: "var(--font-dm-sans)",
+                      fontWeight: 500,
+                      color:
+                        activeTab === i
+                          ? "rgba(255,255,255,0.9)"
+                          : "rgba(255,255,255,0.4)",
+                      backgroundColor:
+                        activeTab === i
+                          ? "rgba(255,255,255,0.08)"
+                          : "transparent",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Chat messages */}
             <div
               ref={scrollRef}
               className="flex flex-col gap-4 p-5 overflow-y-auto"
-              style={{ minHeight: 320, maxHeight: 420 }}
+              style={{ height: 420 }}
             >
               {visibleMessages.map((msg, i) => (
                 <motion.div
@@ -1899,7 +2099,8 @@ const pricingPlans = [
     price: "$299",
     period: "/mo",
     description: "One autonomous marketing agent with 25 specialized skills.",
-    cta: "Get early access",
+    cta: "Get Started",
+    href: "/signup?plan=cmo",
     highlighted: true,
     badge: null,
   },
@@ -1909,7 +2110,8 @@ const pricingPlans = [
     period: "/mo",
     description:
       "10+ agents working together — strategy, copy, SEO, ads, email, and more.",
-    cta: "Get early access",
+    cta: "Get Started",
+    href: "/signup?plan=cmo_plus",
     highlighted: false,
     badge: null,
   },
@@ -1919,7 +2121,8 @@ const pricingPlans = [
     period: " one-time",
     description:
       "We set it up on your infrastructure. You own and host everything.",
-    cta: "Get early access",
+    cta: "Contact Us",
+    href: "#request-access",
     highlighted: false,
     badge: null,
   },
@@ -2020,12 +2223,9 @@ function PricingSection() {
                   {plan.description}
                 </p>
 
-                <button
-                  onClick={() => {
-                    const el = document.getElementById("request-access");
-                    if (el) el.scrollIntoView({ behavior: "smooth" });
-                  }}
-                  className={`w-full rounded-full py-3 text-[14px] font-medium transition-opacity duration-300 hover:opacity-90 ${
+                <a
+                  href={plan.href}
+                  className={`block w-full rounded-full py-3 text-center text-[14px] font-medium transition-opacity duration-300 hover:opacity-90 ${
                     plan.highlighted
                       ? "bg-white text-black"
                       : "bg-transparent text-white"
@@ -2038,7 +2238,7 @@ function PricingSection() {
                   }}
                 >
                   {plan.cta}
-                </button>
+                </a>
               </div>
             </FadeUp>
           ))}
@@ -2143,6 +2343,25 @@ function FaqSection() {
 // ---------------------------------------------------------------------------
 
 function AboutSection() {
+  const [repoStats, setRepoStats] = useState({ stars: 0, forks: 0 });
+
+  useEffect(() => {
+    fetch("https://api.github.com/repos/coreyhaines31/marketingskills")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) {
+          setRepoStats({
+            stars: data.stargazers_count ?? 0,
+            forks: data.forks_count ?? 0,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const formatNumber = (n: number) =>
+    n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(n);
+
   return (
     <section id="about" className="px-6 py-32 md:py-48">
       <div className="mx-auto max-w-3xl">
@@ -2213,7 +2432,9 @@ function AboutSection() {
                     Marketing Skills
                   </a>
                   , the most-starred open source repo for marketing AI agents
-                  (7,500+ stars, 900+ forks).
+                  {repoStats.stars > 0 &&
+                    ` (${formatNumber(repoStats.stars)} stars, ${formatNumber(repoStats.forks)} forks)`}
+                  .
                 </p>
               </div>
             </FadeUp>
@@ -2315,10 +2536,28 @@ function CtaSection({
               fontWeight: 400,
             }}
           >
-            We&apos;re opening this up gradually. Drop your email and
-            we&apos;ll be in touch.
+            Start using Magister today. Pick a plan and your agent will be ready
+            in under a minute.
           </p>
           <div className="mt-10 flex justify-center">
+            <a
+              href="/signup"
+              className="inline-block rounded-full bg-white px-10 py-4 text-[16px] font-medium text-black transition-opacity duration-300 hover:opacity-90"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              Get Started
+            </a>
+          </div>
+          <p
+            className="mx-auto mt-8 max-w-md text-sm"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.35)",
+            }}
+          >
+            Want to be notified instead?
+          </p>
+          <div className="mt-3 flex justify-center">
             <EmailForm onSubmit={onEmailSubmit} id="cta-email" />
           </div>
         </FadeUp>
@@ -2338,20 +2577,32 @@ function Footer() {
       style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
     >
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
-        <a href="#" className="flex items-center gap-2.5">
-          <Image
-            src="/magister-logo-white.svg"
-            alt="Magister"
-            width={22}
-            height={24}
-          />
-          <span
-            className="text-[14px] font-medium text-white"
-            style={{ fontFamily: "var(--font-dm-sans)" }}
+        <div className="flex flex-col items-center gap-1.5 sm:items-start">
+          <a href="#" className="flex items-center gap-2.5">
+            <Image
+              src="/magister-logo-white.svg"
+              alt="Magister"
+              width={22}
+              height={24}
+            />
+            <span
+              className="text-[14px] font-medium text-white"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              Magister
+            </span>
+          </a>
+          <p
+            className="text-[12px] italic"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.25)",
+            }}
           >
-            Magister
-          </span>
-        </a>
+            Magister (n.) — Latin for &ldquo;master&rdquo; or
+            &ldquo;teacher&rdquo;
+          </p>
+        </div>
         <p
           className="text-[13px]"
           style={{
@@ -2398,7 +2649,7 @@ export default function Home() {
         }}
       />
       <Nav />
-      <Hero onEmailSubmit={handleEmailSubmit} />
+      <Hero />
       <ProblemSection />
       <HowItWorksSection />
       <DemoSection />

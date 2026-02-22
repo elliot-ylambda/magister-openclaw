@@ -58,7 +58,10 @@ async def lifespan(app: FastAPI):
     app.include_router(health_router)
 
     app.include_router(
-        create_chat_router(fly, supabase, rate_limiter, verify_jwt),
+        create_chat_router(
+            fly, supabase, rate_limiter, verify_jwt,
+            dev_machine_url=settings.dev_machine_url,
+        ),
         prefix="/api",
     )
     app.include_router(
@@ -81,7 +84,10 @@ async def lifespan(app: FastAPI):
     )
 
     # ── Background jobs ───────────────────────────────────────
-    sweep_task = start_idle_sweep(fly, supabase, rate_limiter)
+    sweep_task = start_idle_sweep(
+        fly, supabase, rate_limiter,
+        dev_machine_url=settings.dev_machine_url,
+    )
     reconciliation_task = start_reconciliation(fly, supabase)
     logger.info("[gateway] All routes registered, background jobs started")
 

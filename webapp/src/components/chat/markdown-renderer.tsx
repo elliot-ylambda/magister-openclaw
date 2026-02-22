@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -8,14 +8,18 @@ import "highlight.js/styles/github-dark.min.css";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
-function CopyButton({ code }: { code: string }) {
+function CopyButton({ getCode }: { getCode: () => string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [code]);
+    try {
+      await navigator.clipboard.writeText(getCode());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable in insecure contexts
+    }
+  }, [getCode]);
 
   return (
     <button
@@ -31,6 +35,30 @@ function CopyButton({ code }: { code: string }) {
   );
 }
 
+function PreBlock({
+  children,
+  ...props
+}: React.ComponentProps<"pre">) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const getCode = useCallback(
+    () => preRef.current?.textContent ?? "",
+    []
+  );
+
+  return (
+    <div className="group relative my-3">
+      <pre
+        ref={preRef}
+        className="overflow-x-auto rounded-lg border bg-[#0d1117] p-4 text-sm"
+        {...props}
+      >
+        {children}
+      </pre>
+      <CopyButton getCode={getCode} />
+    </div>
+  );
+}
+
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   content,
 }: {
@@ -41,28 +69,11 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight]}
       components={{
-        pre({ children, ...props }) {
-          // Extract code text for copy button
-          const codeEl = (children as React.ReactElement<{ children?: string }>);
-          const codeText =
-            typeof codeEl?.props?.children === "string"
-              ? codeEl.props.children
-              : "";
-
-          return (
-            <div className="group relative my-3">
-              <pre
-                className="overflow-x-auto rounded-lg border bg-[#0d1117] p-4 text-sm"
-                {...props}
-              >
-                {children}
-              </pre>
-              <CopyButton code={codeText} />
-            </div>
-          );
-        },
+        pre: PreBlock,
         code({ className, children, ...props }) {
-          const isBlock = className?.startsWith("hljs") || className?.includes("language-");
+          const isBlock =
+            className?.startsWith("hljs") ||
+            className?.includes("language-");
           if (isBlock) {
             return (
               <code className={className} {...props}>

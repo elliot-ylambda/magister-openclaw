@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   MessageSquarePlus,
   Trash2,
@@ -60,6 +60,11 @@ export function AppSidebar({
   const supabase = createClient();
   const [sessions, setSessions] = useState(initialSessions);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Sync server-fetched sessions when layout re-renders (e.g. after router.refresh())
+  useEffect(() => {
+    setSessions(initialSessions);
+  }, [initialSessions]);
 
   const activeSessionId = pathname.startsWith("/chat/")
     ? pathname.split("/")[2]

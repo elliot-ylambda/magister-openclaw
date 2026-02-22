@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, DM_Sans, Instrument_Serif } from "next/font/google";
+import { SupabaseProvider } from "@/components/shared/supabase-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,7 +37,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${dmSans.variable} ${instrumentSerif.variable} antialiased`}
       >
-        {children}
+        <SupabaseProvider>{children}</SupabaseProvider>
       </body>
     </html>
   );

@@ -23,11 +23,23 @@ _active_requests: set[str] = set()
 ACTIVITY_DEBOUNCE_SECONDS = 30.0
 
 
+def _machine_url(machine, dev_override: str) -> str:
+    """Return the base URL for a user's OpenClaw machine.
+
+    When *dev_override* is set (local dev), use it directly.
+    Otherwise build the Fly-internal DNS address.
+    """
+    if dev_override:
+        return dev_override
+    return f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789"
+
+
 def create_chat_router(
     fly: FlyClient,
     supabase: SupabaseService,
     rate_limiter: RateLimiter,
     verify_jwt,
+    dev_machine_url: str = "",
 ) -> APIRouter:
     router = APIRouter()
 
@@ -57,8 +69,8 @@ def create_chat_router(
                 status_code=409, detail="Another chat request is already active"
             )
 
-        # Wake suspended machine
-        if machine.status == MachineStatus.suspended:
+        # Wake suspended machine (skip in dev — no Fly API locally)
+        if machine.status == MachineStatus.suspended and not dev_machine_url:
             try:
                 await fly.start_machine(
                     machine.fly_app_name, machine.fly_machine_id
@@ -79,9 +91,7 @@ def create_chat_router(
                 )
 
         # Health check before proxying
-        machine_url = (
-            f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789"
-        )
+        machine_url = _machine_url(machine, dev_machine_url)
         try:
             async with httpx.AsyncClient(timeout=5.0) as hc:
                 resp = await hc.get(f"{machine_url}/health")

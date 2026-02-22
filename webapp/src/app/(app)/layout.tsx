@@ -21,16 +21,16 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  // Subscription guard: check if user has a non-destroyed machine
-  const { data: machine } = await supabase
-    .from("user_machines")
+  // Subscription guard: check for active subscription
+  const { data: subscription } = await supabase
+    .from("subscriptions")
     .select("status")
     .eq("user_id", user.id)
-    .neq("status", "destroyed")
+    .eq("status", "active")
     .limit(1)
     .maybeSingle();
 
-  if (!machine) {
+  if (!subscription) {
     redirect("/pricing");
   }
 
@@ -41,9 +41,15 @@ export default async function AppLayout({
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
-  // Get display name from user metadata
+  // Get display name from profile or user metadata
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", user.id)
+    .single();
+
   const displayName =
-    (user.user_metadata?.display_name as string) ??
+    profile?.display_name ??
     (user.user_metadata?.full_name as string) ??
     null;
 

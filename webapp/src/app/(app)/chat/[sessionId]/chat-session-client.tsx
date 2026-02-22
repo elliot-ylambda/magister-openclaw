@@ -10,13 +10,15 @@ import { ChatMessage, type Message } from "@/components/chat/chat-message";
 
 const SCROLL_THRESHOLD = 100;
 const WAKING_RETRY_DELAY = 5_000;
+const MAX_WAKE_RETRIES = 3;
 
 export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWaking, setIsWaking] = useState(false);
-  const [isFirstMessage, setIsFirstMessage] = useState(true);
+  const isFirstMessageRef = useRef(true);
+  const retryCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -60,10 +62,20 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setIsStreaming(true);
 
+      // Use getUser() to ensure token freshness, then read session for JWT
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("Session expired. Please sign in again.");
+        setIsStreaming(false);
+        setMessages((prev) => prev.filter((m) => m.id !== assistantMessage.id));
+        return;
+      }
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
       if (!session) {
         setError("Session expired. Please sign in again.");
         setIsStreaming(false);
@@ -90,7 +102,6 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         )) {
           switch (event.type) {
             case "session":
-              // Session confirmed
               break;
             case "chunk":
               gotContent = true;
@@ -106,11 +117,22 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
               break;
             case "error":
               if (event.message.includes("waking up")) {
+                if (retryCountRef.current >= MAX_WAKE_RETRIES) {
+                  setError(
+                    "Agent failed to wake after multiple attempts. Please try again later."
+                  );
+                  setIsWaking(false);
+                  setIsStreaming(false);
+                  setMessages((prev) =>
+                    prev.filter((m) => m.id !== assistantMessage.id)
+                  );
+                  return;
+                }
+                retryCountRef.current += 1;
                 setIsWaking(true);
                 setMessages((prev) =>
                   prev.filter((m) => m.id !== assistantMessage.id)
                 );
-                // Auto-retry after delay
                 setTimeout(() => {
                   setIsWaking(false);
                   handleSend(content);
@@ -137,9 +159,12 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         setIsStreaming(false);
       }
 
+      // Reset retry counter on successful completion
+      retryCountRef.current = 0;
+
       // Update session title on first message
-      if (isFirstMessage) {
-        setIsFirstMessage(false);
+      if (isFirstMessageRef.current) {
+        isFirstMessageRef.current = false;
         const title = content.slice(0, 50);
         await supabase
           .from("chat_sessions")
@@ -148,7 +173,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         router.refresh();
       }
     },
-    [sessionId, supabase, router, isFirstMessage]
+    [sessionId, supabase, router]
   );
 
   return (
@@ -182,7 +207,6 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      {/* Waking banner */}
       {isWaking && (
         <div className="mx-auto max-w-3xl w-full px-6">
           <div className="flex items-center gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/10 px-4 py-2.5 text-sm text-yellow-200">
@@ -192,7 +216,6 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Error banner */}
       {error && (
         <div className="mx-auto max-w-3xl w-full px-6">
           <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-2.5 text-sm text-red-200">

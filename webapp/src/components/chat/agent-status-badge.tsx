@@ -58,11 +58,10 @@ export function AgentStatusBadge() {
     intervalRef.current = setInterval(poll, POLL_INTERVAL);
 
     const handleVisibility = () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
       if (document.visibilityState === "visible") {
         poll();
         intervalRef.current = setInterval(poll, POLL_INTERVAL);
-      } else if (intervalRef.current) {
-        clearInterval(intervalRef.current);
       }
     };
 
