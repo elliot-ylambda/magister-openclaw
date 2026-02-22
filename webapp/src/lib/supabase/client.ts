@@ -1,12 +1,11 @@
-import { createBrowserClient } from '@supabase/ssr';
+"use client";
 
-let client: ReturnType<typeof createBrowserClient> | null = null;
+import { createBrowserClient } from "@supabase/ssr";
 
 export function createClient() {
-  if (client) return client;
-  client = createBrowserClient(
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { isSingleton: true }
   );
-  return client;
 }

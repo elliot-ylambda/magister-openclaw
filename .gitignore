@@ -36,12 +36,12 @@ yarn-error.log*
 # worktrees
 .worktrees/
 
-# worktrees
-.worktrees/
-
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# venv
+**/.venv
