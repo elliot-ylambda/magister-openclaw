@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -133,6 +133,51 @@ def test_chat_rate_limited(mock_fly, mock_supabase):
         client.post("/api/chat", json={"message": "first"})
     resp = client.post("/api/chat", json={"message": "second"})
     assert resp.status_code == 429
+
+
+def test_chat_non_streaming(mock_fly, mock_supabase, rate_limiter):
+    """stream=false returns a single JSON response with concatenated content."""
+    mock_supabase.get_user_machine.return_value = _make_machine()
+    client = _make_app(mock_fly, mock_supabase, rate_limiter)
+
+    async def _fake_lines():
+        for line in ["Hello ", "world"]:
+            yield line
+
+    with patch("app.routes.chat.httpx.AsyncClient") as mock_httpx:
+        # Health-check response
+        hc_resp = MagicMock()
+        hc_resp.raise_for_status = MagicMock()
+
+        # Streaming response (async context manager for client.stream())
+        stream_resp = AsyncMock()
+        stream_resp.status_code = 200
+        stream_resp.aiter_lines = _fake_lines
+        stream_resp.__aenter__ = AsyncMock(return_value=stream_resp)
+        stream_resp.__aexit__ = AsyncMock(return_value=False)
+
+        # First AsyncClient() → health check
+        hc_client = AsyncMock()
+        hc_client.get = AsyncMock(return_value=hc_resp)
+        ctx1 = AsyncMock()
+        ctx1.__aenter__ = AsyncMock(return_value=hc_client)
+        ctx1.__aexit__ = AsyncMock(return_value=False)
+
+        # Second AsyncClient() → streaming
+        stream_client = AsyncMock()
+        stream_client.stream = MagicMock(return_value=stream_resp)
+        ctx2 = AsyncMock()
+        ctx2.__aenter__ = AsyncMock(return_value=stream_client)
+        ctx2.__aexit__ = AsyncMock(return_value=False)
+
+        mock_httpx.side_effect = [ctx1, ctx2]
+
+        resp = client.post("/api/chat", json={"message": "hello", "stream": False})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["content"] == "Hello world"
+    assert data["session_id"] is None
 
 
 def test_chat_concurrent_request(mock_fly, mock_supabase, rate_limiter):

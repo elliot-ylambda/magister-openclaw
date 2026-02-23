@@ -102,9 +102,25 @@ def create_chat_router(
                 status_code=503, detail="Machine not ready"
             )
 
-        return EventSourceResponse(
-            _stream_chat(machine_url, machine, req, user_id, supabase)
-        )
+        if req.stream:
+            return EventSourceResponse(
+                _stream_chat(machine_url, machine, req, user_id, supabase)
+            )
+
+        # Non-streaming: collect all chunks via the same generator
+        content_parts: list[str] = []
+        error_message: str | None = None
+        async for event in _stream_chat(machine_url, machine, req, user_id, supabase):
+            if event["event"] == "chunk":
+                content_parts.append(event["data"])
+            elif event["event"] == "error":
+                error_message = event["data"]
+
+        if error_message:
+            status = 502 if "Upstream" in (error_message or "") else 500
+            raise HTTPException(status_code=status, detail=error_message)
+
+        return {"content": "".join(content_parts), "session_id": req.session_id}
 
     async def _stream_chat(
         machine_url: str,

@@ -43,6 +43,7 @@ class ProvisionRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
+    stream: bool = True
 
 
 class LLMCompletionRequest(BaseModel):
