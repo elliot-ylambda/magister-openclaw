@@ -138,9 +138,6 @@ export const WaitlistConfirmationEmail: React.FC<
 
         {/* ── Footer ── */}
         <Section style={footerSection}>
-          <Text style={footerText}>
-            Open Source Foundation
-          </Text>
           <Text style={footerLinks}>
             <Link href="https://magistermarketing.com" style={footerLink}>
               Website
@@ -149,14 +146,15 @@ export const WaitlistConfirmationEmail: React.FC<
             <Link href="mailto:team@magistermarketing.com" style={footerLink}>
               Contact
             </Link>
-            {unsubscribeUrl && (
-              <>
-                &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-                <Link href={unsubscribeUrl} style={footerLink}>
-                  Unsubscribe
-                </Link>
-              </>
-            )}
+            &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+            <Link href={unsubscribeUrl || "#"} style={footerLink}>
+              Unsubscribe
+            </Link>
+          </Text>
+          <Text style={footerText}>
+            Magister Marketing &middot; You received this email because you
+            joined the waitlist. If you no longer wish to receive these
+            emails, click unsubscribe above.
           </Text>
         </Section>
       </Container>
