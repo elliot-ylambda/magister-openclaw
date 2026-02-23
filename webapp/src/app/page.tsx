@@ -2533,6 +2533,12 @@ function CtaSection({
 // ---------------------------------------------------------------------------
 
 function Footer() {
+  const [copied, setCopied] = useState(false);
+  const copyEmail = () => {
+    navigator.clipboard.writeText("team@magistermarketing.com");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
     <footer
       className="px-6 py-10"
@@ -2565,15 +2571,27 @@ function Footer() {
             &ldquo;teacher&rdquo;
           </p>
         </div>
-        <p
-          className="text-[13px]"
-          style={{
-            fontFamily: "var(--font-dm-sans)",
-            color: "rgba(255,255,255,0.3)",
-          }}
-        >
-          Powered by Claude Code &middot; Built on OpenClaw
-        </p>
+        <div className="flex flex-col items-center gap-1.5 sm:items-end">
+          <button
+            onClick={copyEmail}
+            className="text-[13px] cursor-pointer transition-colors hover:text-white"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.5)",
+            }}
+          >
+            {copied ? "Copied!" : "team@magistermarketing.com"}
+          </button>
+          <p
+            className="text-[13px]"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            Powered by Claude Code &middot; Built on OpenClaw
+          </p>
+        </div>
       </div>
     </footer>
   );
