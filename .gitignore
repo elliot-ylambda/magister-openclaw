@@ -45,3 +45,8 @@ next-env.d.ts
 
 # venv
 **/.venv
+
+
+# supabase
+supabase/.temp
+supabase/.branches

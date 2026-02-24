@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { checkAccess } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { ManageBillingButton } from './manage-billing-button';
 
@@ -42,28 +43,15 @@ function formatDate(iso: string): string {
 }
 
 export default async function DashboardPage() {
+  const { user, profile, subscription, isAdmin } = await checkAccess();
+
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) return null;
-
-  // Fetch all data in parallel
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const [profileRes, subscriptionRes, machineRes, usageRes] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select('display_name, email')
-      .eq('id', user.id)
-      .single(),
-    supabase
-      .from('subscriptions')
-      .select('plan, status, current_period_start, current_period_end, cancel_at')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .single(),
+  const [machineRes, usageRes] = await Promise.all([
     supabase
       .from('user_machines_safe')
       .select('status, fly_region, last_activity')
@@ -78,14 +66,12 @@ export default async function DashboardPage() {
       .gte('created_at', startOfMonth.toISOString()),
   ]);
 
-  const profile = profileRes.data;
-  const subscription = subscriptionRes.data;
   const machine = machineRes.data;
   const usageRows = usageRes.data ?? [];
 
   const totalCostCents = usageRows.reduce((sum, row) => sum + (row.cost_cents ?? 0), 0);
   const totalCostDollars = (totalCostCents / 100).toFixed(2);
-  const budgetDollars = subscription?.plan === 'cmo_plus' ? 150 : 50;
+  const budgetDollars = (isAdmin || subscription?.plan === 'cmo_plus') ? 150 : 50;
   const usagePercent = Math.min((totalCostCents / (budgetDollars * 100)) * 100, 100);
 
   const displayName = profile?.display_name ?? user.user_metadata?.full_name ?? 'there';
@@ -170,6 +156,8 @@ export default async function DashboardPage() {
               </div>
               <ManageBillingButton />
             </div>
+          ) : isAdmin ? (
+            <div className="font-medium">Admin</div>
           ) : (
             <p className="text-sm text-muted-foreground">No active subscription</p>
           )}

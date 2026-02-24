@@ -44,6 +44,11 @@ export function PricingCards({ isAuthenticated, currentPlan }: PricingCardsProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error('Checkout error:', res.status, body);
+        return;
+      }
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } finally {
@@ -55,6 +60,11 @@ export function PricingCards({ isAuthenticated, currentPlan }: PricingCardsProps
     setLoading('manage');
     try {
       const res = await fetch('/api/stripe/portal', { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error('Portal error:', res.status, body);
+        return;
+      }
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } finally {

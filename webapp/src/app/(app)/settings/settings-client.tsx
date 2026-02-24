@@ -24,6 +24,7 @@ type SettingsClientProps = {
   plan: string | null;
   periodEnd: string | null;
   cancelAt: string | null;
+  isAdmin?: boolean;
 };
 
 function formatDate(iso: string): string {
@@ -36,7 +37,7 @@ function formatDate(iso: string): string {
 
 const profileInitialState: ProfileUpdateState = {};
 
-export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt }: SettingsClientProps) {
+export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt, isAdmin }: SettingsClientProps) {
   const router = useRouter();
 
   // Profile form
@@ -206,6 +207,11 @@ export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt }
               </p>
             )}
             <ManageBillingButton returnUrl="/settings" />
+          </div>
+        ) : isAdmin ? (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Current plan</span>
+            <span className="font-medium">Admin</span>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">No active subscription</p>

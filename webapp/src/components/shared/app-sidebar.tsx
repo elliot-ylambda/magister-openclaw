@@ -27,6 +27,7 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
@@ -118,35 +119,30 @@ export function AppSidebar({
                     </p>
                   ) : (
                     sessions.map((session) => (
-                      <SidebarMenuItem key={session.id} className="group/item">
+                      <SidebarMenuItem key={session.id}>
                         <SidebarMenuButton
                           isActive={activeSessionId === session.id}
                           onClick={() => router.push(`/chat/${session.id}`)}
-                          className="justify-between"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            <span className="truncate text-sm">
-                              {session.title.length > 40
-                                ? session.title.slice(0, 40) + "..."
-                                : session.title}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-muted-foreground group-hover/item:hidden">
-                              {formatRelativeTime(session.updated_at)}
-                            </span>
-                            <button
-                              className="hidden group-hover/item:flex h-5 w-5 items-center justify-center rounded hover:bg-destructive/20 hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteId(session.id);
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
+                          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-sm flex-1">
+                            {session.title.length > 40
+                              ? session.title.slice(0, 40) + "..."
+                              : session.title}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground group-hover/menu-item:opacity-0 transition-opacity">
+                            {formatRelativeTime(session.updated_at)}
+                          </span>
                         </SidebarMenuButton>
+                        <SidebarMenuAction
+                          showOnHover
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteId(session.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </SidebarMenuAction>
                       </SidebarMenuItem>
                     ))
                   )}

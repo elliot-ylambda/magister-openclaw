@@ -31,11 +31,19 @@ export async function POST(request: Request) {
     // No body or invalid JSON — use default
   }
 
-  const stripe = getStripe();
-  const portalSession = await stripe.billingPortal.sessions.create({
-    customer: profile.stripe_customer_id,
-    return_url: `${process.env.NEXT_PUBLIC_APP_URL}${returnPath}`,
-  });
+  try {
+    const stripe = getStripe();
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: profile.stripe_customer_id,
+      return_url: `${process.env.NEXT_PUBLIC_APP_URL}${returnPath}`,
+    });
 
-  return NextResponse.json({ url: portalSession.url });
+    return NextResponse.json({ url: portalSession.url });
+  } catch (err) {
+    console.error('Portal session error:', err);
+    return NextResponse.json(
+      { error: 'Failed to create portal session' },
+      { status: 500 },
+    );
+  }
 }

@@ -20,6 +20,9 @@ dev:
 		sleep 1; \
 	fi; \
 	echo "Starting dev server on port $$PORT"; \
+	stripe listen --forward-to localhost:$$PORT/api/billing/webhook & \
+	STRIPE_PID=$$!; \
+	trap "kill $$STRIPE_PID 2>/dev/null" EXIT; \
 	pnpm exec next dev --port $$PORT
 
 lint:
