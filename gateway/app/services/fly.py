@@ -95,6 +95,30 @@ class FlyClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def unset_secrets(self, app_name: str, keys: list[str]) -> dict:
+        """Remove secrets from a Fly app via the GraphQL API."""
+        mutation = """
+        mutation($input: UnsetSecretsInput!) {
+            unsetSecrets(input: $input) {
+                app { name }
+            }
+        }
+        """
+        variables = {
+            "input": {
+                "appId": app_name,
+                "keys": keys,
+            }
+        }
+        async with httpx.AsyncClient(timeout=30.0) as gql_client:
+            resp = await gql_client.post(
+                GRAPHQL_URL,
+                headers={"Authorization": f"Bearer {self._token}"},
+                json={"query": mutation, "variables": variables},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     # ── Volume operations ────────────────────────────────────────
 
     async def create_volume(

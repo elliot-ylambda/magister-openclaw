@@ -3,7 +3,7 @@
 Three auth paths:
 - JWT (Supabase)  — user-facing routes (/api/chat, /api/status)
 - API Key         — internal routes called by Vercel webhook (/api/provision, /api/destroy)
-- Machine Token   — OpenClaw calling the LLM proxy (/llm/v1/chat/completions)
+- Machine Token   — OpenClaw calling the LLM proxy (/llm/v1/messages, /llm/v1/chat/completions)
 """
 
 from __future__ import annotations
@@ -71,6 +71,19 @@ def create_api_key_dependency(api_key: str):
 
 
 async def verify_machine_token(request: Request) -> str:
-    """Dependency: extract bearer token and return its SHA-256 hash."""
-    token = _extract_bearer(request)
-    return hash_token(token)
+    """Dependency: extract machine token and return its SHA-256 hash.
+
+    Checks two header formats:
+    - Authorization: Bearer <token>  (OpenAI-compatible clients)
+    - x-api-key: <token>             (Anthropic SDK / OpenClaw)
+    """
+    # Try Authorization header first, then x-api-key (Anthropic SDK format)
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return hash_token(auth[7:])
+
+    api_key = request.headers.get("x-api-key", "")
+    if api_key:
+        return hash_token(api_key)
+
+    raise HTTPException(status_code=401, detail="Missing bearer token or x-api-key")

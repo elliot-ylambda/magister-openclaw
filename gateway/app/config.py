@@ -23,8 +23,16 @@ class Settings(BaseSettings):
     # OpenClaw image (optional for local dev — required in production)
     openclaw_image: str = ""
 
+    # Slack integration
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+    slack_signing_secret: str = ""
+    slack_app_id: str = ""
+    slack_redirect_uri: str = ""
+    webapp_url: str = ""
+
     # Dev override: when set, all chat/health requests go to this URL
-    # instead of Fly internal DNS.  Set via DEV_MACHINE_URL in .env.docker.
+    # instead of Fly internal DNS.  Set via DEV_MACHINE_URL in .env.gateway.docker.
     dev_machine_url: str = ""
 
     # Defaults

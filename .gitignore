@@ -31,7 +31,7 @@ yarn-error.log*
 # env files
 .env*
 !.env.example
-!.env.docker.example
+!.env.gateway.docker.example
 
 # worktrees
 .worktrees/

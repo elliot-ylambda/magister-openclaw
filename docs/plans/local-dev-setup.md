@@ -48,15 +48,15 @@ Applies all migrations and runs seed migrations that create a dev auth user and 
 
 ### 3. Create env files
 
-#### Gateway — `.env.docker`
+#### Gateway — `.env.gateway.docker`
 
 Copy the example and fill in the Supabase keys and your Anthropic API key:
 
 ```bash
-cp .env.docker.example .env.docker
+cp .env.gateway.docker.example .env.gateway.docker
 ```
 
-Then edit `.env.docker`:
+Then edit `.env.gateway.docker`:
 
 ```env
 # From `cd webapp && pnpm supabase status`
@@ -261,9 +261,9 @@ docker compose ps     # check container status
 make logs             # check for errors
 ```
 
-**`user-machine` exits immediately:** The `OPENCLAW_IMAGE` in `.env.docker` doesn't exist. Build it first: `docker build -t magister-openclaw:local ./openclaw-image`
+**`user-machine` exits immediately:** The `OPENCLAW_IMAGE` in `.env.gateway.docker` doesn't exist. Build it first: `docker build -t magister-openclaw:local ./openclaw-image`
 
-**Gateway can't reach Supabase:** Make sure local Supabase is running (`cd webapp && make supabase-start-local`) and `SUPABASE_URL` in `.env.docker` uses `host.docker.internal` (not `localhost`).
+**Gateway can't reach Supabase:** Make sure local Supabase is running (`cd webapp && make supabase-start-local`) and `SUPABASE_URL` in `.env.gateway.docker` uses `host.docker.internal` (not `localhost`).
 
 **JWT login fails:** Run `cd webapp && make supabase-reset-local` to re-seed the dev user.
 

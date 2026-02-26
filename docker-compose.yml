@@ -3,7 +3,7 @@ services:
     build: ./gateway
     ports:
       - "8080:8080"
-    env_file: .env.docker
+    env_file: .env.gateway.docker
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -17,6 +17,9 @@ services:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
     ports:
       - "18789:18789"
+    volumes:
+      - ./openclaw-image/default-config:/app/default-config:ro
+      - ./openclaw-image/entrypoint.sh:/entrypoint.sh:ro
     environment:
       - LLM_BASE_URL=http://gateway:8080/llm/v1
       - GATEWAY_TOKEN=${DEV_GATEWAY_TOKEN}

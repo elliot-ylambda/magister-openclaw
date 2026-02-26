@@ -40,6 +40,30 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Load chat history from Supabase on mount
+  useEffect(() => {
+    async function loadHistory() {
+      const { data } = await supabase
+        .from("chat_messages")
+        .select("id, role, content, created_at")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: true });
+
+      if (data?.length) {
+        setMessages(
+          data.map((m) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            createdAt: new Date(m.created_at),
+          }))
+        );
+        isFirstMessageRef.current = false;
+      }
+    }
+    loadHistory();
+  }, [sessionId, supabase]);
+
   const handleSend = useCallback(
     async (content: string) => {
       setError(null);
@@ -91,7 +115,21 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         return;
       }
 
+      // Persist user message to Supabase (skip on wake retries to avoid duplicates)
+      if (retryCountRef.current === 0) {
+        const { error: insertErr } = await supabase
+          .from("chat_messages")
+          .insert({
+            session_id: sessionId,
+            user_id: user.id,
+            role: "user",
+            content,
+          });
+        if (insertErr) console.error("Failed to persist user message:", insertErr);
+      }
+
       let gotContent = false;
+      let accumulatedContent = "";
 
       try {
         for await (const event of streamChat(
@@ -105,6 +143,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
               break;
             case "chunk":
               gotContent = true;
+              accumulatedContent += event.content;
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantMessage.id
@@ -159,6 +198,25 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         setIsStreaming(false);
       }
 
+      // Persist assistant message to Supabase
+      if (accumulatedContent) {
+        const { error: insertErr } = await supabase
+          .from("chat_messages")
+          .insert({
+            session_id: sessionId,
+            user_id: user.id,
+            role: "assistant",
+            content: accumulatedContent,
+          });
+        if (insertErr) console.error("Failed to persist assistant message:", insertErr);
+      }
+
+      // Touch session to refresh sidebar ordering
+      await supabase
+        .from("chat_sessions")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", sessionId);
+
       // Reset retry counter on successful completion
       retryCountRef.current = 0;
 
@@ -186,8 +244,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
                 Start a conversation
               </p>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Previous conversation history is stored on your agent. Send a
-                new message to continue.
+                Send a message to get started.
               </p>
             </div>
           )}

@@ -43,6 +43,7 @@ class ProvisionRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
+    agent_id: str | None = None
     stream: bool = True
 
 
@@ -61,6 +62,20 @@ class LLMCompletionRequest(BaseModel):
     max_tokens: int | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class SlackConnection(BaseModel):
+    id: str
+    user_id: str
+    team_id: str
+    team_name: str = ""
+    bot_user_id: str = ""
+    app_id: str = ""
+    bot_token: str = ""
+    scope: str = ""
+    status: str = "active"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class UsageEvent(BaseModel):

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from supabase import acreate_client, AsyncClient
 
-from app.models import UserMachine, UsageEvent
+from app.models import SlackConnection, UserMachine, UsageEvent
 
 
 class SupabaseService:
@@ -119,6 +119,59 @@ class SupabaseService:
             .execute()
         )
         return [UserMachine(**row) for row in (result.data or [])]
+
+    # ── Slack Connections ──────────────────────────────────────────
+
+    async def get_slack_connection_by_team(
+        self, team_id: str
+    ) -> SlackConnection | None:
+        """Lookup active Slack connection by team_id (for webhook routing)."""
+        result = (
+            await self._client.table("slack_connections")
+            .select("*")
+            .eq("team_id", team_id)
+            .eq("status", "active")
+            .maybe_single()
+            .execute()
+        )
+        if result.data is None:
+            return None
+        return SlackConnection(**result.data)
+
+    async def get_slack_connection(self, user_id: str) -> SlackConnection | None:
+        """Lookup active Slack connection by user_id (for settings page)."""
+        result = (
+            await self._client.table("slack_connections")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .maybe_single()
+            .execute()
+        )
+        if result.data is None:
+            return None
+        return SlackConnection(**result.data)
+
+    async def upsert_slack_connection(self, data: dict) -> SlackConnection:
+        """Upsert a Slack connection row (on user_id + team_id conflict)."""
+        result = (
+            await self._client.table("slack_connections")
+            .upsert(data, on_conflict="user_id,team_id")
+            .execute()
+        )
+        return SlackConnection(**result.data[0])
+
+    async def revoke_slack_connection(
+        self, user_id: str, team_id: str
+    ) -> None:
+        """Mark a Slack connection as revoked."""
+        await (
+            self._client.table("slack_connections")
+            .update({"status": "revoked"})
+            .eq("user_id", user_id)
+            .eq("team_id", team_id)
+            .execute()
+        )
 
     # ── Usage Tracking ───────────────────────────────────────────
 

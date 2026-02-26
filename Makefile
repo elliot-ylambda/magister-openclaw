@@ -1,8 +1,9 @@
 .PHONY: up down logs seed reset \
+	image-build image-push \
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build \
 	supabase-start supabase-migrate supabase-reset connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
-	health status chat provision
+	health status chat provision slack-challenge
 
 # ─── Docker Compose ───────────────────────────────────────────
 
@@ -22,6 +23,17 @@ reset: down
 	docker compose down -v
 	$(MAKE) seed
 	$(MAKE) up
+
+# ─── OpenClaw Image ──────────────────────────────────────────
+
+IMAGE_NAME ?= magister-openclaw
+IMAGE_TAG  ?= latest
+
+image-build:
+	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) ./openclaw-image
+
+image-push:
+	docker push $(IMAGE_NAME):$(IMAGE_TAG)
 
 # ─── Webapp ───────────────────────────────────────────────────
 
@@ -118,3 +130,17 @@ else
 		-H "Content-Type: application/json" \
 		-d "{\"message\": \"$(m)\", \"stream\": false$$SID_JSON}" | python3 -m json.tool
 endif
+
+# Slack webhook: test URL verification challenge
+# Requires SLACK_SIGNING_SECRET in .env.gateway.docker
+slack-challenge:
+	@SECRET=$$(grep SLACK_SIGNING_SECRET .env.gateway.docker 2>/dev/null | cut -d= -f2); \
+	if [ -z "$$SECRET" ]; then echo "Error: SLACK_SIGNING_SECRET not set in .env.gateway.docker"; exit 1; fi; \
+	BODY='{"type":"url_verification","challenge":"make-test-challenge"}'; \
+	TS=$$(date +%s); \
+	SIG="v0=$$(echo -n "v0:$${TS}:$${BODY}" | openssl dgst -sha256 -hmac "$$SECRET" | awk '{print $$2}')"; \
+	curl -s -X POST http://localhost:8080/webhooks/slack \
+		-H "Content-Type: application/json" \
+		-H "x-slack-request-timestamp: $$TS" \
+		-H "x-slack-signature: $$SIG" \
+		-d "$$BODY" | python3 -m json.tool

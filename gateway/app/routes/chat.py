@@ -1,7 +1,13 @@
-"""POST /api/chat — SSE proxy to the user's OpenClaw machine."""
+"""POST /api/chat — SSE proxy to the user's OpenClaw machine.
+
+Translates the webapp's simple chat request into an OpenAI-compatible
+POST /v1/chat/completions call against the user's OpenClaw instance,
+then parses the JSON SSE stream back into plain-text SSE events.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import AsyncIterator
@@ -132,20 +138,45 @@ def create_chat_router(
         _active_requests.add(user_id)
         last_activity_update = 0.0
         try:
+            headers = {
+                "Authorization": f"Bearer {machine.gateway_token}",
+            }
+            if req.session_id:
+                headers["x-openclaw-session-key"] = f"webchat:{req.session_id}"
+            if req.agent_id:
+                headers["x-openclaw-agent-id"] = req.agent_id
+
             async with httpx.AsyncClient(timeout=300.0) as client:
                 async with client.stream(
                     "POST",
-                    f"{machine_url}/api/chat",
-                    json={"message": req.message, "session_id": req.session_id},
-                    headers={"Authorization": f"Bearer {machine.gateway_token}"},
+                    f"{machine_url}/v1/chat/completions",
+                    json={
+                        "model": "openclaw",
+                        "messages": [{"role": "user", "content": req.message}],
+                        "stream": True,
+                    },
+                    headers=headers,
                 ) as resp:
                     if resp.status_code != 200:
+                        body = await resp.aread()
+                        logger.warning(
+                            f"[chat] upstream {resp.status_code} for {user_id}: {body[:500]}"
+                        )
                         yield {"event": "error", "data": f"Upstream {resp.status_code}"}
                         return
                     async for line in resp.aiter_lines():
-                        if not line:
+                        if not line or not line.startswith("data: "):
                             continue
-                        yield {"event": "chunk", "data": line}
+                        payload = line[6:]  # strip "data: "
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                            content = chunk["choices"][0]["delta"].get("content", "")
+                            if content:
+                                yield {"event": "chunk", "data": content}
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
 
                         # Debounced activity tracking
                         now = time.monotonic()

@@ -19,24 +19,63 @@ if [ -d "/app/skills" ]; then
     cp -r /app/skills/* "$OPENCLAW_HOME/skills/"
 fi
 
-# Inject LLM config from env vars (set via Fly secrets during provisioning)
-# GATEWAY_TOKEN = per-machine bearer token (doubles as API key for the proxy)
-# LLM_BASE_URL = gateway's /llm/v1 endpoint on the internal network
-if [ -n "$GATEWAY_TOKEN" ]; then
-    mkdir -p "$OPENCLAW_HOME/credentials"
-    cat > "$OPENCLAW_HOME/credentials/llm-keys.json" <<EOF
-{
-  "anthropic": {
-    "apiKey": "${GATEWAY_TOKEN}",
-    "baseUrl": "${LLM_BASE_URL:-http://magister-gateway.internal:8080/llm/v1}"
-  }
-}
-EOF
-    echo "[entrypoint] LLM credentials refreshed"
+# ── LLM Credentials ──────────────────────────────────────────
+# Two modes:
+#   1. Proxy (default): GATEWAY_TOKEN → used as "API key" to our LLM proxy
+#   2. BYOK: BYOK_ANTHROPIC_KEY → user's own key, calls Anthropic directly
+if [ -n "$BYOK_ANTHROPIC_KEY" ]; then
+    export ANTHROPIC_API_KEY="${BYOK_ANTHROPIC_KEY}"
+    echo "[entrypoint] BYOK mode — using user-provided Anthropic API key"
+elif [ -n "$GATEWAY_TOKEN" ]; then
+    export ANTHROPIC_API_KEY="${GATEWAY_TOKEN}"
+    node -e "
+const fs = require('fs');
+const p = '${OPENCLAW_HOME}/openclaw.json';
+const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+if (!c.models) c.models = {};
+if (!c.models.providers) c.models.providers = {};
+c.models.providers.anthropic = {
+  baseUrl: '${LLM_BASE_URL:-http://magister-gateway.internal:8080/llm/v1}',
+  models: []
+};
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+"
+    echo "[entrypoint] Proxy mode — LLM calls route through gateway"
 fi
 
+# Toggle Slack channel based on env vars (set via Fly secrets after OAuth)
+if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_SIGNING_SECRET" ]; then
+    node -e "
+const fs = require('fs');
+const p = '${OPENCLAW_HOME}/openclaw.json';
+const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+if (!c.channels) c.channels = {};
+if (!c.channels.slack) c.channels.slack = {};
+c.channels.slack.enabled = true;
+c.channels.slack.mode = 'http';
+c.channels.slack.webhookPath = '/slack/events';
+if (!c.channels.slack.dm) c.channels.slack.dm = {};
+c.channels.slack.dm.enabled = true;
+c.channels.slack.dm.policy = 'open';
+c.channels.slack.groupPolicy = 'open';
+c.channels.slack.requireMention = true;
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+"
+    echo "[entrypoint] Slack channel enabled"
+else
+    node -e "
+const fs = require('fs');
+const p = '${OPENCLAW_HOME}/openclaw.json';
+const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+if (c.channels && c.channels.slack) c.channels.slack.enabled = false;
+fs.writeFileSync(p, JSON.stringify(c, null, 2));
+"
+    echo "[entrypoint] Slack channel disabled (no credentials)"
+fi
+
+export OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN}"
+export OPENCLAW_STATE_DIR="$OPENCLAW_HOME"
+export OPENCLAW_CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
+
 echo "[entrypoint] Starting OpenClaw gateway on 0.0.0.0:18789"
-exec node /app/openclaw/dist/index.js gateway \
-    --home "$OPENCLAW_HOME" \
-    --host 0.0.0.0 \
-    --port 18789
+exec node /app/openclaw/dist/index.js gateway

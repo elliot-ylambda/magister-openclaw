@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { ManageBillingButton } from '../dashboard/manage-billing-button';
+import { SlackConnection } from '@/components/settings/slack-connection';
 import { updateProfile, type ProfileUpdateState } from './actions';
 
 type SettingsClientProps = {
@@ -217,6 +218,9 @@ export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt, 
           <p className="text-sm text-muted-foreground">No active subscription</p>
         )}
       </section>
+
+      {/* Slack Integration */}
+      <SlackConnection />
 
       {/* Danger Zone */}
       <Separator />

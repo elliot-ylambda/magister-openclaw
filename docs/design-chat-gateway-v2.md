@@ -13,13 +13,14 @@ Switch to OpenClaw's documented HTTP SSE endpoint: `POST /v1/chat/completions` (
 ```
 Webapp (Next.js)
   │
-  │  POST /api/chat  { message, session_id, stream: true }
+  │  POST /api/chat  { message, session_id, agent_id?, stream: true }
   │  ← SSE: event:chunk  data:<plain text token>
   ▼
 Python Gateway (FastAPI)
   │
-  │  POST /v1/chat/completions  { model, messages, stream: true }
+  │  POST /v1/chat/completions  { model: "openclaw", messages, stream: true }
   │  Header: x-openclaw-session-key: webchat:<session_id>
+  │  Header: x-openclaw-agent-id: <agent_id>
   │  Header: Authorization: Bearer <gateway_token>
   │  ← SSE: data: {"choices":[{"delta":{"content":"token"}}]}
   ▼
@@ -27,6 +28,24 @@ OpenClaw Machine (port 18789)
 ```
 
 The Python gateway translates between the webapp's simple format and OpenAI's format, and parses JSON SSE → plain text SSE. The webapp never sees OpenAI JSON.
+
+### Agent routing
+
+Each OpenClaw machine can run multiple agents (e.g. "marketing", "seo", "social"). The gateway routes to a specific agent via the `x-openclaw-agent-id` header. OpenClaw's routing priority:
+
+1. `x-openclaw-agent-id` header (what we use)
+2. `model` field pattern (e.g. `openclaw:marketing`) — we don't use this
+3. Default agent — first with `default: true` flag, or first in `agents.list`
+
+Session keys are automatically namespaced per agent by OpenClaw: `agent:<agentId>:<mainKey>`. So `webchat:<uuid>` becomes `agent:marketing:webchat:<uuid>` for the marketing agent, fully isolated from other agents.
+
+### Context window management
+
+OpenClaw handles long conversations automatically — no manual compaction needed:
+
+- **Proactive**: After each turn, if tokens approach the context window limit, the Pi SDK auto-compacts (summarizes old messages, keeps ~20K recent tokens).
+- **Reactive**: If a turn hits the context limit, OpenClaw catches the overflow, compacts, and retries (up to 3 attempts with tool result truncation as fallback).
+- The `sessions.compact` WebSocket RPC is a separate manual operation (transcript truncation), not related to auto-compaction.
 
 ---
 
@@ -80,22 +99,28 @@ client.stream("POST", f"{machine_url}/api/chat",
 
 New:
 ```python
+headers = {
+    "Authorization": f"Bearer {machine.gateway_token}",
+}
+if req.session_id:
+    headers["x-openclaw-session-key"] = f"webchat:{req.session_id}"
+if req.agent_id:
+    headers["x-openclaw-agent-id"] = req.agent_id
+
 client.stream("POST", f"{machine_url}/v1/chat/completions",
     json={
         "model": "openclaw",
         "messages": [{"role": "user", "content": req.message}],
         "stream": True,
     },
-    headers={
-        "Authorization": f"Bearer {machine.gateway_token}",
-        "x-openclaw-session-key": f"webchat:{req.session_id}" if req.session_id else "",
-    })
+    headers=headers)
 ```
 
 Key decisions:
-- **`model: "openclaw"`** — OpenClaw ignores this value (uses its configured model) but the field is required by the OpenAI schema.
+- **`model: "openclaw"`** — Required by OpenAI schema. We don't encode agent ID here; we use the dedicated header instead.
 - **`messages`** — Only the latest user message. OpenClaw maintains full conversation context within the session (identified by `x-openclaw-session-key`). No need to send history.
 - **`x-openclaw-session-key`** — Maps the webapp's session UUID to an OpenClaw session. Format: `webchat:<uuid>`. This gives deterministic session routing — same webapp session always resumes the same OpenClaw conversation.
+- **`x-openclaw-agent-id`** — Routes to a specific agent on the machine. Defaults to the first agent in config if omitted. Passed through from `ChatRequest.agent_id`.
 
 #### Response parsing
 
@@ -130,15 +155,30 @@ This way the Python gateway emits plain text SSE events. The webapp concatenates
 
 **File:** `gateway/app/models.py`
 
-No change needed. The existing `ChatRequest(message, session_id, stream)` model works — the gateway translates it internally.
+Add optional `agent_id` field:
+```python
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+    agent_id: str | None = None
+    stream: bool = True
+```
+
+The webapp can omit `agent_id` to use the default agent, or pass it explicitly for multi-agent routing.
 
 ---
 
-### 3. Supabase — Add `chat_messages` table
+### 3. Supabase — Add `agent_id` to sessions + `chat_messages` table
 
-**File:** `webapp/supabase/migrations/20260224000000_create_chat_messages.sql`
+**File:** `webapp/supabase/migrations/20260225000000_add_agent_id_and_chat_messages.sql`
+
+Add `agent_id` to existing `chat_sessions` table and create `chat_messages`:
 
 ```sql
+-- Add agent_id to chat_sessions for multi-agent routing
+ALTER TABLE public.chat_sessions
+    ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'marketing';
+
 CREATE TABLE public.chat_messages (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id  UUID NOT NULL REFERENCES public.chat_sessions(id) ON DELETE CASCADE,
@@ -240,8 +280,8 @@ Also update `chat_sessions.updated_at` after each exchange to keep sidebar order
 
 | Action | Webapp | OpenClaw |
 |---|---|---|
-| **New chat** | Insert `chat_sessions` row, redirect to `/chat/<uuid>` | First message auto-creates session via `x-openclaw-session-key: webchat:<uuid>` |
-| **Continue chat** | Load messages from `chat_messages` table | Session resumes automatically — same key = same context |
+| **New chat** | Insert `chat_sessions` row (with `agent_id`), redirect to `/chat/<uuid>` | First message auto-creates session via `x-openclaw-session-key: webchat:<uuid>` + `x-openclaw-agent-id` |
+| **Continue chat** | Load messages from `chat_messages` table | Session resumes automatically — same key = same context. Long conversations auto-compact. |
 | **New session (reset)** | Create new `chat_sessions` row with new UUID | New UUID → new `x-openclaw-session-key` → fresh OpenClaw session |
 | **Delete chat** | Delete `chat_sessions` row (cascade deletes messages) | OpenClaw session orphaned (auto-expires via daily reset) |
 
@@ -259,8 +299,10 @@ Note: The webapp SSE parser (`gateway.ts`) was already fixed — no changes need
 
 ## What's NOT in scope
 
-- **Session management UI** (compact, reset via REST) — future work
+- **Agent selection UI** — `agent_id` column is ready, but UI defaults to `"marketing"` for now
+- **Session management UI** (compact, reset via REST) — future work (requires WebSocket or new HTTP wrapper)
 - **Message search** — future work
 - **Message editing/deletion** — future work
 - **Model selection per chat** — future work (hardcoded to `"openclaw"` for now)
 - **Multi-turn message history in API calls** — not needed; OpenClaw maintains context within a session
+- **Manual compaction** — not needed; OpenClaw auto-compacts when approaching context limits

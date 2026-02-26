@@ -66,10 +66,16 @@ def create_provision_router(
             if machine.provisioning_step < 2:
                 token = machine.gateway_token or secrets.token_urlsafe(32)
                 token_hash = hash_token(token)
-                await fly.set_secrets(
-                    machine.fly_app_name,
-                    {"GATEWAY_TOKEN": token},
-                )
+                fly_secrets: dict[str, str] = {"GATEWAY_TOKEN": token}
+
+                # Include Slack tokens if user already connected Slack
+                slack_conn = await supabase.get_slack_connection(user_id)
+                if slack_conn and slack_conn.bot_token:
+                    fly_secrets["SLACK_BOT_TOKEN"] = slack_conn.bot_token
+                    fly_secrets["SLACK_SIGNING_SECRET"] = settings.slack_signing_secret
+                    logger.info(f"[provision] including Slack secrets for {user_id}")
+
+                await fly.set_secrets(machine.fly_app_name, fly_secrets)
                 await supabase.update_user_machine(
                     machine.id,
                     gateway_token=token,
