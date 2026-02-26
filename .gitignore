@@ -37,6 +37,9 @@ yarn-error.log*
 __pycache__/
 *.pyc
 
+# supabase
+supabase/.temp/
+
 # worktrees
 .worktrees/
 
