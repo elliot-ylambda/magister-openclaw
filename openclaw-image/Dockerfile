@@ -24,7 +24,10 @@ RUN git clone --depth 1 --branch ${OPENCLAW_VERSION} \
     && pnpm build
 
 # --- Marketing Skills ---
-COPY skills/ /app/skills/
+ARG MARKETINGSKILLS_VERSION=main
+RUN git clone --depth 1 --branch ${MARKETINGSKILLS_VERSION} \
+    https://github.com/coreyhaines31/marketingskills.git /app/skills \
+    && rm -rf /app/skills/.git
 
 # --- Default Config ---
 COPY default-config/ /app/default-config/
