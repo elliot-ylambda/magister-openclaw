@@ -493,6 +493,52 @@ function EmailForm({
 // Survey Popup
 // ---------------------------------------------------------------------------
 
+function ScrollableOptions({ children }: { children: React.ReactNode }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = useState(false);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 8);
+    };
+    el.addEventListener("scroll", onScroll);
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  return (
+    <>
+      <div className="relative">
+        <div
+          ref={listRef}
+          className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1 pb-4"
+        >
+          {children}
+        </div>
+        <div
+          className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 transition-opacity duration-300"
+          style={{
+            background: "linear-gradient(to top, rgb(12,12,12) 0%, transparent 100%)",
+            opacity: atBottom ? 0 : 1,
+          }}
+        />
+      </div>
+      <p
+        className="mt-2 text-center text-[12px] transition-opacity duration-300"
+        style={{
+          fontFamily: "var(--font-dm-sans)",
+          color: "rgba(255,255,255,0.3)",
+          opacity: atBottom ? 0 : 1,
+        }}
+      >
+        Scroll for more options
+      </p>
+    </>
+  );
+}
+
 function SurveyPopup({
   email,
   onClose,
@@ -704,13 +750,28 @@ function SurveyPopup({
                 color: "rgba(255,255,255,0.5)",
               }}
             >
-              We&apos;ll be in touch soon. Thanks for the info — it helps us
-              build the right thing.
+              Thanks for the info — it helps us build the right thing.
+              Check your inbox to confirm you&apos;re on the waitlist.
             </p>
+            <a
+              href="https://mail.google.com/mail/#search/from%3Amagistermarketing.com+subject%3Awaitlist"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-5 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-[15px] font-medium text-black transition-opacity hover:opacity-90"
+              style={{ fontFamily: "var(--font-dm-sans)" }}
+            >
+              Open in Gmail
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 3h7v7M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </a>
             <button
               onClick={onClose}
-              className="mt-6 rounded-full bg-white px-6 py-3 text-[15px] font-medium text-black transition-opacity hover:opacity-90"
-              style={{ fontFamily: "var(--font-dm-sans)" }}
+              className="mt-3 block mx-auto rounded-full px-6 py-3 text-[15px] font-medium transition-colors"
+              style={{
+                fontFamily: "var(--font-dm-sans)",
+                color: "rgba(255,255,255,0.4)",
+              }}
             >
               Done
             </button>
@@ -981,7 +1042,7 @@ function SurveyPopup({
                 >
                   Pick your top 3.
                 </p>
-                <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto pr-1">
+                <ScrollableOptions>
                   {useCaseOptions.map((option) => {
                     const selected = answers.useCases.includes(option);
                     const disabled = !selected && answers.useCases.length >= 3;
@@ -1013,7 +1074,7 @@ function SurveyPopup({
                       </button>
                     );
                   })}
-                </div>
+                </ScrollableOptions>
               </div>
             )}
 
@@ -2571,6 +2632,12 @@ function CtaSection({
 // ---------------------------------------------------------------------------
 
 function Footer() {
+  const [copied, setCopied] = useState(false);
+  const copyEmail = () => {
+    navigator.clipboard.writeText("team@magistermarketing.com");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
     <footer
       className="px-6 py-10"
@@ -2603,15 +2670,27 @@ function Footer() {
             &ldquo;teacher&rdquo;
           </p>
         </div>
-        <p
-          className="text-[13px]"
-          style={{
-            fontFamily: "var(--font-dm-sans)",
-            color: "rgba(255,255,255,0.3)",
-          }}
-        >
-          Powered by Claude Code &middot; Built on OpenClaw
-        </p>
+        <div className="flex flex-col items-center gap-1.5 sm:items-end">
+          <button
+            onClick={copyEmail}
+            className="text-[13px] cursor-pointer transition-colors hover:text-white"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.5)",
+            }}
+          >
+            {copied ? "Copied!" : "team@magistermarketing.com"}
+          </button>
+          <p
+            className="text-[13px]"
+            style={{
+              fontFamily: "var(--font-dm-sans)",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            Powered by Claude Code &middot; Built on OpenClaw
+          </p>
+        </div>
       </div>
     </footer>
   );

@@ -25,6 +25,21 @@ export const metadata: Metadata = {
   title: "Magister Marketing - Autonomous AI Marketing Team",
   description:
     "Deploy AI agents that handle content, SEO, social media, competitor intel, and reviews. Built on OpenClaw.",
+  metadataBase: new URL("https://magistermarketing.com"),
+  openGraph: {
+    title: "Magister Marketing - Autonomous AI Marketing Team",
+    description:
+      "AI agents that ship real marketing work — not drafts. Content, SEO, social, ads, and more.",
+    url: "https://magistermarketing.com",
+    siteName: "Magister Marketing",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Magister Marketing - Autonomous AI Marketing Team",
+    description:
+      "AI agents that ship real marketing work — not drafts. Content, SEO, social, ads, and more.",
+  },
 };
 
 export default function RootLayout({

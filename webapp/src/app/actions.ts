@@ -39,6 +39,7 @@ export async function insertWaitlistEmail(
 
     await resend.emails.send({
       from: "Magister <waitlist@notifications.magistermarketing.com>",
+      replyTo: "team@magistermarketing.com",
       to: normalizedEmail,
       subject: "You're on the waitlist",
       react: React.createElement(WaitlistConfirmationEmail, { unsubscribeUrl }),

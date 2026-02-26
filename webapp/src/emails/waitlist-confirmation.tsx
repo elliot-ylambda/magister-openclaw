@@ -93,31 +93,68 @@ export const WaitlistConfirmationEmail: React.FC<
               </tr>
             </tbody>
           </table>
+
+          <Text style={{ ...bodyText, marginTop: "32px" }}>
+            One quick ask &mdash; hit reply and tell us: what would make
+            Magister a no-brainer to pay for? We read every response and
+            it directly shapes what we build.
+          </Text>
+
+          {/* ── Sign-off ── */}
+          <Text style={signoffText}>Talk soon,</Text>
+          <table style={{ borderCollapse: "collapse" as const }}>
+            <tbody>
+              <tr>
+                <td style={{ paddingRight: "12px", verticalAlign: "middle" }}>
+                  <Img
+                    src="https://magistermarketing.com/corey.jpeg"
+                    width="40"
+                    height="40"
+                    alt="Corey Haines"
+                    style={avatar}
+                  />
+                </td>
+                <td style={{ paddingRight: "20px", verticalAlign: "middle" }}>
+                  <Text style={signoffName}>Corey Haines</Text>
+                </td>
+                <td style={{ paddingRight: "12px", verticalAlign: "middle" }}>
+                  <Img
+                    src="https://magistermarketing.com/elliot.jpeg"
+                    width="40"
+                    height="40"
+                    alt="Elliot Eckholm"
+                    style={avatar}
+                  />
+                </td>
+                <td style={{ verticalAlign: "middle" }}>
+                  <Text style={signoffName}>Elliot Eckholm</Text>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </Section>
 
         <Hr style={divider} />
 
         {/* ── Footer ── */}
         <Section style={footerSection}>
-          <Text style={footerText}>
-            Open Source Foundation
-          </Text>
           <Text style={footerLinks}>
             <Link href="https://magistermarketing.com" style={footerLink}>
               Website
             </Link>
             &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-            <Link href="mailto:hello@magistermarketing.com" style={footerLink}>
+            <Link href="mailto:team@magistermarketing.com" style={footerLink}>
               Contact
             </Link>
-            {unsubscribeUrl && (
-              <>
-                &nbsp;&nbsp;&bull;&nbsp;&nbsp;
-                <Link href={unsubscribeUrl} style={footerLink}>
-                  Unsubscribe
-                </Link>
-              </>
-            )}
+            &nbsp;&nbsp;&bull;&nbsp;&nbsp;
+            <Link href={unsubscribeUrl || "#"} style={footerLink}>
+              Unsubscribe
+            </Link>
+          </Text>
+          <Text style={footerText}>
+            Magister Marketing &middot; You received this email because you
+            joined the waitlist. If you no longer wish to receive these
+            emails, click unsubscribe above.
           </Text>
         </Section>
       </Container>
@@ -236,6 +273,28 @@ const stepText: React.CSSProperties = {
   color: "rgba(255, 255, 255, 0.6)",
   padding: "10px 0",
   borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+};
+
+const signoffText: React.CSSProperties = {
+  fontFamily: fontSans,
+  fontSize: "15px",
+  fontWeight: 400,
+  lineHeight: "1.6",
+  color: "rgba(255, 255, 255, 0.6)",
+  margin: "0 0 16px",
+};
+
+const signoffName: React.CSSProperties = {
+  fontFamily: fontSans,
+  fontSize: "14px",
+  fontWeight: 500,
+  color: "rgba(255, 255, 255, 0.7)",
+  margin: "0",
+};
+
+const avatar: React.CSSProperties = {
+  borderRadius: "50%",
+  objectFit: "cover" as const,
 };
 
 const footerSection: React.CSSProperties = {
