@@ -3,7 +3,8 @@
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build \
 	supabase-start supabase-migrate supabase-reset connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
-	health status chat provision slack-challenge
+	health status chat provision slack-challenge \
+	deploy-gateway deploy-image deploy-machines deploy-all
 
 # ─── Docker Compose ───────────────────────────────────────────
 
@@ -34,6 +35,74 @@ image-build:
 
 image-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
+
+# ─── Production Deploy ───────────────────────────────────────
+
+FLY_IMAGE     ?= registry.fly.io/magister-user-machine
+FLY_IMAGE_TAG ?= latest
+GATEWAY_APP   ?= magister-gateway
+
+# Deploy gateway to Fly.io
+deploy-gateway:
+	cd gateway && flyctl deploy -a $(GATEWAY_APP)
+
+# Build and push user machine image to Fly registry
+deploy-image:
+	flyctl auth docker
+	docker build -t $(FLY_IMAGE):$(FLY_IMAGE_TAG) ./openclaw-image
+	docker push $(FLY_IMAGE):$(FLY_IMAGE_TAG)
+
+# Rolling update all user machines to the latest image.
+# - Running machines: restart with new image
+# - Stopped/suspended machines: update config only (--skip-start)
+deploy-machines:
+	@IMAGE="$(FLY_IMAGE):$(FLY_IMAGE_TAG)"; \
+	echo "Rolling update to $$IMAGE"; \
+	echo "---"; \
+	APPS=$$(flyctl apps list --json 2>/dev/null \
+		| python3 -c "import json,sys; \
+			skip={'$(GATEWAY_APP)','magister-user-machine'}; \
+			apps=[a['Name'] for a in json.load(sys.stdin) if a['Name'].startswith('magister-') and a['Name'] not in skip]; \
+			print('\n'.join(apps))" \
+	); \
+	if [ -z "$$APPS" ]; then echo "No user machines found."; exit 0; fi; \
+	TOTAL=$$(echo "$$APPS" | wc -l | tr -d ' '); \
+	echo "Found $$TOTAL user machine app(s)"; \
+	echo "---"; \
+	I=0; FAILED=0; \
+	for APP in $$APPS; do \
+		I=$$((I + 1)); \
+		echo "[$$I/$$TOTAL] $$APP"; \
+		MACHINE_INFO=$$(flyctl machines list -a $$APP --json 2>/dev/null); \
+		MACHINE_ID=$$(echo "$$MACHINE_INFO" | python3 -c "import json,sys; ms=json.load(sys.stdin); print(ms[0]['id'] if ms else '')" 2>/dev/null); \
+		STATE=$$(echo "$$MACHINE_INFO" | python3 -c "import json,sys; ms=json.load(sys.stdin); print(ms[0].get('state','') if ms else '')" 2>/dev/null); \
+		if [ -z "$$MACHINE_ID" ]; then \
+			echo "  SKIP: no machines found"; \
+			continue; \
+		fi; \
+		echo "  machine=$$MACHINE_ID state=$$STATE"; \
+		if [ "$$STATE" = "started" ] || [ "$$STATE" = "running" ]; then \
+			if flyctl machine update $$MACHINE_ID --image $$IMAGE -a $$APP --yes 2>&1; then \
+				echo "  OK: restarted with new image"; \
+			else \
+				echo "  FAIL: update failed"; \
+				FAILED=$$((FAILED + 1)); \
+			fi; \
+		else \
+			if flyctl machine update $$MACHINE_ID --image $$IMAGE -a $$APP --skip-start --yes 2>&1; then \
+				echo "  OK: config updated (machine stays $$STATE)"; \
+			else \
+				echo "  FAIL: update failed"; \
+				FAILED=$$((FAILED + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo "---"; \
+	echo "Done: $$((I - FAILED))/$$TOTAL succeeded."; \
+	if [ $$FAILED -gt 0 ]; then echo "WARNING: $$FAILED machine(s) failed."; exit 1; fi
+
+# Deploy everything: image + gateway + rolling update machines
+deploy-all: deploy-image deploy-gateway deploy-machines
 
 # ─── Webapp ───────────────────────────────────────────────────
 

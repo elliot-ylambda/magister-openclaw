@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from typing import AsyncIterator
 
 import httpx
@@ -108,15 +109,18 @@ def create_chat_router(
                 status_code=503, detail="Machine not ready"
             )
 
+        # Ensure we always have a session_id (generate one for new conversations)
+        session_id = req.session_id or str(uuid.uuid4())
+
         if req.stream:
             return EventSourceResponse(
-                _stream_chat(machine_url, machine, req, user_id, supabase)
+                _stream_chat(machine_url, machine, req, session_id, user_id, supabase)
             )
 
         # Non-streaming: collect all chunks via the same generator
         content_parts: list[str] = []
         error_message: str | None = None
-        async for event in _stream_chat(machine_url, machine, req, user_id, supabase):
+        async for event in _stream_chat(machine_url, machine, req, session_id, user_id, supabase):
             if event["event"] == "chunk":
                 content_parts.append(event["data"])
             elif event["event"] == "error":
@@ -126,12 +130,13 @@ def create_chat_router(
             status = 502 if "Upstream" in (error_message or "") else 500
             raise HTTPException(status_code=status, detail=error_message)
 
-        return {"content": "".join(content_parts), "session_id": req.session_id}
+        return {"content": "".join(content_parts), "session_id": session_id}
 
     async def _stream_chat(
         machine_url: str,
         machine,
         req: ChatRequest,
+        session_id: str,
         user_id: str,
         supabase: SupabaseService,
     ) -> AsyncIterator[dict]:
@@ -140,9 +145,8 @@ def create_chat_router(
         try:
             headers = {
                 "Authorization": f"Bearer {machine.gateway_token}",
+                "x-openclaw-session-key": f"webchat:{session_id}",
             }
-            if req.session_id:
-                headers["x-openclaw-session-key"] = f"webchat:{req.session_id}"
             if req.agent_id:
                 headers["x-openclaw-agent-id"] = req.agent_id
 

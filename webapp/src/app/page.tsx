@@ -1193,34 +1193,16 @@ function Nav() {
           ))}
         </div>
 
-        <div className="flex items-center gap-4">
-          <a
-            href="/login"
-            className="text-[13px] font-medium transition-colors duration-300"
-            style={{
-              fontFamily: "var(--font-dm-sans)",
-              color: "rgba(255,255,255,0.6)",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.color = "rgba(255,255,255,1)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.color = "rgba(255,255,255,0.6)")
-            }
-          >
-            Sign In
-          </a>
-          <a
-            href="/signup"
-            className="rounded-full px-5 py-2 text-[13px] font-medium text-white transition-all duration-300 hover:bg-white hover:text-black"
-            style={{
-              fontFamily: "var(--font-dm-sans)",
-              border: "1px solid rgba(255,255,255,0.2)",
-            }}
-          >
-            Get Started
-          </a>
-        </div>
+        <a
+          href="#request-access"
+          className="rounded-full px-5 py-2 text-[13px] font-medium text-white transition-all duration-300 hover:bg-white hover:text-black"
+          style={{
+            fontFamily: "var(--font-dm-sans)",
+            border: "1px solid rgba(255,255,255,0.2)",
+          }}
+        >
+          Request Early Access
+        </a>
       </div>
     </motion.nav>
   );
@@ -1230,7 +1212,11 @@ function Nav() {
 // Hero
 // ---------------------------------------------------------------------------
 
-function Hero() {
+function Hero({
+  onEmailSubmit,
+}: {
+  onEmailSubmit: (email: string) => Promise<{ success: boolean; error?: string }>;
+}) {
   return (
     <section className="relative flex flex-col items-center px-6 pt-48 pb-16 md:pt-56 md:pb-32 text-center overflow-hidden">
       {/* Animated gradient orbs */}
@@ -1367,7 +1353,7 @@ function Hero() {
         scheduling social content. You give it a task. It gets it done.
       </motion.p>
 
-      {/* CTA Button */}
+      {/* Email CTA */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1376,15 +1362,9 @@ function Hero() {
           delay: 0.65,
           ease: [0.25, 0.1, 0.25, 1],
         }}
-        className="mt-10"
+        className="mt-10 w-full max-w-xl"
       >
-        <a
-          href="/signup"
-          className="inline-block rounded-full bg-white px-10 py-4 text-[16px] font-medium text-black transition-opacity duration-300 hover:opacity-90"
-          style={{ fontFamily: "var(--font-dm-sans)" }}
-        >
-          Get Started
-        </a>
+        <EmailForm onSubmit={onEmailSubmit} id="hero-email" />
       </motion.div>
 
       {/* Divider */}
@@ -2160,8 +2140,7 @@ const pricingPlans = [
     price: "$299",
     period: "/mo",
     description: "One autonomous marketing agent with 25 specialized skills.",
-    cta: "Get Started",
-    href: "/signup?plan=cmo",
+    cta: "Get early access",
     highlighted: true,
     badge: null,
   },
@@ -2171,8 +2150,7 @@ const pricingPlans = [
     period: "/mo",
     description:
       "10+ agents working together — strategy, copy, SEO, ads, email, and more.",
-    cta: "Get Started",
-    href: "/signup?plan=cmo_plus",
+    cta: "Get early access",
     highlighted: false,
     badge: null,
   },
@@ -2182,8 +2160,7 @@ const pricingPlans = [
     period: " one-time",
     description:
       "We set it up on your infrastructure. You own and host everything.",
-    cta: "Contact Us",
-    href: "#request-access",
+    cta: "Get early access",
     highlighted: false,
     badge: null,
   },
@@ -2284,9 +2261,12 @@ function PricingSection() {
                   {plan.description}
                 </p>
 
-                <a
-                  href={plan.href}
-                  className={`block w-full rounded-full py-3 text-center text-[14px] font-medium transition-opacity duration-300 hover:opacity-90 ${
+                <button
+                  onClick={() => {
+                    const el = document.getElementById("request-access");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className={`w-full rounded-full py-3 text-[14px] font-medium transition-opacity duration-300 hover:opacity-90 ${
                     plan.highlighted
                       ? "bg-white text-black"
                       : "bg-transparent text-white"
@@ -2299,7 +2279,7 @@ function PricingSection() {
                   }}
                 >
                   {plan.cta}
-                </a>
+                </button>
               </div>
             </FadeUp>
           ))}
@@ -2597,28 +2577,10 @@ function CtaSection({
               fontWeight: 400,
             }}
           >
-            Start using Magister today. Pick a plan and your agent will be ready
-            in under a minute.
+            We&apos;re opening this up gradually. Drop your email and
+            we&apos;ll be in touch.
           </p>
           <div className="mt-10 flex justify-center">
-            <a
-              href="/signup"
-              className="inline-block rounded-full bg-white px-10 py-4 text-[16px] font-medium text-black transition-opacity duration-300 hover:opacity-90"
-              style={{ fontFamily: "var(--font-dm-sans)" }}
-            >
-              Get Started
-            </a>
-          </div>
-          <p
-            className="mx-auto mt-8 max-w-md text-sm"
-            style={{
-              fontFamily: "var(--font-dm-sans)",
-              color: "rgba(255,255,255,0.35)",
-            }}
-          >
-            Want to be notified instead?
-          </p>
-          <div className="mt-3 flex justify-center">
             <EmailForm onSubmit={onEmailSubmit} id="cta-email" />
           </div>
         </FadeUp>
@@ -2728,7 +2690,7 @@ export default function Home() {
         }}
       />
       <Nav />
-      <Hero />
+      <Hero onEmailSubmit={handleEmailSubmit} />
       <ProblemSection />
       <HowItWorksSection />
       <DemoSection />

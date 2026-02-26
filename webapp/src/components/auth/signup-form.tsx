@@ -1,7 +1,8 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState, useEffect } from 'react';
 import Link from 'next/link';
+import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,17 +12,17 @@ const initialState: SignupState = {};
 
 export function SignupForm() {
   const [state, formAction, pending] = useActionState(signup, initialState);
+  const [shaking, setShaking] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
 
-  if (state.success) {
-    return (
-      <div className="space-y-4 text-center">
-        <h2 className="text-xl font-semibold">Check your email</h2>
-        <p className="text-muted-foreground">
-          We sent you a confirmation link. Click it to activate your account.
-        </p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (state.error) {
+      setShakeKey((k) => k + 1);
+      setShaking(true);
+      const timer = setTimeout(() => setShaking(false), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [state]);
 
   return (
     <div className="space-y-6">
@@ -32,8 +33,18 @@ export function SignupForm() {
 
       <form action={formAction} className="space-y-4">
         {state.error && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" role="alert">
-            {state.error}
+          <div className="space-y-2">
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+              {state.error}
+            </div>
+            <p className="text-center text-sm text-muted-foreground">
+              <Link
+                href="/#hero-email"
+                className="text-primary underline underline-offset-4 hover:text-primary/80"
+              >
+                Join the waitlist →
+              </Link>
+            </p>
           </div>
         )}
 
@@ -47,9 +58,15 @@ export function SignupForm() {
           <Input id="password" name="password" type="password" placeholder="••••••••" required minLength={6} />
         </div>
 
-        <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? 'Creating account...' : 'Create account'}
-        </Button>
+        <motion.div
+          key={shakeKey}
+          animate={shaking ? { x: [0, -8, 8, -6, 6, -3, 3, 0] } : {}}
+          transition={{ duration: 0.5 }}
+        >
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? 'Creating account...' : 'Create account'}
+          </Button>
+        </motion.div>
       </form>
 
       <p className="text-center text-sm text-muted-foreground">
