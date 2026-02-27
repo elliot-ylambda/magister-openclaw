@@ -1515,6 +1515,538 @@ function HowItWorksSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Old Way vs New Way Section
+// ---------------------------------------------------------------------------
+
+function OldVsNewSection() {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(sectionRef, { once: true, margin: "-100px" });
+
+  // Old way: hub-and-spoke, X-shape (45/135/225/315 degrees)
+  const oldW = 320;
+  const oldH = 340;
+  const oldCx = oldW / 2;
+  const oldCy = oldH / 2;
+  const oldR = 100;
+
+  // New way: left-to-right flow
+  const newW = 380;
+  const newH = 340;
+  const youX = 55;
+  const youY = newH / 2;
+  const magX = 240;
+  const magY = newH / 2;
+  const orbitR = 100;
+
+  // Lucide-style SVG icon paths (24x24 viewBox)
+  const iconPaths = {
+    messageSquare:
+      "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+    wrench:
+      "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
+    barChart: "M12 20V10 M18 20V4 M6 20v-4",
+    penTool:
+      "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586 M11 13a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
+    search:
+      "M11 17.25a6.25 6.25 0 1 1 0-12.5 6.25 6.25 0 0 1 0 12.5z M16 16l4.5 4.5",
+    trendingUp: "M23 6l-9.5 9.5-5-5L1 18 M17 6h6v6",
+    zap: "M13 2L3 14h9l-1 10 10-12h-9l1-10z",
+  };
+
+  // SVG icon component helper — renders a Lucide-style path inside a circle
+  const renderIcon = (
+    cx: number,
+    cy: number,
+    pathD: string,
+    color: string,
+    size: number = 12,
+    isStroke: boolean = true,
+  ) => (
+    <g
+      transform={`translate(${cx - size / 2}, ${cy - size / 2}) scale(${size / 24})`}
+    >
+      <path
+        d={pathD}
+        fill={isStroke ? "none" : color}
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  );
+
+  const oldNodes = [
+    { angle: -45, icon: iconPaths.messageSquare, label: "Prompt AI" },
+    { angle: 45, icon: iconPaths.wrench, label: "Use tools" },
+    { angle: 135, icon: iconPaths.barChart, label: "Check data" },
+    { angle: 225, icon: iconPaths.wrench, label: "Edit & fix" },
+  ];
+
+  const orbitNodes = [
+    { startAngle: 0, icon: iconPaths.penTool, label: "Write" },
+    { startAngle: 90, icon: iconPaths.search, label: "Research" },
+    { startAngle: 180, icon: iconPaths.trendingUp, label: "Optimize" },
+    { startAngle: 270, icon: iconPaths.zap, label: "Launch" },
+  ];
+
+  return (
+    <section ref={sectionRef} className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-5xl">
+        <FadeUp className="text-center">
+          <SectionLabel>Old way vs new way</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Stop being the middleware
+          </h2>
+        </FadeUp>
+
+        <div className="mt-16 grid grid-cols-1 gap-6 md:grid-cols-2">
+          {/* ── Old Way ── */}
+          <FadeUp delay={0.1}>
+            <div
+              className="relative flex flex-col items-center rounded-lg px-6 pb-10 pt-8 md:px-8"
+              style={{
+                border: "1px solid rgba(255,255,255,0.06)",
+                background: "rgba(255,255,255,0.02)",
+              }}
+            >
+              <p
+                className="mb-2 text-sm uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.3)",
+                  fontWeight: 500,
+                }}
+              >
+                The old way
+              </p>
+
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  width: "100%",
+                  maxWidth: oldW,
+                  aspectRatio: `${oldW}/${oldH}`,
+                }}
+              >
+                <svg
+                  viewBox={`0 0 ${oldW} ${oldH}`}
+                  width="100%"
+                  height="100%"
+                  style={{ overflow: "visible" }}
+                >
+                  {oldNodes.map((node, i) => {
+                    const rad = (node.angle * Math.PI) / 180;
+                    const nx = oldCx + oldR * Math.cos(rad);
+                    const ny = oldCy + oldR * Math.sin(rad);
+
+                    return (
+                      <g key={i}>
+                        {/* Dashed line */}
+                        <motion.line
+                          x1={oldCx}
+                          y1={oldCy}
+                          x2={nx}
+                          y2={ny}
+                          stroke="rgba(255,255,255,0.07)"
+                          strokeWidth={1}
+                          strokeDasharray="4 4"
+                          initial={{ pathLength: 0 }}
+                          animate={
+                            inView
+                              ? { pathLength: 1 }
+                              : { pathLength: 0 }
+                          }
+                          transition={{
+                            duration: 0.5,
+                            delay: 0.3 + i * 0.12,
+                          }}
+                        />
+
+                        {/* Ping-pong dot */}
+                        {inView && (
+                          <circle r={3} fill="rgba(255,255,255,0.3)">
+                            <animateMotion
+                              dur={`${2.2 + i * 0.35}s`}
+                              repeatCount="indefinite"
+                              path={`M${oldCx},${oldCy} L${nx},${ny} L${oldCx},${oldCy}`}
+                            />
+                          </circle>
+                        )}
+
+                        {/* Node circle */}
+                        <motion.circle
+                          cx={nx}
+                          cy={ny}
+                          r={24}
+                          fill="rgba(255,255,255,0.02)"
+                          stroke="rgba(255,255,255,0.08)"
+                          strokeWidth={1}
+                          initial={{ opacity: 0 }}
+                          animate={
+                            inView ? { opacity: 1 } : { opacity: 0 }
+                          }
+                          transition={{
+                            duration: 0.4,
+                            delay: 0.45 + i * 0.12,
+                          }}
+                        />
+
+                        {/* Icon inside node */}
+                        <motion.g
+                          initial={{ opacity: 0 }}
+                          animate={
+                            inView ? { opacity: 1 } : { opacity: 0 }
+                          }
+                          transition={{
+                            duration: 0.3,
+                            delay: 0.55 + i * 0.12,
+                          }}
+                        >
+                          {renderIcon(
+                            nx,
+                            ny,
+                            node.icon,
+                            "rgba(255,255,255,0.3)",
+                            14,
+                          )}
+                        </motion.g>
+
+                        {/* Label below node */}
+                        <motion.text
+                          x={nx}
+                          y={ny + 38}
+                          textAnchor="middle"
+                          fill="rgba(255,255,255,0.25)"
+                          fontSize={11}
+                          fontFamily="var(--font-dm-sans)"
+                          initial={{ opacity: 0 }}
+                          animate={
+                            inView ? { opacity: 1 } : { opacity: 0 }
+                          }
+                          transition={{ delay: 0.6 + i * 0.12 }}
+                        >
+                          {node.label}
+                        </motion.text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Center "You" node */}
+                  <circle
+                    cx={oldCx}
+                    cy={oldCy}
+                    r={32}
+                    fill="rgba(255,255,255,0.04)"
+                    stroke="rgba(255,255,255,0.12)"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={oldCx}
+                    y={oldCy + 5}
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.5)"
+                    fontSize={14}
+                    fontWeight={600}
+                    fontFamily="var(--font-dm-sans)"
+                  >
+                    You
+                  </text>
+
+                  {/* Repeat loop hint */}
+                  <motion.g
+                    initial={{ opacity: 0 }}
+                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={{ delay: 1.2 }}
+                  >
+                    <text
+                      x={oldCx}
+                      y={oldH - 8}
+                      textAnchor="middle"
+                      fill="rgba(255,255,255,0.18)"
+                      fontSize={11}
+                      fontFamily="var(--font-dm-sans)"
+                    >
+                      repeat forever...
+                    </text>
+                  </motion.g>
+                </svg>
+              </div>
+
+              <p
+                className="mt-4 text-xs uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.25)",
+                  fontWeight: 500,
+                }}
+              >
+                Slow. Manual. Time-constrained.
+              </p>
+            </div>
+          </FadeUp>
+
+          {/* ── New Way ── */}
+          <FadeUp delay={0.2}>
+            <div
+              className="relative flex flex-col items-center rounded-lg px-6 pb-10 pt-8 md:px-8"
+              style={{
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(255,255,255,0.03)",
+              }}
+            >
+              <p
+                className="mb-2 text-sm uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.5)",
+                  fontWeight: 500,
+                }}
+              >
+                The new way
+              </p>
+
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  width: "100%",
+                  maxWidth: newW,
+                  aspectRatio: `${newW}/${newH}`,
+                }}
+              >
+                <svg
+                  viewBox={`0 0 ${newW} ${newH}`}
+                  width="100%"
+                  height="100%"
+                  style={{ overflow: "visible" }}
+                >
+                  {/* Forward arrow: You → Magister */}
+                  <motion.line
+                    x1={youX + 30}
+                    y1={youY}
+                    x2={magX - 40}
+                    y2={magY}
+                    stroke="rgba(255,255,255,0.18)"
+                    strokeWidth={1}
+                    initial={{ pathLength: 0 }}
+                    animate={
+                      inView ? { pathLength: 1 } : { pathLength: 0 }
+                    }
+                    transition={{ duration: 0.4, delay: 0.5 }}
+                  />
+
+                  {/* Return arrow: curved below */}
+                  <motion.path
+                    d={`M${magX - 30},${magY + 32} Q${(youX + magX) / 2},${magY + 82} ${youX + 22},${youY + 28}`}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.1)"
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                    initial={{ pathLength: 0 }}
+                    animate={
+                      inView ? { pathLength: 1 } : { pathLength: 0 }
+                    }
+                    transition={{ duration: 0.6, delay: 1.3 }}
+                  />
+                  <motion.text
+                    x={(youX + magX) / 2}
+                    y={magY + 92}
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.25)"
+                    fontSize={10}
+                    fontFamily="var(--font-dm-sans)"
+                    initial={{ opacity: 0 }}
+                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={{ delay: 1.9 }}
+                  >
+                    review &amp; approve
+                  </motion.text>
+
+                  {/* Orbit track */}
+                  <motion.ellipse
+                    cx={magX}
+                    cy={magY}
+                    rx={orbitR}
+                    ry={orbitR * 0.7}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.04)"
+                    strokeWidth={1}
+                    initial={{ opacity: 0 }}
+                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={{ delay: 0.7 }}
+                  />
+
+                  {/* Magister pulsing glow */}
+                  <circle
+                    cx={magX}
+                    cy={magY}
+                    r={34}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.05)"
+                    strokeWidth={1}
+                  >
+                    <animate
+                      attributeName="r"
+                      values="34;42;34"
+                      dur="3s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      values="0.4;0.8;0.4"
+                      dur="3s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+
+                  {/* Magister hub */}
+                  <circle
+                    cx={magX}
+                    cy={magY}
+                    r={34}
+                    fill="rgba(255,255,255,0.06)"
+                    stroke="rgba(255,255,255,0.18)"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={magX}
+                    y={magY + 5}
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.85)"
+                    fontSize={13}
+                    fontWeight={600}
+                    fontFamily="var(--font-dm-sans)"
+                  >
+                    Magister
+                  </text>
+
+                  {/* "You" node */}
+                  <motion.g
+                    initial={{ opacity: 0 }}
+                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={{ delay: 0.3 }}
+                  >
+                    <circle
+                      cx={youX}
+                      cy={youY}
+                      r={26}
+                      fill="rgba(255,255,255,0.04)"
+                      stroke="rgba(255,255,255,0.12)"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={youX}
+                      y={youY + 5}
+                      textAnchor="middle"
+                      fill="rgba(255,255,255,0.55)"
+                      fontSize={13}
+                      fontWeight={600}
+                      fontFamily="var(--font-dm-sans)"
+                    >
+                      You
+                    </text>
+                  </motion.g>
+
+                  {/* Orbiting nodes with labels */}
+                  {orbitNodes.map((node, i) => {
+                    const sa = node.startAngle;
+                    const rx = orbitR;
+                    const ry = orbitR * 0.7;
+                    const startX =
+                      magX + rx * Math.cos((sa * Math.PI) / 180);
+                    const startY =
+                      magY + ry * Math.sin((sa * Math.PI) / 180);
+                    const oppX =
+                      magX +
+                      rx * Math.cos(((sa + 180) * Math.PI) / 180);
+                    const oppY =
+                      magY +
+                      ry * Math.sin(((sa + 180) * Math.PI) / 180);
+                    const orbitPath = `M${startX},${startY} A${rx},${ry} 0 1 1 ${oppX},${oppY} A${rx},${ry} 0 1 1 ${startX},${startY}`;
+
+                    return (
+                      <g key={i}>
+                        {inView && (
+                          <g>
+                            {/* Orbit node circle */}
+                            <circle
+                              r={18}
+                              fill="rgba(255,255,255,0.03)"
+                              stroke="rgba(255,255,255,0.1)"
+                              strokeWidth={1}
+                            >
+                              <animateMotion
+                                dur="16s"
+                                repeatCount="indefinite"
+                                path={orbitPath}
+                              />
+                            </circle>
+                            {/* Icon inside orbit node */}
+                            <g>
+                              <animateMotion
+                                dur="16s"
+                                repeatCount="indefinite"
+                                path={orbitPath}
+                              />
+                              {renderIcon(
+                                0,
+                                0,
+                                node.icon,
+                                "rgba(255,255,255,0.45)",
+                                12,
+                              )}
+                            </g>
+                            {/* Label below orbit node */}
+                            <text
+                              textAnchor="middle"
+                              dy={28}
+                              fill="rgba(255,255,255,0.3)"
+                              fontSize={9}
+                              fontFamily="var(--font-dm-sans)"
+                            >
+                              {node.label}
+                              <animateMotion
+                                dur="16s"
+                                repeatCount="indefinite"
+                                path={orbitPath}
+                              />
+                            </text>
+                          </g>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              <p
+                className="mt-4 text-xs uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.45)",
+                  fontWeight: 500,
+                }}
+              >
+                Fast. Autonomous. Always running.
+              </p>
+            </div>
+          </FadeUp>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Skills Section
 // ---------------------------------------------------------------------------
 
@@ -2694,6 +3226,7 @@ export default function Home() {
       <ProblemSection />
       <HowItWorksSection />
       <DemoSection />
+      <OldVsNewSection />
       <SkillsSection />
       <IntegrationsSection />
       <PersonasSection />
