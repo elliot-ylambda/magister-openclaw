@@ -1762,23 +1762,6 @@ function OldVsNewSection() {
                     You
                   </text>
 
-                  {/* Repeat loop hint */}
-                  <motion.g
-                    initial={{ opacity: 0 }}
-                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: 1.2 }}
-                  >
-                    <text
-                      x={oldCx}
-                      y={oldH - 8}
-                      textAnchor="middle"
-                      fill="rgba(255,255,255,0.18)"
-                      fontSize={11}
-                      fontFamily="var(--font-dm-sans)"
-                    >
-                      repeat forever...
-                    </text>
-                  </motion.g>
                 </svg>
               </div>
 
@@ -1846,7 +1829,7 @@ function OldVsNewSection() {
 
                   {/* Return arrow: curved below */}
                   <motion.path
-                    d={`M${magX - 30},${magY + 32} Q${(youX + magX) / 2},${magY + 82} ${youX + 22},${youY + 28}`}
+                    d={`M${magX - 30},${magY + 38} Q${(youX + magX) / 2},${magY + 120} ${youX + 22},${youY + 34}`}
                     fill="none"
                     stroke="rgba(255,255,255,0.1)"
                     strokeWidth={1}
@@ -1859,7 +1842,7 @@ function OldVsNewSection() {
                   />
                   <motion.text
                     x={(youX + magX) / 2}
-                    y={magY + 92}
+                    y={magY + 130}
                     textAnchor="middle"
                     fill="rgba(255,255,255,0.25)"
                     fontSize={10}
