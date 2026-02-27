@@ -36,7 +36,7 @@ class SupabaseService:
             .maybe_single()
             .execute()
         )
-        if result.data is None:
+        if result is None or result.data is None:
             return None
         return UserMachine(**result.data)
 
@@ -51,9 +51,35 @@ class SupabaseService:
             .maybe_single()
             .execute()
         )
-        if result.data is None:
+        if result is None or result.data is None:
             return None
         return UserMachine(**result.data)
+
+    async def get_user_machine_for_provision(self, user_id: str) -> UserMachine | None:
+        """Lookup by user_id — includes ALL statuses (even destroyed).
+
+        Used only by provision to see the full machine lifecycle so it can
+        handle ghost records that still hold the fly_app_name unique constraint.
+        """
+        result = (
+            await self._client.table("user_machines")
+            .select("*")
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return UserMachine(**result.data)
+
+    async def delete_user_machine(self, machine_id: str) -> None:
+        """Physically delete a machine record (used to clear destroyed records)."""
+        await (
+            self._client.table("user_machines")
+            .delete()
+            .eq("id", machine_id)
+            .execute()
+        )
 
     async def create_user_machine(self, data: dict) -> UserMachine:
         """Insert a new user_machine row."""
@@ -134,7 +160,7 @@ class SupabaseService:
             .maybe_single()
             .execute()
         )
-        if result.data is None:
+        if result is None or result.data is None:
             return None
         return SlackConnection(**result.data)
 
@@ -148,7 +174,7 @@ class SupabaseService:
             .maybe_single()
             .execute()
         )
-        if result.data is None:
+        if result is None or result.data is None:
             return None
         return SlackConnection(**result.data)
 

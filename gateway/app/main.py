@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
     app.state.llm = llm
 
     # Auth dependencies
-    verify_jwt = create_jwt_dependency(settings.supabase_jwt_secret)
+    verify_jwt = create_jwt_dependency(settings.supabase_jwt_secret, settings.supabase_url)
     verify_api_key = create_api_key_dependency(settings.gateway_api_key)
 
     # Rate limiter

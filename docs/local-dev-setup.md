@@ -34,7 +34,7 @@ cd webapp && pnpm supabase status
 make db-reset
 ```
 
-Applies all migrations, then creates a dev auth user via the GoTrue admin API and seeds a dev machine row:
+Applies all migrations, then runs `supabase/seed.sql` which creates a dev auth user and seeds a dev machine row:
 
 | What | Value |
 |------|-------|
@@ -424,7 +424,7 @@ make logs             # check for errors
 
 **Gateway can't reach Supabase:** Make sure local Supabase is running (`make db-start`) and `SUPABASE_URL` in `.env.gateway.docker` uses `host.docker.internal` (not `localhost`).
 
-**JWT login fails:** Run `make db-reset` to re-seed the dev user. The seed script creates the user via the GoTrue admin API with password `dev-password-not-for-production`.
+**JWT login fails:** Run `make db-reset` to re-seed the dev user. The seed file (`supabase/seed.sql`) creates the user with password `dev-password-not-for-production`.
 
 **Chat returns 404 "No machine found":** The dev machine row is missing. Run `make db-reset` to re-seed it.
 

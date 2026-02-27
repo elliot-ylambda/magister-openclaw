@@ -4,7 +4,7 @@ FROM node:22-bookworm
 
 # System deps: Chromium for browser automation, git for OpenClaw
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium git curl ca-certificates \
+    chromium git curl ca-certificates socat \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_PATH=/usr/bin/chromium
@@ -36,6 +36,6 @@ COPY default-config/ /app/default-config/
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 18789
+EXPOSE 18789 18790
 
 ENTRYPOINT ["/entrypoint.sh"]

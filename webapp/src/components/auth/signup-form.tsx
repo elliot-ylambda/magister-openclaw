@@ -42,7 +42,7 @@ export function SignupForm() {
         transition={{ duration: 1.2 }}
         className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-4 text-center text-sm text-yellow-500"
       >
-        Signups are currently disabled.{' '}
+        Signups are by invitation only.{' '}
         <Link
           href="/"
           className="underline underline-offset-4 hover:text-yellow-400"
@@ -53,6 +53,12 @@ export function SignupForm() {
       </motion.div>
 
       <form action={formAction} className="space-y-4">
+
+        {state.error && (
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+            {state.error}
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>

@@ -39,11 +39,12 @@ def _make_machine(status: MachineStatus = MachineStatus.running, **overrides) ->
 @pytest.fixture
 def mock_supabase():
     mock = AsyncMock()
-    mock.get_user_machine.return_value = None
+    mock.get_user_machine_for_provision.return_value = None
     mock.create_user_machine.return_value = _make_machine(
         status=MachineStatus.provisioning, provisioning_step=0
     )
     mock.update_user_machine.return_value = None
+    mock.delete_user_machine.return_value = None
     return mock
 
 
@@ -81,20 +82,20 @@ def test_provision_new_user(mock_fly, mock_supabase, settings):
 
 
 def test_provision_already_running(mock_fly, mock_supabase, settings):
-    """Returns 200 with already_running if machine exists and is running."""
-    mock_supabase.get_user_machine.return_value = _make_machine(
+    """Returns 200 with already_provisioned if machine is running."""
+    mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
         status=MachineStatus.running
     )
     client = _make_app(mock_fly, mock_supabase, settings)
     resp = client.post("/api/provision", json={"user_id": "user-1"})
     assert resp.status_code == 200
-    assert resp.json()["status"] == "already_running"
+    assert resp.json()["status"] == "already_provisioned"
     mock_fly.create_app.assert_not_called()
 
 
 def test_provision_resumes_from_step(mock_fly, mock_supabase, settings):
     """Resumes from provisioning_step if machine is in provisioning state."""
-    mock_supabase.get_user_machine.return_value = _make_machine(
+    mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
         status=MachineStatus.provisioning,
         provisioning_step=2,  # App + secrets already done
         fly_volume_id=None,
@@ -121,3 +122,77 @@ def test_provision_marks_failed_on_error(mock_fly, mock_supabase, settings):
     mock_supabase.update_user_machine.assert_called()
     call_kwargs = mock_supabase.update_user_machine.call_args
     assert call_kwargs[1].get("status") == MachineStatus.failed.value
+
+
+# ── New state-handling tests ──────────────────────────────────────
+
+
+def test_provision_failed_resumes(mock_fly, mock_supabase, settings):
+    """Failed machine resets to provisioning and resumes from last step."""
+    mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
+        status=MachineStatus.failed,
+        provisioning_step=3,  # App + secrets + volume done, machine creation failed
+        fly_volume_id="vol_123",
+        fly_machine_id=None,
+    )
+    client = _make_app(mock_fly, mock_supabase, settings)
+    resp = client.post("/api/provision", json={"user_id": "user-1"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "provisioned"
+    # Should have reset status to provisioning
+    mock_supabase.update_user_machine.assert_any_call(
+        "machine-1", status=MachineStatus.provisioning.value
+    )
+    # Should NOT redo steps 1-3
+    mock_fly.create_app.assert_not_called()
+    mock_fly.set_secrets.assert_not_called()
+    mock_fly.create_volume.assert_not_called()
+    # Should resume at step 4 (create machine)
+    mock_fly.create_machine.assert_called_once()
+
+
+def test_provision_destroyed_starts_fresh(mock_fly, mock_supabase, settings):
+    """Destroyed record is deleted, then a new machine is created from scratch."""
+    mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
+        status=MachineStatus.destroyed,
+    )
+    # After deleting the ghost, create_user_machine returns a fresh record
+    mock_supabase.create_user_machine.return_value = _make_machine(
+        id="machine-2",
+        status=MachineStatus.provisioning,
+        provisioning_step=0,
+    )
+    client = _make_app(mock_fly, mock_supabase, settings)
+    resp = client.post("/api/provision", json={"user_id": "user-1"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "provisioned"
+    # Should have deleted the destroyed record
+    mock_supabase.delete_user_machine.assert_called_once_with("machine-1")
+    # Should have created a fresh record
+    mock_supabase.create_user_machine.assert_called_once()
+    # Should run all provisioning steps
+    mock_fly.create_app.assert_called_once()
+    mock_fly.create_machine.assert_called_once()
+
+
+def test_provision_suspended_returns_success(mock_fly, mock_supabase, settings):
+    """Suspended machine returns already_provisioned without touching Fly."""
+    mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
+        status=MachineStatus.suspended,
+    )
+    client = _make_app(mock_fly, mock_supabase, settings)
+    resp = client.post("/api/provision", json={"user_id": "user-1"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "already_provisioned"
+    mock_fly.create_app.assert_not_called()
+
+
+def test_provision_destroying_returns_409(mock_fly, mock_supabase, settings):
+    """Machine being destroyed returns 409 Conflict."""
+    mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
+        status=MachineStatus.destroying,
+    )
+    client = _make_app(mock_fly, mock_supabase, settings)
+    resp = client.post("/api/provision", json={"user_id": "user-1"})
+    assert resp.status_code == 409
+    mock_fly.create_app.assert_not_called()

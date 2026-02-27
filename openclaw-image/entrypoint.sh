@@ -13,11 +13,26 @@ if [ ! -f "$OPENCLAW_HOME/openclaw.json" ]; then
     cp -r /app/default-config/* "$OPENCLAW_HOME/"
 fi
 
+# Revert bind to "lan" if a previous image set it to an invalid value
+node -e "
+const fs = require('fs');
+const p = '${OPENCLAW_HOME}/openclaw.json';
+const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+if (c.gateway && c.gateway.bind !== 'lan') {
+  c.gateway.bind = 'lan';
+  fs.writeFileSync(p, JSON.stringify(c, null, 2));
+}
+"
+
 # Copy/update marketing skills on every boot (picks up new skills on image update)
 if [ -d "/app/skills" ]; then
     mkdir -p "$OPENCLAW_HOME/skills"
     cp -r /app/skills/* "$OPENCLAW_HOME/skills/"
 fi
+
+# Purge cached models.json so OpenClaw regenerates from current config.
+# Prevents stale baseUrl (e.g. wrong port) from persisting across image updates.
+find "$OPENCLAW_HOME/agents" -name models.json -delete 2>/dev/null
 
 # ── LLM Credentials ──────────────────────────────────────────
 # Two modes:
@@ -35,7 +50,7 @@ const c = JSON.parse(fs.readFileSync(p, 'utf8'));
 if (!c.models) c.models = {};
 if (!c.models.providers) c.models.providers = {};
 c.models.providers.anthropic = {
-  baseUrl: '${LLM_BASE_URL:-http://magister-gateway.internal:8080/llm/v1}',
+  baseUrl: '${LLM_BASE_URL:-http://magister-gateway.internal:8081/llm/v1}',
   models: []
 };
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
@@ -77,5 +92,10 @@ export OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN}"
 export OPENCLAW_STATE_DIR="$OPENCLAW_HOME"
 export OPENCLAW_CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
 
-echo "[entrypoint] Starting OpenClaw gateway on 0.0.0.0:18789"
+# Bridge IPv6 → IPv4 so Fly's 6PN internal DNS can reach OpenClaw.
+# OpenClaw binds 0.0.0.0:18789 (IPv4 only). Fly internal DNS resolves to
+# IPv6 (6PN). socat on port 18790 accepts IPv6 and forwards to localhost:18789.
+socat TCP6-LISTEN:18790,fork,reuseaddr,bind=[::] TCP4:127.0.0.1:18789 &
+
+echo "[entrypoint] Starting OpenClaw gateway on 0.0.0.0:18789 (IPv6 bridge on :18790)"
 exec node /app/openclaw/dist/index.js gateway

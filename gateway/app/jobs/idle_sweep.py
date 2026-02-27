@@ -46,7 +46,7 @@ async def _run_sweep(
             try:
                 import httpx
 
-                base = dev_machine_url if dev_machine_url else f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789"
+                base = dev_machine_url if dev_machine_url else f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18790"
                 url = f"{base}/health"
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.get(url)

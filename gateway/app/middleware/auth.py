@@ -30,20 +30,48 @@ def _extract_bearer(request: Request) -> str:
 # ── JWT Auth (Supabase) ──────────────────────────────────────
 
 
-def create_jwt_dependency(jwt_secret: str):
-    """Factory: returns a FastAPI Depends that decodes a Supabase JWT and returns user_id."""
-    from jose import JWTError, jwt as jose_jwt
+def create_jwt_dependency(jwt_secret: str, supabase_url: str = ""):
+    """Factory: returns a FastAPI Depends that decodes a Supabase JWT and returns user_id.
+
+    Supports both HS256 (legacy) and ES256 (newer Supabase projects).
+    For ES256, the public key is fetched from Supabase's JWKS endpoint.
+    """
+    import logging
+    import jwt as pyjwt
+    from jwt import PyJWKClient
+
+    logger = logging.getLogger("gateway.auth")
+
+    # Set up JWKS client for ES256 verification (if Supabase URL is available)
+    jwks_client = None
+    if supabase_url:
+        jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+        jwks_client = PyJWKClient(jwks_url, cache_keys=True)
 
     async def verify_jwt(request: Request) -> str:
         token = _extract_bearer(request)
         try:
-            payload = jose_jwt.decode(
-                token,
-                jwt_secret,
-                algorithms=["HS256"],
-                audience="authenticated",
-            )
-        except JWTError as exc:
+            # Peek at the header to determine algorithm
+            header = pyjwt.get_unverified_header(token)
+            alg = header.get("alg", "HS256")
+
+            if alg == "ES256" and jwks_client:
+                signing_key = jwks_client.get_signing_key_from_jwt(token)
+                payload = pyjwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["ES256"],
+                    audience="authenticated",
+                )
+            else:
+                payload = pyjwt.decode(
+                    token,
+                    jwt_secret,
+                    algorithms=["HS256"],
+                    audience="authenticated",
+                )
+        except pyjwt.exceptions.PyJWTError as exc:
+            logger.warning(f"[jwt] rejected: {exc}")
             raise HTTPException(status_code=401, detail=f"Invalid JWT: {exc}")
         user_id = payload.get("sub")
         if not user_id:

@@ -7,6 +7,7 @@ then parses the JSON SSE stream back into plain-text SSE events.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -38,7 +39,7 @@ def _machine_url(machine, dev_override: str) -> str:
     """
     if dev_override:
         return dev_override
-    return f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789"
+    return f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18790"
 
 
 def create_chat_router(
@@ -88,6 +89,18 @@ def create_chat_router(
                     "started",
                     timeout_s=30,
                 )
+                # Poll health until the app inside the container is ready
+                machine_url = _machine_url(machine, dev_machine_url)
+                for _ in range(12):  # up to ~60s
+                    try:
+                        async with httpx.AsyncClient(timeout=5.0) as hc:
+                            resp = await hc.get(f"{machine_url}/health")
+                            resp.raise_for_status()
+                        break
+                    except Exception:
+                        await asyncio.sleep(5)
+                else:
+                    raise TimeoutError("app health check never passed")
                 await supabase.update_user_machine(
                     machine.id, status=MachineStatus.running.value
                 )
@@ -170,6 +183,8 @@ def create_chat_router(
                         return
                     async for line in resp.aiter_lines():
                         if not line or not line.startswith("data: "):
+                            if line:
+                                logger.debug(f"[chat] non-data line from upstream: {line[:200]}")
                             continue
                         payload = line[6:]  # strip "data: "
                         if payload == "[DONE]":
@@ -180,6 +195,7 @@ def create_chat_router(
                             if content:
                                 yield {"event": "chunk", "data": content}
                         except (json.JSONDecodeError, KeyError, IndexError):
+                            logger.warning(f"[chat] unparseable upstream chunk: {payload[:300]}")
                             continue
 
                         # Debounced activity tracking

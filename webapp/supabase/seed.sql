@@ -1,10 +1,17 @@
--- Seed: local dev user_machine for Docker-based development
--- Deterministic token matches DEV_MACHINE_TOKEN in .env.gateway.docker.example
--- Idempotent: safe to run multiple times
+-- =============================================================
+-- Local development seed data
+-- =============================================================
+-- This file runs ONLY during `supabase db reset --local`.
+-- It is NOT applied to production (supabase db push ignores seeds).
+--
+-- Creates:
+--   1. A dev user in auth.users + auth.identities
+--   2. A profile row (admin) in public.profiles
+--   3. A dev machine row in public.user_machines
+-- =============================================================
 
--- Create a dev user in auth.users (required by FK constraint)
--- GoTrue scans several varchar columns and fails if they are NULL,
--- so we explicitly set them to empty strings.
+-- 1. Dev user in auth.users ──────────────────────────────────
+
 INSERT INTO auth.users (
     id,
     instance_id,
@@ -57,7 +64,8 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- Create identity row (required by GoTrue for password login)
+-- 2. Identity row (required by GoTrue for password login) ────
+
 INSERT INTO auth.identities (
     id,
     user_id,
@@ -80,8 +88,16 @@ VALUES (
 )
 ON CONFLICT (provider_id, provider) DO NOTHING;
 
--- Insert dev machine row
--- gateway_token_hash = SHA-256 of 'dev-local-token-magister-2026'
+-- 3. Dev profile (admin) ─────────────────────────────────────
+-- Inserted explicitly because the on_auth_user_created trigger
+-- doesn't fire for rows inserted directly into auth.users.
+
+INSERT INTO public.profiles (id, email, role)
+VALUES ('00000000-0000-0000-0000-000000000001', 'dev@magister.local', 'admin')
+ON CONFLICT (id) DO NOTHING;
+
+-- 4. Dev machine row ─────────────────────────────────────────
+
 INSERT INTO public.user_machines (
     id,
     user_id,
@@ -105,3 +121,9 @@ VALUES (
     encode(sha256('dev-local-token-magister-2026'::bytea), 'hex')
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 5. Allow dev user to sign up ─────────────────────────────────
+
+INSERT INTO public.signup_allowlist (email, notes)
+VALUES ('dev@magister.local', 'Local development user')
+ON CONFLICT DO NOTHING;

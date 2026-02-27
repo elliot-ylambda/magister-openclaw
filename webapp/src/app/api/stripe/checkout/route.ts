@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       line_items: [{ price: priceIdFromPlan(plan), quantity: 1 }],
       subscription_data: { metadata: { user_id: user.id, plan } },
       metadata: { plan },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/chat?checkout=success`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing?checkout=cancelled`,
     });
 

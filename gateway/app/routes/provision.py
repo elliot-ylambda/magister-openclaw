@@ -29,17 +29,40 @@ def create_provision_router(
         plan = req.plan
         region = req.region or settings.default_region
 
-        # Check for existing machine (idempotent)
-        machine = await supabase.get_user_machine(user_id)
+        # Check for existing machine — unfiltered so we see destroyed records too
+        machine = await supabase.get_user_machine_for_provision(user_id)
 
-        if machine and machine.status == MachineStatus.running:
-            return {"status": "already_running", "machine_id": machine.id}
+        if machine:
+            match machine.status:
+                case MachineStatus.running | MachineStatus.suspended:
+                    return {
+                        "status": "already_provisioned",
+                        "machine_id": machine.id,
+                    }
 
-        if machine and machine.status == MachineStatus.provisioning:
-            # Resume from last completed step
-            pass
-        else:
-            # Step 0: Create DB record
+                case MachineStatus.provisioning:
+                    pass  # resume from last completed step
+
+                case MachineStatus.failed:
+                    # Reset to provisioning — resume from last completed step.
+                    # Fly resources from completed steps still exist because
+                    # reconciliation hasn't run yet (status would be destroyed).
+                    await supabase.update_user_machine(
+                        machine.id, status=MachineStatus.provisioning.value
+                    )
+
+                case MachineStatus.destroying:
+                    raise HTTPException(
+                        409, "Machine is being destroyed, retry later"
+                    )
+
+                case MachineStatus.destroyed:
+                    # Clear the ghost record so fly_app_name is free for reuse
+                    await supabase.delete_user_machine(machine.id)
+                    machine = None  # fall through to create new
+
+        if machine is None:
+            # Step 0: Create fresh DB record
             fly_app_name = f"magister-{user_id[:8]}"
             machine = await supabase.create_user_machine(
                 {
@@ -106,6 +129,8 @@ def create_provision_router(
                     "region": region,
                     "config": {
                         "image": settings.openclaw_image,
+                        "auto_destroy": False,
+                        "restart": {"policy": "always"},
                         "guest": {"cpu_kind": "shared", "cpus": 2, "memory_mb": 2048},
                         "mounts": [
                             {

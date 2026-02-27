@@ -86,7 +86,7 @@ def create_slack_webhook_router(
     def _machine_url(machine, dev_override: str) -> str:
         if dev_override:
             return dev_override
-        return f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18789"
+        return f"http://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal:18790"
 
     async def _get_wake_lock(team_id: str) -> asyncio.Lock:
         if team_id not in _wake_locks:

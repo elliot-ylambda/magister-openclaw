@@ -37,9 +37,11 @@ def mock_supabase() -> AsyncMock:
     """AsyncMock of SupabaseService with sensible defaults."""
     mock = AsyncMock()
     mock.get_user_machine.return_value = None
+    mock.get_user_machine_for_provision.return_value = None
     mock.get_user_machine_by_token_hash.return_value = None
     mock.create_user_machine.return_value = None
     mock.update_user_machine.return_value = None
+    mock.delete_user_machine.return_value = None
     mock.update_last_activity.return_value = None
     mock.claim_idle_machines.return_value = []
     mock.get_monthly_llm_spend.return_value = 0

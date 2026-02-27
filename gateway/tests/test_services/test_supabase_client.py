@@ -188,6 +188,43 @@ class TestClaimIdleMachines:
         assert result == []
 
 
+class TestGetUserMachineForProvision:
+    async def test_returns_machine_including_destroyed(self, svc):
+        """Verify the query does NOT filter by status (no .neq call)."""
+        service, client = svc
+        row = {**_MACHINE_ROW, "status": "destroyed"}
+        client.table.return_value = _make_query_mock(row)
+
+        result = await service.get_user_machine_for_provision("u1")
+
+        assert isinstance(result, UserMachine)
+        assert result.status == MachineStatus.destroyed
+        # Should NOT have called .neq (unlike get_user_machine)
+        chain = client.table.return_value
+        chain.neq.assert_not_called()
+
+    async def test_returns_none_when_not_found(self, svc):
+        service, client = svc
+        client.table.return_value = _make_query_mock(None)
+
+        result = await service.get_user_machine_for_provision("unknown")
+        assert result is None
+
+
+class TestDeleteUserMachine:
+    async def test_deletes_by_id(self, svc):
+        service, client = svc
+        chain = _make_query_mock(None)
+        chain.delete.return_value = chain
+        client.table.return_value = chain
+
+        await service.delete_user_machine("m1")
+
+        client.table.assert_called_with("user_machines")
+        chain.delete.assert_called_once()
+        chain.eq.assert_called_with("id", "m1")
+
+
 class TestCreateUserMachine:
     async def test_returns_created_machine(self, svc):
         service, client = svc

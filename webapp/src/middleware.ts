@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 
 const PUBLIC_ROUTES = new Set(['/', '/login', '/signup', '/pricing', '/reset-password']);
-const PUBLIC_PREFIXES = ['/auth/', '/api/'];
+const PUBLIC_PREFIXES = ['/auth/', '/api/', '/checkout/'];
 const AUTH_ROUTES = new Set(['/login', '/signup']);
 
 export function isPublicRoute(pathname: string): boolean {

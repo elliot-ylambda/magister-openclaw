@@ -14,7 +14,7 @@ services:
       start_period: 5s
 
   user-machine:
-    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    image: ${OPENCLAW_IMAGE:-registry.fly.io/magister-user-machine:latest}
     ports:
       - "18789:18789"
     volumes:

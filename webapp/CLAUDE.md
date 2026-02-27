@@ -69,6 +69,7 @@ The entire site is a single client component in `src/app/page.tsx` (~2000 lines)
 - **`waitlist` table** columns: `id` (uuid PK), `email` (unique), `roles`, `experience`, `ai_providers`, `channels`, `use_cases` (all jsonb arrays), `created_at`, `updated_at` (auto-trigger)
 - **RLS**: Enabled with anon insert policy only; updates use service-role key to bypass RLS
 - **Migrations** in `supabase/migrations/` — run with `make supabase-migrate-local`
+- **Seed data** in `supabase/seed.sql` — dev user, profile, and machine; runs only during `supabase db reset --local`, never in production
 - **Local Supabase** config in `supabase/config.toml` (project_id: `webapp`, DB port: 54322, Studio port: 54323)
 
 ## Environment

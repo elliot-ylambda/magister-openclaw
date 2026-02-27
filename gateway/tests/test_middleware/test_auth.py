@@ -2,8 +2,11 @@
 
 import hashlib
 import time
+from unittest.mock import MagicMock, patch
 
+import jwt as pyjwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -94,6 +97,78 @@ def test_jwt_valid(jwt_app):
     resp = jwt_app.get("/protected", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     assert resp.json() == {"user_id": "user-123"}
+
+
+# ── JWT Auth (ES256) ──────────────────────────────────────────
+
+
+@pytest.fixture
+def ec_key_pair():
+    """Generate a fresh EC key pair for ES256 tests."""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    public_key = private_key.public_key()
+    return private_key, public_key
+
+
+def _make_es256_jwt(payload: dict, private_key, kid: str = "test-kid") -> str:
+    """Create an ES256-signed JWT with a kid header."""
+    return pyjwt.encode(
+        payload, private_key, algorithm="ES256", headers={"kid": kid}
+    )
+
+
+@pytest.fixture
+def es256_app(ec_key_pair):
+    """FastAPI app with ES256 JWKS support via mocked PyJWKClient."""
+    private_key, public_key = ec_key_pair
+
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = public_key
+
+    mock_jwks_client = MagicMock()
+    mock_jwks_client.get_signing_key_from_jwt.return_value = mock_signing_key
+
+    with patch("jwt.PyJWKClient", return_value=mock_jwks_client):
+        app = FastAPI()
+        verify_jwt = create_jwt_dependency(JWT_SECRET, supabase_url="https://fake.supabase.co")
+
+        @app.get("/protected")
+        async def protected(user_id: str = verify_jwt):
+            return {"user_id": user_id}
+
+    return TestClient(app), private_key
+
+
+def test_jwt_es256_valid(es256_app):
+    client, private_key = es256_app
+    token = _make_es256_jwt(
+        {"sub": "user-es256", "aud": "authenticated", "exp": int(time.time()) + 3600},
+        private_key,
+    )
+    resp = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert resp.json() == {"user_id": "user-es256"}
+
+
+def test_jwt_es256_no_jwks_client():
+    """ES256 token should be rejected when no supabase_url is configured (no JWKS client)."""
+    app = FastAPI()
+    verify_jwt = create_jwt_dependency(JWT_SECRET)  # no supabase_url
+
+    @app.get("/protected")
+    async def protected(user_id: str = verify_jwt):
+        return {"user_id": user_id}
+
+    client = TestClient(app)
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    token = _make_es256_jwt(
+        {"sub": "user-1", "aud": "authenticated", "exp": int(time.time()) + 3600},
+        private_key,
+    )
+    resp = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
+    # Falls through to HS256 path, which rejects it (wrong algorithm/key)
+    assert resp.status_code == 401
 
 
 # ── API Key Auth ──────────────────────────────────────────────

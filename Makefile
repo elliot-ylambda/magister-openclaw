@@ -46,11 +46,11 @@ GATEWAY_APP   ?= magister-gateway
 deploy-gateway:
 	cd gateway && flyctl deploy -a $(GATEWAY_APP)
 
-# Build and push user machine image to Fly registry
+# Build and push user machine image to Fly registry (builds on Fly's remote amd64 builders)
 deploy-image:
-	flyctl auth docker
-	docker build -t $(FLY_IMAGE):$(FLY_IMAGE_TAG) ./openclaw-image
-	docker push $(FLY_IMAGE):$(FLY_IMAGE_TAG)
+	cd openclaw-image && flyctl deploy -a magister-user-machine \
+		--remote-only --build-only --push \
+		--image-label $(FLY_IMAGE_TAG)
 
 # Rolling update all user machines to the latest image.
 # - Running machines: restart with new image

@@ -32,7 +32,7 @@ build:
 	pnpm run build
 
 supabase-start-local:
-	supabase start --local
+	supabase start
 
 supabase-migrate-local:
 	supabase unlink || true
