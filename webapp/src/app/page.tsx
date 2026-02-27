@@ -1648,6 +1648,17 @@ function OldVsNewSection() {
                     const rad = (node.angle * Math.PI) / 180;
                     const nx = oldCx + oldR * Math.cos(rad);
                     const ny = oldCy + oldR * Math.sin(rad);
+                    // Shortened endpoints so dots don't touch center or node
+                    const inset = 35;
+                    const dx = nx - oldCx;
+                    const dy = ny - oldCy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const ux = dx / dist;
+                    const uy = dy / dist;
+                    const dotStartX = oldCx + ux * inset;
+                    const dotStartY = oldCy + uy * inset;
+                    const dotEndX = nx - ux * inset;
+                    const dotEndY = ny - uy * inset;
 
                     return (
                       <g key={i}>
@@ -1672,13 +1683,13 @@ function OldVsNewSection() {
                           }}
                         />
 
-                        {/* Ping-pong dot */}
+                        {/* Ping-pong dot — slow, stops short of icons */}
                         {inView && (
-                          <circle r={3} fill="rgba(255,255,255,0.3)">
+                          <circle r={2.5} fill="rgba(255,255,255,0.25)">
                             <animateMotion
-                              dur={`${2.2 + i * 0.35}s`}
+                              dur={`${6 + i * 0.8}s`}
                               repeatCount="indefinite"
-                              path={`M${oldCx},${oldCy} L${nx},${ny} L${oldCx},${oldCy}`}
+                              path={`M${dotStartX},${dotStartY} L${dotEndX},${dotEndY} L${dotStartX},${dotStartY}`}
                             />
                           </circle>
                         )}
@@ -1829,7 +1840,7 @@ function OldVsNewSection() {
 
                   {/* Return arrow: curved below */}
                   <motion.path
-                    d={`M${magX - 30},${magY + 38} Q${(youX + magX) / 2},${magY + 120} ${youX + 22},${youY + 34}`}
+                    d={`M${magX - 30},${magY + 38} Q${(youX + magX) / 2},${magY + 145} ${youX + 22},${youY + 34}`}
                     fill="none"
                     stroke="rgba(255,255,255,0.1)"
                     strokeWidth={1}
@@ -1842,7 +1853,7 @@ function OldVsNewSection() {
                   />
                   <motion.text
                     x={(youX + magX) / 2}
-                    y={magY + 130}
+                    y={magY + 142}
                     textAnchor="middle"
                     fill="rgba(255,255,255,0.25)"
                     fontSize={10}
