@@ -7,6 +7,7 @@ import {
   useInView,
   useScroll,
   useTransform,
+  useReducedMotion,
   AnimatePresence,
 } from "motion/react";
 import { insertWaitlistEmail, updateWaitlistSurvey } from "./actions";
@@ -1515,59 +1516,45 @@ function HowItWorksSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Old Way vs New Way Section
+// Old Way vs New Way Section — constants hoisted outside component
 // ---------------------------------------------------------------------------
 
-function OldVsNewSection() {
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const inView = useInView(sectionRef, { once: true, margin: "-100px" });
+const OLD_W = 360;
+const OLD_H = 360;
+const OLD_CX = OLD_W / 2;
+const OLD_CY = OLD_H / 2;
+const OLD_R = 125;
 
-  // Old way: hub-and-spoke, X-shape (45/135/225/315 degrees)
-  const oldW = 360;
-  const oldH = 360;
-  const oldCx = oldW / 2;
-  const oldCy = oldH / 2;
-  const oldR = 125;
+const NEW_W = 380;
+const NEW_H = 360;
+const YOU_X = 55;
+const YOU_Y = NEW_H / 2;
+const MAG_X = 240;
+const MAG_Y = NEW_H / 2;
+const ORBIT_R = 100;
 
-  // New way: left-to-right flow
-  const newW = 380;
-  const newH = 360;
-  const youX = 55;
-  const youY = newH / 2;
-  const magX = 240;
-  const magY = newH / 2;
-  const orbitR = 100;
+const ICON_PATHS = {
+  messageSquare:
+    "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+  wrench:
+    "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
+  barChart: "M12 20V10 M18 20V4 M6 20v-4",
+  refreshCw:
+    "M1 4v6h6 M23 20v-6h-6 M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15",
+  penTool:
+    "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586 M11 13a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
+  search:
+    "M11 17.25a6.25 6.25 0 1 1 0-12.5 6.25 6.25 0 0 1 0 12.5z M16 16l4.5 4.5",
+  trendingUp: "M23 6l-9.5 9.5-5-5L1 18 M17 6h6v6",
+  zap: "M13 2L3 14h9l-1 10 10-12h-9l1-10z",
+};
 
-  // Lucide-style SVG icon paths (24x24 viewBox)
-  const iconPaths = {
-    messageSquare:
-      "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
-    wrench:
-      "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
-    barChart: "M12 20V10 M18 20V4 M6 20v-4",
-    penTool:
-      "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586 M11 13a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
-    search:
-      "M11 17.25a6.25 6.25 0 1 1 0-12.5 6.25 6.25 0 0 1 0 12.5z M16 16l4.5 4.5",
-    trendingUp: "M23 6l-9.5 9.5-5-5L1 18 M17 6h6v6",
-    zap: "M13 2L3 14h9l-1 10 10-12h-9l1-10z",
-  };
-
-  // SVG icon component helper — renders a Lucide-style path inside a circle
-  const renderIcon = (
-    cx: number,
-    cy: number,
-    pathD: string,
-    color: string,
-    size: number = 12,
-    isStroke: boolean = true,
-  ) => (
-    <g
-      transform={`translate(${cx - size / 2}, ${cy - size / 2}) scale(${size / 24})`}
-    >
+function renderIcon(cx: number, cy: number, pathD: string, color: string, size: number = 12) {
+  return (
+    <g transform={`translate(${cx - size / 2}, ${cy - size / 2}) scale(${size / 24})`}>
       <path
         d={pathD}
-        fill={isStroke ? "none" : color}
+        fill="none"
         stroke={color}
         strokeWidth={2}
         strokeLinecap="round"
@@ -1575,20 +1562,27 @@ function OldVsNewSection() {
       />
     </g>
   );
+}
 
-  const oldNodes = [
-    { angle: -45, icon: iconPaths.messageSquare, label: "Prompt AI" },
-    { angle: 45, icon: iconPaths.wrench, label: "Use tools" },
-    { angle: 135, icon: iconPaths.barChart, label: "Check data" },
-    { angle: 225, icon: iconPaths.wrench, label: "Edit & fix" },
-  ];
+const OLD_NODES = [
+  { angle: -45, icon: ICON_PATHS.messageSquare, label: "Prompt AI" },
+  { angle: 45, icon: ICON_PATHS.wrench, label: "Use tools" },
+  { angle: 135, icon: ICON_PATHS.barChart, label: "Check data" },
+  { angle: 225, icon: ICON_PATHS.refreshCw, label: "Edit & fix" },
+];
 
-  const orbitNodes = [
-    { startAngle: 0, icon: iconPaths.penTool, label: "Write" },
-    { startAngle: 90, icon: iconPaths.search, label: "Research" },
-    { startAngle: 180, icon: iconPaths.trendingUp, label: "Optimize" },
-    { startAngle: 270, icon: iconPaths.zap, label: "Launch" },
-  ];
+const ORBIT_NODES = [
+  { startAngle: 0, icon: ICON_PATHS.penTool, label: "Write" },
+  { startAngle: 90, icon: ICON_PATHS.search, label: "Research" },
+  { startAngle: 180, icon: ICON_PATHS.trendingUp, label: "Optimize" },
+  { startAngle: 270, icon: ICON_PATHS.zap, label: "Launch" },
+];
+
+function OldVsNewSection() {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(sectionRef, { once: true, margin: "-100px" });
+  const prefersReducedMotion = useReducedMotion();
+  const animate = inView && !prefersReducedMotion;
 
   return (
     <section ref={sectionRef} className="px-6 py-32 md:py-48">
@@ -1613,7 +1607,7 @@ function OldVsNewSection() {
           {/* ── Old Way ── */}
           <FadeUp delay={0.1}>
             <div
-              className="relative flex flex-col items-center rounded-lg px-6 pb-10 pt-8 md:px-8"
+              className="relative flex flex-col items-center overflow-hidden rounded-lg px-6 pb-10 pt-8 md:px-8"
               style={{
                 border: "1px solid rgba(255,255,255,0.06)",
                 background: "rgba(255,255,255,0.02)",
@@ -1634,38 +1628,36 @@ function OldVsNewSection() {
                 className="flex items-center justify-center"
                 style={{
                   width: "100%",
-                  maxWidth: oldW,
-                  aspectRatio: `${oldW}/${oldH}`,
+                  maxWidth: OLD_W,
+                  aspectRatio: `${OLD_W}/${OLD_H}`,
                 }}
               >
                 <svg
-                  viewBox={`0 0 ${oldW} ${oldH}`}
+                  viewBox={`0 0 ${OLD_W} ${OLD_H}`}
                   width="100%"
                   height="100%"
-                  style={{ overflow: "visible" }}
                 >
-                  {oldNodes.map((node, i) => {
+                  {OLD_NODES.map((node) => {
                     const rad = (node.angle * Math.PI) / 180;
-                    const nx = oldCx + oldR * Math.cos(rad);
-                    const ny = oldCy + oldR * Math.sin(rad);
-                    // Shortened endpoints so dots don't touch center or node
+                    const nx = OLD_CX + OLD_R * Math.cos(rad);
+                    const ny = OLD_CY + OLD_R * Math.sin(rad);
                     const inset = 35;
-                    const dx = nx - oldCx;
-                    const dy = ny - oldCy;
+                    const dx = nx - OLD_CX;
+                    const dy = ny - OLD_CY;
                     const dist = Math.sqrt(dx * dx + dy * dy);
                     const ux = dx / dist;
                     const uy = dy / dist;
-                    const dotStartX = oldCx + ux * inset;
-                    const dotStartY = oldCy + uy * inset;
+                    const dotStartX = OLD_CX + ux * inset;
+                    const dotStartY = OLD_CY + uy * inset;
                     const dotEndX = nx - ux * inset;
                     const dotEndY = ny - uy * inset;
 
                     return (
-                      <g key={i}>
+                      <g key={node.label}>
                         {/* Dashed line — starts/ends at circle edges */}
                         <motion.line
-                          x1={oldCx + ux * 36}
-                          y1={oldCy + uy * 36}
+                          x1={OLD_CX + ux * 36}
+                          y1={OLD_CY + uy * 36}
                           x2={nx - ux * 28}
                           y2={ny - uy * 28}
                           stroke="rgba(255,255,255,0.07)"
@@ -1678,16 +1670,16 @@ function OldVsNewSection() {
                               : { pathLength: 0 }
                           }
                           transition={{
-                            duration: 0.5,
-                            delay: 0.3 + i * 0.12,
+                            duration: prefersReducedMotion ? 0 : 0.5,
+                            delay: prefersReducedMotion ? 0 : 0.3,
                           }}
                         />
 
-                        {/* Ping-pong dot — slow, stops short of icons */}
-                        {inView && (
+                        {/* Ping-pong dot */}
+                        {animate && (
                           <circle r={2.5} fill="rgba(255,255,255,0.25)">
                             <animateMotion
-                              dur={`${6 + i * 0.8}s`}
+                              dur={`${6 + OLD_NODES.indexOf(node) * 0.8}s`}
                               repeatCount="indefinite"
                               path={`M${dotStartX},${dotStartY} L${dotEndX},${dotEndY} L${dotStartX},${dotStartY}`}
                             />
@@ -1707,8 +1699,8 @@ function OldVsNewSection() {
                             inView ? { opacity: 1 } : { opacity: 0 }
                           }
                           transition={{
-                            duration: 0.4,
-                            delay: 0.45 + i * 0.12,
+                            duration: prefersReducedMotion ? 0 : 0.4,
+                            delay: prefersReducedMotion ? 0 : 0.45,
                           }}
                         />
 
@@ -1719,8 +1711,8 @@ function OldVsNewSection() {
                             inView ? { opacity: 1 } : { opacity: 0 }
                           }
                           transition={{
-                            duration: 0.3,
-                            delay: 0.55 + i * 0.12,
+                            duration: prefersReducedMotion ? 0 : 0.3,
+                            delay: prefersReducedMotion ? 0 : 0.55,
                           }}
                         >
                           {renderIcon(
@@ -1744,7 +1736,7 @@ function OldVsNewSection() {
                           animate={
                             inView ? { opacity: 1 } : { opacity: 0 }
                           }
-                          transition={{ delay: 0.6 + i * 0.12 }}
+                          transition={{ delay: prefersReducedMotion ? 0 : 0.6 }}
                         >
                           {node.label}
                         </motion.text>
@@ -1754,16 +1746,16 @@ function OldVsNewSection() {
 
                   {/* Center "You" node */}
                   <circle
-                    cx={oldCx}
-                    cy={oldCy}
+                    cx={OLD_CX}
+                    cy={OLD_CY}
                     r={32}
                     fill="rgba(255,255,255,0.04)"
                     stroke="rgba(255,255,255,0.12)"
                     strokeWidth={1}
                   />
                   <text
-                    x={oldCx}
-                    y={oldCy + 5}
+                    x={OLD_CX}
+                    y={OLD_CY + 5}
                     textAnchor="middle"
                     fill="rgba(255,255,255,0.5)"
                     fontSize={14}
@@ -1792,7 +1784,7 @@ function OldVsNewSection() {
           {/* ── New Way ── */}
           <FadeUp delay={0.2}>
             <div
-              className="relative flex flex-col items-center rounded-lg px-6 pb-10 pt-8 md:px-8"
+              className="relative flex flex-col items-center overflow-hidden rounded-lg px-6 pb-10 pt-8 md:px-8"
               style={{
                 border: "1px solid rgba(255,255,255,0.1)",
                 background: "rgba(255,255,255,0.03)",
@@ -1813,34 +1805,33 @@ function OldVsNewSection() {
                 className="flex items-center justify-center"
                 style={{
                   width: "100%",
-                  maxWidth: newW,
-                  aspectRatio: `${newW}/${newH}`,
+                  maxWidth: NEW_W,
+                  aspectRatio: `${NEW_W}/${NEW_H}`,
                 }}
               >
                 <svg
-                  viewBox={`0 0 ${newW} ${newH}`}
+                  viewBox={`0 0 ${NEW_W} ${NEW_H}`}
                   width="100%"
                   height="100%"
-                  style={{ overflow: "visible" }}
                 >
                   {/* Forward arrow: You → Magister */}
                   <motion.line
-                    x1={youX + 30}
-                    y1={youY}
-                    x2={magX - 38}
-                    y2={magY}
+                    x1={YOU_X + 30}
+                    y1={YOU_Y}
+                    x2={MAG_X - 38}
+                    y2={MAG_Y}
                     stroke="rgba(255,255,255,0.18)"
                     strokeWidth={1}
                     initial={{ pathLength: 0 }}
                     animate={
                       inView ? { pathLength: 1 } : { pathLength: 0 }
                     }
-                    transition={{ duration: 0.4, delay: 0.5 }}
+                    transition={{ duration: prefersReducedMotion ? 0 : 0.4, delay: prefersReducedMotion ? 0 : 0.5 }}
                   />
 
                   {/* Return arrow: curved below */}
                   <motion.path
-                    d={`M${magX},${magY + 38} Q${(youX + magX) / 2},${magY + 190} ${youX},${youY + 30}`}
+                    d={`M${MAG_X},${MAG_Y + 38} Q${(YOU_X + MAG_X) / 2},${MAG_Y + 190} ${YOU_X},${YOU_Y + 30}`}
                     fill="none"
                     stroke="rgba(255,255,255,0.1)"
                     strokeWidth={1}
@@ -1849,71 +1840,73 @@ function OldVsNewSection() {
                     animate={
                       inView ? { pathLength: 1 } : { pathLength: 0 }
                     }
-                    transition={{ duration: 0.6, delay: 1.3 }}
+                    transition={{ duration: prefersReducedMotion ? 0 : 0.6, delay: prefersReducedMotion ? 0 : 1.3 }}
                   />
                   <motion.text
-                    x={(youX + magX) / 2}
-                    y={magY + 142}
+                    x={(YOU_X + MAG_X) / 2}
+                    y={MAG_Y + 142}
                     textAnchor="middle"
                     fill="rgba(255,255,255,0.25)"
                     fontSize={10}
                     fontFamily="var(--font-dm-sans)"
                     initial={{ opacity: 0 }}
                     animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: 1.9 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : 1.9 }}
                   >
                     review &amp; approve
                   </motion.text>
 
                   {/* Orbit track */}
                   <motion.ellipse
-                    cx={magX}
-                    cy={magY}
-                    rx={orbitR}
-                    ry={orbitR * 0.7}
+                    cx={MAG_X}
+                    cy={MAG_Y}
+                    rx={ORBIT_R}
+                    ry={ORBIT_R * 0.7}
                     fill="none"
                     stroke="rgba(255,255,255,0.04)"
                     strokeWidth={1}
                     initial={{ opacity: 0 }}
                     animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: 0.7 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : 0.7 }}
                   />
 
-                  {/* Magister pulsing glow */}
-                  <circle
-                    cx={magX}
-                    cy={magY}
-                    r={34}
-                    fill="none"
-                    stroke="rgba(255,255,255,0.05)"
-                    strokeWidth={1}
-                  >
-                    <animate
-                      attributeName="r"
-                      values="34;42;34"
-                      dur="3s"
-                      repeatCount="indefinite"
-                    />
-                    <animate
-                      attributeName="opacity"
-                      values="0.4;0.8;0.4"
-                      dur="3s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
+                  {/* Magister pulsing glow — only when animations enabled */}
+                  {animate && (
+                    <circle
+                      cx={MAG_X}
+                      cy={MAG_Y}
+                      r={34}
+                      fill="none"
+                      stroke="rgba(255,255,255,0.05)"
+                      strokeWidth={1}
+                    >
+                      <animate
+                        attributeName="r"
+                        values="34;42;34"
+                        dur="3s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values="0.4;0.8;0.4"
+                        dur="3s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  )}
 
                   {/* Magister hub */}
                   <circle
-                    cx={magX}
-                    cy={magY}
+                    cx={MAG_X}
+                    cy={MAG_Y}
                     r={34}
                     fill="rgba(255,255,255,0.06)"
                     stroke="rgba(255,255,255,0.18)"
                     strokeWidth={1}
                   />
                   <text
-                    x={magX}
-                    y={magY + 5}
+                    x={MAG_X}
+                    y={MAG_Y + 5}
                     textAnchor="middle"
                     fill="rgba(255,255,255,0.85)"
                     fontSize={13}
@@ -1927,19 +1920,19 @@ function OldVsNewSection() {
                   <motion.g
                     initial={{ opacity: 0 }}
                     animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: 0.3 }}
+                    transition={{ delay: prefersReducedMotion ? 0 : 0.3 }}
                   >
                     <circle
-                      cx={youX}
-                      cy={youY}
+                      cx={YOU_X}
+                      cy={YOU_Y}
                       r={26}
                       fill="rgba(255,255,255,0.04)"
                       stroke="rgba(255,255,255,0.12)"
                       strokeWidth={1}
                     />
                     <text
-                      x={youX}
-                      y={youY + 5}
+                      x={YOU_X}
+                      y={YOU_Y + 5}
                       textAnchor="middle"
                       fill="rgba(255,255,255,0.55)"
                       fontSize={13}
@@ -1951,25 +1944,25 @@ function OldVsNewSection() {
                   </motion.g>
 
                   {/* Orbiting nodes with labels */}
-                  {orbitNodes.map((node, i) => {
+                  {ORBIT_NODES.map((node) => {
                     const sa = node.startAngle;
-                    const rx = orbitR;
-                    const ry = orbitR * 0.7;
+                    const rx = ORBIT_R;
+                    const ry = ORBIT_R * 0.7;
                     const startX =
-                      magX + rx * Math.cos((sa * Math.PI) / 180);
+                      MAG_X + rx * Math.cos((sa * Math.PI) / 180);
                     const startY =
-                      magY + ry * Math.sin((sa * Math.PI) / 180);
+                      MAG_Y + ry * Math.sin((sa * Math.PI) / 180);
                     const oppX =
-                      magX +
+                      MAG_X +
                       rx * Math.cos(((sa + 180) * Math.PI) / 180);
                     const oppY =
-                      magY +
+                      MAG_Y +
                       ry * Math.sin(((sa + 180) * Math.PI) / 180);
                     const orbitPath = `M${startX},${startY} A${rx},${ry} 0 1 1 ${oppX},${oppY} A${rx},${ry} 0 1 1 ${startX},${startY}`;
 
                     return (
-                      <g key={i}>
-                        {inView && (
+                      <g key={node.label}>
+                        {animate ? (
                           <g>
                             {/* Orbit node circle */}
                             <circle
@@ -2000,22 +1993,55 @@ function OldVsNewSection() {
                               )}
                             </g>
                             {/* Label below orbit node */}
-                            <text
-                              textAnchor="middle"
-                              dy={28}
-                              fill="rgba(255,255,255,0.3)"
-                              fontSize={9}
-                              fontFamily="var(--font-dm-sans)"
-                            >
-                              {node.label}
+                            <g>
                               <animateMotion
                                 dur="16s"
                                 repeatCount="indefinite"
                                 path={orbitPath}
                               />
+                              <text
+                                textAnchor="middle"
+                                dy={28}
+                                fill="rgba(255,255,255,0.3)"
+                                fontSize={9}
+                                fontFamily="var(--font-dm-sans)"
+                              >
+                                {node.label}
+                              </text>
+                            </g>
+                          </g>
+                        ) : inView ? (
+                          <g>
+                            {/* Static position when reduced motion */}
+                            <circle
+                              cx={startX}
+                              cy={startY}
+                              r={18}
+                              fill="rgba(255,255,255,0.03)"
+                              stroke="rgba(255,255,255,0.1)"
+                              strokeWidth={1}
+                            />
+                            <g transform={`translate(${startX}, ${startY})`}>
+                              {renderIcon(
+                                0,
+                                0,
+                                node.icon,
+                                "rgba(255,255,255,0.45)",
+                                12,
+                              )}
+                            </g>
+                            <text
+                              x={startX}
+                              y={startY + 28}
+                              textAnchor="middle"
+                              fill="rgba(255,255,255,0.3)"
+                              fontSize={9}
+                              fontFamily="var(--font-dm-sans)"
+                            >
+                              {node.label}
                             </text>
                           </g>
-                        )}
+                        ) : null}
                       </g>
                     );
                   })}
