@@ -364,13 +364,14 @@ function FadeUp({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
+  const reducedMotion = useReducedMotion();
 
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 32 }}
-      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
-      transition={{ duration: 0.7, delay, ease: [0.25, 0.1, 0.25, 1] }}
+      initial={reducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
+      animate={inView ? { opacity: 1, y: 0 } : reducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
+      transition={reducedMotion ? { duration: 0 } : { duration: 0.7, delay, ease: [0.25, 0.1, 0.25, 1] }}
       className={className}
     >
       {children}
@@ -1580,9 +1581,11 @@ const ORBIT_NODES = [
 
 function OldVsNewSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
-  const inView = useInView(sectionRef, { once: true, margin: "-100px" });
+  const entranceInView = useInView(sectionRef, { once: true, margin: "-100px" });
+  const currentlyVisible = useInView(sectionRef, { margin: "-50px" });
   const prefersReducedMotion = useReducedMotion();
-  const animate = inView && !prefersReducedMotion;
+  const smilActive = currentlyVisible && !prefersReducedMotion;
+  const t0 = prefersReducedMotion ? { duration: 0, delay: 0 } : undefined;
 
   return (
     <section ref={sectionRef} className="px-6 py-32 md:py-48">
@@ -1636,8 +1639,9 @@ function OldVsNewSection() {
                   viewBox={`0 0 ${OLD_W} ${OLD_H}`}
                   width="100%"
                   height="100%"
+                  aria-hidden="true"
                 >
-                  {OLD_NODES.map((node) => {
+                  {OLD_NODES.map((node, i) => {
                     const rad = (node.angle * Math.PI) / 180;
                     const nx = OLD_CX + OLD_R * Math.cos(rad);
                     const ny = OLD_CY + OLD_R * Math.sin(rad);
@@ -1665,21 +1669,21 @@ function OldVsNewSection() {
                           strokeDasharray="4 4"
                           initial={{ pathLength: 0 }}
                           animate={
-                            inView
+                            entranceInView
                               ? { pathLength: 1 }
                               : { pathLength: 0 }
                           }
-                          transition={{
-                            duration: prefersReducedMotion ? 0 : 0.5,
-                            delay: prefersReducedMotion ? 0 : 0.3,
+                          transition={t0 ?? {
+                            duration: 0.5,
+                            delay: 0.3 + i * 0.12,
                           }}
                         />
 
                         {/* Ping-pong dot */}
-                        {animate && (
+                        {smilActive && (
                           <circle r={2.5} fill="rgba(255,255,255,0.25)">
                             <animateMotion
-                              dur={`${6 + OLD_NODES.indexOf(node) * 0.8}s`}
+                              dur={`${6 + i * 0.8}s`}
                               repeatCount="indefinite"
                               path={`M${dotStartX},${dotStartY} L${dotEndX},${dotEndY} L${dotStartX},${dotStartY}`}
                             />
@@ -1696,11 +1700,11 @@ function OldVsNewSection() {
                           strokeWidth={1}
                           initial={{ opacity: 0 }}
                           animate={
-                            inView ? { opacity: 1 } : { opacity: 0 }
+                            entranceInView ? { opacity: 1 } : { opacity: 0 }
                           }
-                          transition={{
-                            duration: prefersReducedMotion ? 0 : 0.4,
-                            delay: prefersReducedMotion ? 0 : 0.45,
+                          transition={t0 ?? {
+                            duration: 0.4,
+                            delay: 0.45 + i * 0.12,
                           }}
                         />
 
@@ -1708,11 +1712,11 @@ function OldVsNewSection() {
                         <motion.g
                           initial={{ opacity: 0 }}
                           animate={
-                            inView ? { opacity: 1 } : { opacity: 0 }
+                            entranceInView ? { opacity: 1 } : { opacity: 0 }
                           }
-                          transition={{
-                            duration: prefersReducedMotion ? 0 : 0.3,
-                            delay: prefersReducedMotion ? 0 : 0.55,
+                          transition={t0 ?? {
+                            duration: 0.3,
+                            delay: 0.55 + i * 0.12,
                           }}
                         >
                           {renderIcon(
@@ -1734,9 +1738,9 @@ function OldVsNewSection() {
                           fontFamily="var(--font-dm-sans)"
                           initial={{ opacity: 0 }}
                           animate={
-                            inView ? { opacity: 1 } : { opacity: 0 }
+                            entranceInView ? { opacity: 1 } : { opacity: 0 }
                           }
-                          transition={{ delay: prefersReducedMotion ? 0 : 0.6 }}
+                          transition={t0 ?? { duration: 0.3, delay: 0.6 + i * 0.12 }}
                         >
                           {node.label}
                         </motion.text>
@@ -1813,6 +1817,7 @@ function OldVsNewSection() {
                   viewBox={`0 0 ${NEW_W} ${NEW_H}`}
                   width="100%"
                   height="100%"
+                  aria-hidden="true"
                 >
                   {/* Forward arrow: You → Magister */}
                   <motion.line
@@ -1824,9 +1829,9 @@ function OldVsNewSection() {
                     strokeWidth={1}
                     initial={{ pathLength: 0 }}
                     animate={
-                      inView ? { pathLength: 1 } : { pathLength: 0 }
+                      entranceInView ? { pathLength: 1 } : { pathLength: 0 }
                     }
-                    transition={{ duration: prefersReducedMotion ? 0 : 0.4, delay: prefersReducedMotion ? 0 : 0.5 }}
+                    transition={t0 ?? { duration: 0.4, delay: 0.5 }}
                   />
 
                   {/* Return arrow: curved below */}
@@ -1838,9 +1843,9 @@ function OldVsNewSection() {
                     strokeDasharray="4 4"
                     initial={{ pathLength: 0 }}
                     animate={
-                      inView ? { pathLength: 1 } : { pathLength: 0 }
+                      entranceInView ? { pathLength: 1 } : { pathLength: 0 }
                     }
-                    transition={{ duration: prefersReducedMotion ? 0 : 0.6, delay: prefersReducedMotion ? 0 : 1.3 }}
+                    transition={t0 ?? { duration: 0.6, delay: 1.3 }}
                   />
                   <motion.text
                     x={(YOU_X + MAG_X) / 2}
@@ -1850,8 +1855,8 @@ function OldVsNewSection() {
                     fontSize={10}
                     fontFamily="var(--font-dm-sans)"
                     initial={{ opacity: 0 }}
-                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: prefersReducedMotion ? 0 : 1.9 }}
+                    animate={entranceInView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={t0 ?? { duration: 0.3, delay: 1.9 }}
                   >
                     review &amp; approve
                   </motion.text>
@@ -1866,12 +1871,12 @@ function OldVsNewSection() {
                     stroke="rgba(255,255,255,0.04)"
                     strokeWidth={1}
                     initial={{ opacity: 0 }}
-                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: prefersReducedMotion ? 0 : 0.7 }}
+                    animate={entranceInView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={t0 ?? { duration: 0.3, delay: 0.7 }}
                   />
 
-                  {/* Magister pulsing glow — only when animations enabled */}
-                  {animate && (
+                  {/* Magister pulsing glow — only when visible and animations enabled */}
+                  {smilActive && (
                     <circle
                       cx={MAG_X}
                       cy={MAG_Y}
@@ -1919,8 +1924,8 @@ function OldVsNewSection() {
                   {/* "You" node */}
                   <motion.g
                     initial={{ opacity: 0 }}
-                    animate={inView ? { opacity: 1 } : { opacity: 0 }}
-                    transition={{ delay: prefersReducedMotion ? 0 : 0.3 }}
+                    animate={entranceInView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={t0 ?? { duration: 0.3, delay: 0.3 }}
                   >
                     <circle
                       cx={YOU_X}
@@ -1962,57 +1967,38 @@ function OldVsNewSection() {
 
                     return (
                       <g key={node.label}>
-                        {animate ? (
+                        {smilActive ? (
                           <g>
-                            {/* Orbit node circle */}
+                            <animateMotion
+                              dur="16s"
+                              repeatCount="indefinite"
+                              path={orbitPath}
+                            />
                             <circle
                               r={18}
                               fill="rgba(255,255,255,0.03)"
                               stroke="rgba(255,255,255,0.1)"
                               strokeWidth={1}
+                            />
+                            {renderIcon(
+                              0,
+                              0,
+                              node.icon,
+                              "rgba(255,255,255,0.45)",
+                              12,
+                            )}
+                            <text
+                              textAnchor="middle"
+                              dy={28}
+                              fill="rgba(255,255,255,0.3)"
+                              fontSize={9}
+                              fontFamily="var(--font-dm-sans)"
                             >
-                              <animateMotion
-                                dur="16s"
-                                repeatCount="indefinite"
-                                path={orbitPath}
-                              />
-                            </circle>
-                            {/* Icon inside orbit node */}
-                            <g>
-                              <animateMotion
-                                dur="16s"
-                                repeatCount="indefinite"
-                                path={orbitPath}
-                              />
-                              {renderIcon(
-                                0,
-                                0,
-                                node.icon,
-                                "rgba(255,255,255,0.45)",
-                                12,
-                              )}
-                            </g>
-                            {/* Label below orbit node */}
-                            <g>
-                              <animateMotion
-                                dur="16s"
-                                repeatCount="indefinite"
-                                path={orbitPath}
-                              />
-                              <text
-                                textAnchor="middle"
-                                dy={28}
-                                fill="rgba(255,255,255,0.3)"
-                                fontSize={9}
-                                fontFamily="var(--font-dm-sans)"
-                              >
-                                {node.label}
-                              </text>
-                            </g>
+                              {node.label}
+                            </text>
                           </g>
-                        ) : inView ? (
+                        ) : entranceInView ? (
                           <g>
-                            {/* Static position when reduced motion */}
                             <circle
                               cx={startX}
                               cy={startY}
