@@ -7,6 +7,7 @@ import {
   useInView,
   useScroll,
   useTransform,
+  useReducedMotion,
   AnimatePresence,
 } from "motion/react";
 import { insertWaitlistEmail, updateWaitlistSurvey } from "./actions";
@@ -153,7 +154,7 @@ const faqItems = [
   {
     question: "What can it actually do right now?",
     answer:
-      "We're starting with one agent that covers 25 marketing skills — copywriting, SEO, CRO, email, ads, and more. We're expanding to a full team of specialized agents.",
+      "We're starting with one agent that covers 32 marketing skills — copywriting, SEO, CRO, email, ads, and more. We're expanding to a full team of specialized agents.",
   },
   {
     question: "Is my data safe?",
@@ -363,13 +364,14 @@ function FadeUp({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
+  const reducedMotion = useReducedMotion();
 
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 32 }}
-      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
-      transition={{ duration: 0.7, delay, ease: [0.25, 0.1, 0.25, 1] }}
+      initial={reducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
+      animate={inView ? { opacity: 1, y: 0 } : reducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 32 }}
+      transition={reducedMotion ? { duration: 0 } : { duration: 0.7, delay, ease: [0.25, 0.1, 0.25, 1] }}
       className={className}
     >
       {children}
@@ -1515,6 +1517,542 @@ function HowItWorksSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Old Way vs New Way Section — constants hoisted outside component
+// ---------------------------------------------------------------------------
+
+const OLD_W = 360;
+const OLD_H = 360;
+const OLD_CX = OLD_W / 2;
+const OLD_CY = OLD_H / 2;
+const OLD_R = 125;
+
+const NEW_W = 380;
+const NEW_H = 360;
+const YOU_X = 55;
+const YOU_Y = NEW_H / 2;
+const MAG_X = 240;
+const MAG_Y = NEW_H / 2;
+const ORBIT_R = 100;
+
+const ICON_PATHS = {
+  messageSquare:
+    "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+  wrench:
+    "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
+  barChart: "M12 20V10 M18 20V4 M6 20v-4",
+  refreshCw:
+    "M1 4v6h6 M23 20v-6h-6 M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15",
+  penTool:
+    "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586 M11 13a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
+  search:
+    "M11 17.25a6.25 6.25 0 1 1 0-12.5 6.25 6.25 0 0 1 0 12.5z M16 16l4.5 4.5",
+  trendingUp: "M23 6l-9.5 9.5-5-5L1 18 M17 6h6v6",
+  zap: "M13 2L3 14h9l-1 10 10-12h-9l1-10z",
+};
+
+function renderIcon(cx: number, cy: number, pathD: string, color: string, size: number = 12) {
+  return (
+    <g transform={`translate(${cx - size / 2}, ${cy - size / 2}) scale(${size / 24})`}>
+      <path
+        d={pathD}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </g>
+  );
+}
+
+const OLD_NODES = [
+  { angle: -45, icon: ICON_PATHS.messageSquare, label: "Prompt AI" },
+  { angle: 45, icon: ICON_PATHS.wrench, label: "Use tools" },
+  { angle: 135, icon: ICON_PATHS.barChart, label: "Check data" },
+  { angle: 225, icon: ICON_PATHS.refreshCw, label: "Edit & fix" },
+];
+
+const ORBIT_NODES = [
+  { startAngle: 0, icon: ICON_PATHS.penTool, label: "Write" },
+  { startAngle: 90, icon: ICON_PATHS.search, label: "Research" },
+  { startAngle: 180, icon: ICON_PATHS.trendingUp, label: "Optimize" },
+  { startAngle: 270, icon: ICON_PATHS.zap, label: "Launch" },
+];
+
+function OldVsNewSection() {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const entranceInView = useInView(sectionRef, { once: true, margin: "-100px" });
+  const currentlyVisible = useInView(sectionRef, { margin: "-50px" });
+  const prefersReducedMotion = useReducedMotion();
+  const smilActive = currentlyVisible && !prefersReducedMotion;
+  const t0 = prefersReducedMotion ? { duration: 0, delay: 0 } : undefined;
+
+  return (
+    <section ref={sectionRef} className="px-6 py-32 md:py-48">
+      <div className="mx-auto max-w-5xl">
+        <FadeUp className="text-center">
+          <SectionLabel>The shift</SectionLabel>
+          <h2
+            className="text-white"
+            style={{
+              fontFamily: "var(--font-instrument-serif)",
+              fontSize: "clamp(32px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              fontWeight: 400,
+            }}
+          >
+            Stop being the middleware
+          </h2>
+        </FadeUp>
+
+        <div className="mt-16 grid grid-cols-1 gap-6 md:grid-cols-2">
+          {/* ── Old Way ── */}
+          <FadeUp delay={0.1}>
+            <div
+              className="relative flex flex-col items-center overflow-hidden rounded-lg px-6 pb-10 pt-8 md:px-8"
+              style={{
+                border: "1px solid rgba(255,255,255,0.06)",
+                background: "rgba(255,255,255,0.02)",
+              }}
+            >
+              <p
+                className="mb-2 text-sm uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.3)",
+                  fontWeight: 500,
+                }}
+              >
+                The old way
+              </p>
+
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  width: "100%",
+                  maxWidth: OLD_W,
+                  aspectRatio: `${OLD_W}/${OLD_H}`,
+                }}
+              >
+                <svg
+                  viewBox={`0 0 ${OLD_W} ${OLD_H}`}
+                  width="100%"
+                  height="100%"
+                  aria-hidden="true"
+                >
+                  {OLD_NODES.map((node, i) => {
+                    const rad = (node.angle * Math.PI) / 180;
+                    const nx = OLD_CX + OLD_R * Math.cos(rad);
+                    const ny = OLD_CY + OLD_R * Math.sin(rad);
+                    const inset = 35;
+                    const dx = nx - OLD_CX;
+                    const dy = ny - OLD_CY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const ux = dx / dist;
+                    const uy = dy / dist;
+                    const dotStartX = OLD_CX + ux * inset;
+                    const dotStartY = OLD_CY + uy * inset;
+                    const dotEndX = nx - ux * inset;
+                    const dotEndY = ny - uy * inset;
+
+                    return (
+                      <g key={node.label}>
+                        {/* Dashed line — starts/ends at circle edges */}
+                        <motion.line
+                          x1={OLD_CX + ux * 36}
+                          y1={OLD_CY + uy * 36}
+                          x2={nx - ux * 28}
+                          y2={ny - uy * 28}
+                          stroke="rgba(255,255,255,0.07)"
+                          strokeWidth={1}
+                          strokeDasharray="4 4"
+                          initial={{ pathLength: 0 }}
+                          animate={
+                            entranceInView
+                              ? { pathLength: 1 }
+                              : { pathLength: 0 }
+                          }
+                          transition={t0 ?? {
+                            duration: 0.5,
+                            delay: 0.3 + i * 0.12,
+                          }}
+                        />
+
+                        {/* Ping-pong dot */}
+                        {smilActive && (
+                          <circle r={2.5} fill="rgba(255,255,255,0.25)">
+                            <animateMotion
+                              dur={`${6 + i * 0.8}s`}
+                              repeatCount="indefinite"
+                              path={`M${dotStartX},${dotStartY} L${dotEndX},${dotEndY} L${dotStartX},${dotStartY}`}
+                            />
+                          </circle>
+                        )}
+
+                        {/* Node circle */}
+                        <motion.circle
+                          cx={nx}
+                          cy={ny}
+                          r={24}
+                          fill="rgba(255,255,255,0.02)"
+                          stroke="rgba(255,255,255,0.08)"
+                          strokeWidth={1}
+                          initial={{ opacity: 0 }}
+                          animate={
+                            entranceInView ? { opacity: 1 } : { opacity: 0 }
+                          }
+                          transition={t0 ?? {
+                            duration: 0.4,
+                            delay: 0.45 + i * 0.12,
+                          }}
+                        />
+
+                        {/* Icon inside node */}
+                        <motion.g
+                          initial={{ opacity: 0 }}
+                          animate={
+                            entranceInView ? { opacity: 1 } : { opacity: 0 }
+                          }
+                          transition={t0 ?? {
+                            duration: 0.3,
+                            delay: 0.55 + i * 0.12,
+                          }}
+                        >
+                          {renderIcon(
+                            nx,
+                            ny,
+                            node.icon,
+                            "rgba(255,255,255,0.3)",
+                            14,
+                          )}
+                        </motion.g>
+
+                        {/* Label below node */}
+                        <motion.text
+                          x={nx}
+                          y={ny + 38}
+                          textAnchor="middle"
+                          fill="rgba(255,255,255,0.25)"
+                          fontSize={11}
+                          fontFamily="var(--font-dm-sans)"
+                          initial={{ opacity: 0 }}
+                          animate={
+                            entranceInView ? { opacity: 1 } : { opacity: 0 }
+                          }
+                          transition={t0 ?? { duration: 0.3, delay: 0.6 + i * 0.12 }}
+                        >
+                          {node.label}
+                        </motion.text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Center "You" node */}
+                  <circle
+                    cx={OLD_CX}
+                    cy={OLD_CY}
+                    r={32}
+                    fill="rgba(255,255,255,0.04)"
+                    stroke="rgba(255,255,255,0.12)"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={OLD_CX}
+                    y={OLD_CY + 5}
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.5)"
+                    fontSize={14}
+                    fontWeight={600}
+                    fontFamily="var(--font-dm-sans)"
+                  >
+                    You
+                  </text>
+
+                </svg>
+              </div>
+
+              <p
+                className="mt-4 text-xs uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.25)",
+                  fontWeight: 500,
+                }}
+              >
+                Slow. Manual. Time-constrained.
+              </p>
+            </div>
+          </FadeUp>
+
+          {/* ── New Way ── */}
+          <FadeUp delay={0.2}>
+            <div
+              className="relative flex flex-col items-center overflow-hidden rounded-lg px-6 pb-10 pt-8 md:px-8"
+              style={{
+                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(255,255,255,0.03)",
+              }}
+            >
+              <p
+                className="mb-2 text-sm uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.5)",
+                  fontWeight: 500,
+                }}
+              >
+                The new way
+              </p>
+
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  width: "100%",
+                  maxWidth: NEW_W,
+                  aspectRatio: `${NEW_W}/${NEW_H}`,
+                }}
+              >
+                <svg
+                  viewBox={`0 0 ${NEW_W} ${NEW_H}`}
+                  width="100%"
+                  height="100%"
+                  aria-hidden="true"
+                >
+                  {/* Forward arrow: You → Magister */}
+                  <motion.line
+                    x1={YOU_X + 30}
+                    y1={YOU_Y}
+                    x2={MAG_X - 38}
+                    y2={MAG_Y}
+                    stroke="rgba(255,255,255,0.18)"
+                    strokeWidth={1}
+                    initial={{ pathLength: 0 }}
+                    animate={
+                      entranceInView ? { pathLength: 1 } : { pathLength: 0 }
+                    }
+                    transition={t0 ?? { duration: 0.4, delay: 0.5 }}
+                  />
+
+                  {/* Return arrow: curved below */}
+                  <motion.path
+                    d={`M${MAG_X},${MAG_Y + 38} Q${(YOU_X + MAG_X) / 2},${MAG_Y + 190} ${YOU_X},${YOU_Y + 30}`}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.1)"
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                    initial={{ pathLength: 0 }}
+                    animate={
+                      entranceInView ? { pathLength: 1 } : { pathLength: 0 }
+                    }
+                    transition={t0 ?? { duration: 0.6, delay: 1.3 }}
+                  />
+                  <motion.text
+                    x={(YOU_X + MAG_X) / 2}
+                    y={MAG_Y + 142}
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.25)"
+                    fontSize={10}
+                    fontFamily="var(--font-dm-sans)"
+                    initial={{ opacity: 0 }}
+                    animate={entranceInView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={t0 ?? { duration: 0.3, delay: 1.9 }}
+                  >
+                    review &amp; approve
+                  </motion.text>
+
+                  {/* Orbit track */}
+                  <motion.ellipse
+                    cx={MAG_X}
+                    cy={MAG_Y}
+                    rx={ORBIT_R}
+                    ry={ORBIT_R * 0.7}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.04)"
+                    strokeWidth={1}
+                    initial={{ opacity: 0 }}
+                    animate={entranceInView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={t0 ?? { duration: 0.3, delay: 0.7 }}
+                  />
+
+                  {/* Magister pulsing glow — only when visible and animations enabled */}
+                  {smilActive && (
+                    <circle
+                      cx={MAG_X}
+                      cy={MAG_Y}
+                      r={34}
+                      fill="none"
+                      stroke="rgba(255,255,255,0.05)"
+                      strokeWidth={1}
+                    >
+                      <animate
+                        attributeName="r"
+                        values="34;42;34"
+                        dur="3s"
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values="0.4;0.8;0.4"
+                        dur="3s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  )}
+
+                  {/* Magister hub */}
+                  <circle
+                    cx={MAG_X}
+                    cy={MAG_Y}
+                    r={34}
+                    fill="rgba(255,255,255,0.06)"
+                    stroke="rgba(255,255,255,0.18)"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={MAG_X}
+                    y={MAG_Y + 5}
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.85)"
+                    fontSize={13}
+                    fontWeight={600}
+                    fontFamily="var(--font-dm-sans)"
+                  >
+                    Magister
+                  </text>
+
+                  {/* "You" node */}
+                  <motion.g
+                    initial={{ opacity: 0 }}
+                    animate={entranceInView ? { opacity: 1 } : { opacity: 0 }}
+                    transition={t0 ?? { duration: 0.3, delay: 0.3 }}
+                  >
+                    <circle
+                      cx={YOU_X}
+                      cy={YOU_Y}
+                      r={26}
+                      fill="rgba(255,255,255,0.04)"
+                      stroke="rgba(255,255,255,0.12)"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={YOU_X}
+                      y={YOU_Y + 5}
+                      textAnchor="middle"
+                      fill="rgba(255,255,255,0.55)"
+                      fontSize={13}
+                      fontWeight={600}
+                      fontFamily="var(--font-dm-sans)"
+                    >
+                      You
+                    </text>
+                  </motion.g>
+
+                  {/* Orbiting nodes with labels */}
+                  {ORBIT_NODES.map((node) => {
+                    const sa = node.startAngle;
+                    const rx = ORBIT_R;
+                    const ry = ORBIT_R * 0.7;
+                    const startX =
+                      MAG_X + rx * Math.cos((sa * Math.PI) / 180);
+                    const startY =
+                      MAG_Y + ry * Math.sin((sa * Math.PI) / 180);
+                    const oppX =
+                      MAG_X +
+                      rx * Math.cos(((sa + 180) * Math.PI) / 180);
+                    const oppY =
+                      MAG_Y +
+                      ry * Math.sin(((sa + 180) * Math.PI) / 180);
+                    const orbitPath = `M${startX},${startY} A${rx},${ry} 0 1 1 ${oppX},${oppY} A${rx},${ry} 0 1 1 ${startX},${startY}`;
+
+                    return (
+                      <g key={node.label}>
+                        {smilActive ? (
+                          <g>
+                            <animateMotion
+                              dur="16s"
+                              repeatCount="indefinite"
+                              path={orbitPath}
+                            />
+                            <circle
+                              r={18}
+                              fill="rgba(255,255,255,0.03)"
+                              stroke="rgba(255,255,255,0.1)"
+                              strokeWidth={1}
+                            />
+                            {renderIcon(
+                              0,
+                              0,
+                              node.icon,
+                              "rgba(255,255,255,0.45)",
+                              12,
+                            )}
+                            <text
+                              textAnchor="middle"
+                              dy={28}
+                              fill="rgba(255,255,255,0.3)"
+                              fontSize={9}
+                              fontFamily="var(--font-dm-sans)"
+                            >
+                              {node.label}
+                            </text>
+                          </g>
+                        ) : entranceInView ? (
+                          <g>
+                            <circle
+                              cx={startX}
+                              cy={startY}
+                              r={18}
+                              fill="rgba(255,255,255,0.03)"
+                              stroke="rgba(255,255,255,0.1)"
+                              strokeWidth={1}
+                            />
+                            <g transform={`translate(${startX}, ${startY})`}>
+                              {renderIcon(
+                                0,
+                                0,
+                                node.icon,
+                                "rgba(255,255,255,0.45)",
+                                12,
+                              )}
+                            </g>
+                            <text
+                              x={startX}
+                              y={startY + 28}
+                              textAnchor="middle"
+                              fill="rgba(255,255,255,0.3)"
+                              fontSize={9}
+                              fontFamily="var(--font-dm-sans)"
+                            >
+                              {node.label}
+                            </text>
+                          </g>
+                        ) : null}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              <p
+                className="mt-4 text-xs uppercase tracking-widest"
+                style={{
+                  fontFamily: "var(--font-dm-sans)",
+                  color: "rgba(255,255,255,0.45)",
+                  fontWeight: 500,
+                }}
+              >
+                Fast. Autonomous. Always running.
+              </p>
+            </div>
+          </FadeUp>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Skills Section
 // ---------------------------------------------------------------------------
 
@@ -1523,7 +2061,7 @@ function SkillsSection() {
     <section id="skills" className="px-6 py-32 md:py-48">
       <div className="mx-auto max-w-6xl">
         <FadeUp className="text-center">
-          <SectionLabel>25 marketing skills</SectionLabel>
+          <SectionLabel>32 marketing skills</SectionLabel>
           <h2
             className="text-white"
             style={{
@@ -2694,6 +3232,7 @@ export default function Home() {
       <ProblemSection />
       <HowItWorksSection />
       <DemoSection />
+      <OldVsNewSection />
       <SkillsSection />
       <IntegrationsSection />
       <PersonasSection />
