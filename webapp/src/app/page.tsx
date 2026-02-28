@@ -1523,15 +1523,15 @@ function OldVsNewSection() {
   const inView = useInView(sectionRef, { once: true, margin: "-100px" });
 
   // Old way: hub-and-spoke, X-shape (45/135/225/315 degrees)
-  const oldW = 320;
-  const oldH = 340;
+  const oldW = 360;
+  const oldH = 360;
   const oldCx = oldW / 2;
   const oldCy = oldH / 2;
-  const oldR = 100;
+  const oldR = 125;
 
   // New way: left-to-right flow
   const newW = 380;
-  const newH = 340;
+  const newH = 360;
   const youX = 55;
   const youY = newH / 2;
   const magX = 240;
@@ -1594,7 +1594,7 @@ function OldVsNewSection() {
     <section ref={sectionRef} className="px-6 py-32 md:py-48">
       <div className="mx-auto max-w-5xl">
         <FadeUp className="text-center">
-          <SectionLabel>Old way vs new way</SectionLabel>
+          <SectionLabel>The shift</SectionLabel>
           <h2
             className="text-white"
             style={{
@@ -1664,10 +1664,10 @@ function OldVsNewSection() {
                       <g key={i}>
                         {/* Dashed line — starts/ends at circle edges */}
                         <motion.line
-                          x1={oldCx + ux * 32}
-                          y1={oldCy + uy * 32}
-                          x2={nx - ux * 24}
-                          y2={ny - uy * 24}
+                          x1={oldCx + ux * 36}
+                          y1={oldCy + uy * 36}
+                          x2={nx - ux * 28}
+                          y2={ny - uy * 28}
                           stroke="rgba(255,255,255,0.07)"
                           strokeWidth={1}
                           strokeDasharray="4 4"
@@ -1827,7 +1827,7 @@ function OldVsNewSection() {
                   <motion.line
                     x1={youX + 30}
                     y1={youY}
-                    x2={magX - 40}
+                    x2={magX - 38}
                     y2={magY}
                     stroke="rgba(255,255,255,0.18)"
                     strokeWidth={1}
@@ -1840,7 +1840,7 @@ function OldVsNewSection() {
 
                   {/* Return arrow: curved below */}
                   <motion.path
-                    d={`M${magX},${magY + 34} Q${(youX + magX) / 2},${magY + 190} ${youX},${youY + 26}`}
+                    d={`M${magX},${magY + 38} Q${(youX + magX) / 2},${magY + 190} ${youX},${youY + 30}`}
                     fill="none"
                     stroke="rgba(255,255,255,0.1)"
                     strokeWidth={1}
