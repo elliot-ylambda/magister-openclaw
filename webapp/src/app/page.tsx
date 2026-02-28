@@ -1840,7 +1840,7 @@ function OldVsNewSection() {
 
                   {/* Return arrow: curved below */}
                   <motion.path
-                    d={`M${magX - 30},${magY + 38} Q${(youX + magX) / 2},${magY + 190} ${youX + 22},${youY + 34}`}
+                    d={`M${magX},${magY + 34} Q${(youX + magX) / 2},${magY + 190} ${youX},${youY + 26}`}
                     fill="none"
                     stroke="rgba(255,255,255,0.1)"
                     strokeWidth={1}
