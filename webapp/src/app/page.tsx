@@ -154,7 +154,7 @@ const faqItems = [
   {
     question: "What can it actually do right now?",
     answer:
-      "We're starting with one agent that covers 25 marketing skills — copywriting, SEO, CRO, email, ads, and more. We're expanding to a full team of specialized agents.",
+      "We're starting with one agent that covers 32 marketing skills — copywriting, SEO, CRO, email, ads, and more. We're expanding to a full team of specialized agents.",
   },
   {
     question: "Is my data safe?",
@@ -2061,7 +2061,7 @@ function SkillsSection() {
     <section id="skills" className="px-6 py-32 md:py-48">
       <div className="mx-auto max-w-6xl">
         <FadeUp className="text-center">
-          <SectionLabel>25 marketing skills</SectionLabel>
+          <SectionLabel>32 marketing skills</SectionLabel>
           <h2
             className="text-white"
             style={{
