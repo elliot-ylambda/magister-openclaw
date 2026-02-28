@@ -1662,12 +1662,12 @@ function OldVsNewSection() {
 
                     return (
                       <g key={i}>
-                        {/* Dashed line */}
+                        {/* Dashed line — starts/ends at circle edges */}
                         <motion.line
-                          x1={oldCx}
-                          y1={oldCy}
-                          x2={nx}
-                          y2={ny}
+                          x1={oldCx + ux * 32}
+                          y1={oldCy + uy * 32}
+                          x2={nx - ux * 24}
+                          y2={ny - uy * 24}
                           stroke="rgba(255,255,255,0.07)"
                           strokeWidth={1}
                           strokeDasharray="4 4"
@@ -1840,7 +1840,7 @@ function OldVsNewSection() {
 
                   {/* Return arrow: curved below */}
                   <motion.path
-                    d={`M${magX - 30},${magY + 38} Q${(youX + magX) / 2},${magY + 145} ${youX + 22},${youY + 34}`}
+                    d={`M${magX - 30},${magY + 38} Q${(youX + magX) / 2},${magY + 190} ${youX + 22},${youY + 34}`}
                     fill="none"
                     stroke="rgba(255,255,255,0.1)"
                     strokeWidth={1}
