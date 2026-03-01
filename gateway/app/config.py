@@ -17,11 +17,8 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     supabase_jwt_secret: str
 
-    # LLM — OpenRouter (primary, used by litellm for all new machines)
+    # LLM — OpenRouter (used by litellm for all LLM requests)
     openrouter_api_key: str
-
-    # LLM — Anthropic (legacy, used by /v1/messages proxy for old machines)
-    anthropic_api_key: str = ""
 
     # OpenClaw image (optional for local dev — required in production)
     openclaw_image: str = ""

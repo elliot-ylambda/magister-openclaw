@@ -21,10 +21,6 @@ MODEL_COSTS: dict[str, dict[str, int]] = {
     "openai/gpt-4o":               {"input": 264, "output": 1055},
     "google/gemini-2.5-flash":     {"input": 32, "output": 158},
     "google/gemini-2.5-pro":       {"input": 132, "output": 528},
-    # Legacy bare names (for /v1/messages proxy until cleanup)
-    "claude-sonnet-4-6": {"input": 317, "output": 1583},
-    "claude-haiku-4-5":  {"input": 106, "output": 528},
-    "claude-opus-4-6":   {"input": 1583, "output": 7913},
 }
 
 CACHE_TTL_SECONDS = 30
@@ -39,10 +35,8 @@ class LLMService:
         supabase: SupabaseService,
         plan_budgets: dict[str, int],
         plan_allowed_models: dict[str, list[str]],
-        anthropic_api_key: str = "",
     ) -> None:
         self._openrouter_key = openrouter_api_key
-        self._anthropic_key = anthropic_api_key  # legacy, for /v1/messages proxy
         self._supabase = supabase
         self._plan_budgets = plan_budgets
         self._plan_allowed_models = plan_allowed_models

@@ -40,7 +40,6 @@ def llm_service(mock_supabase):
                 "google/gemini-2.5-flash",
             ],
         },
-        anthropic_api_key="test-anthropic-key",
     )
 
 
@@ -114,11 +113,6 @@ class TestCalculateCost:
         # output: 500 * 1583 / 1M = 0.7915
         # total: 1.1085 → ceil = 2
         cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1000, 500)
-        assert cost == 2
-
-    def test_legacy_bare_name_still_works(self):
-        # Legacy bare model names still resolve for /v1/messages proxy
-        cost = LLMService._calculate_cost("claude-sonnet-4-6", 1000, 500)
         assert cost == 2
 
     def test_unknown_model_returns_one_cent(self):

@@ -21,7 +21,6 @@ def settings() -> Settings:
         supabase_service_role_key="test-service-role-key",
         supabase_jwt_secret="test-jwt-secret",
         openrouter_api_key="test-openrouter-key",
-        anthropic_api_key="test-anthropic-key",
         openclaw_image="registry.fly.io/openclaw:test",
         default_region="iad",
         default_budget_cents=5000,

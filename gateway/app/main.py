@@ -45,7 +45,6 @@ async def lifespan(app: FastAPI):
         supabase=supabase,
         plan_budgets=settings.plan_budgets,
         plan_allowed_models=settings.plan_allowed_models,
-        anthropic_api_key=settings.anthropic_api_key,
     )
     app.state.supabase = supabase
     app.state.fly = fly
