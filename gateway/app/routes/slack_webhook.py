@@ -201,6 +201,37 @@ def create_slack_webhook_router(
         except Exception:
             logger.exception(f"[slack] error handling tokens_revoked for team {team_id}")
 
+    async def _handle_app_uninstalled(team_id: str) -> None:
+        """Revoke all connections and remove Fly secrets when app is uninstalled from workspace."""
+        try:
+            connections = await supabase.get_all_slack_connections_for_team(team_id)
+            if not connections:
+                logger.info(f"[slack] app_uninstalled for team {team_id} — no connections")
+                return
+
+            # Bulk revoke all connections
+            await supabase.revoke_all_slack_connections_for_team(team_id)
+
+            # Remove Fly secrets from each user's machine
+            for conn in connections:
+                machine = await supabase.get_user_machine(conn.user_id)
+                if machine and machine.status not in (
+                    MachineStatus.destroyed,
+                    MachineStatus.destroying,
+                ):
+                    try:
+                        await fly.unset_secrets(machine.fly_app_name, SLACK_SECRET_KEYS)
+                    except Exception:
+                        logger.exception(
+                            f"[slack] failed to remove secrets for user {conn.user_id}"
+                        )
+
+            logger.info(
+                f"[slack] app_uninstalled: revoked {len(connections)} connection(s) for team {team_id}"
+            )
+        except Exception:
+            logger.exception(f"[slack] error handling app_uninstalled for team {team_id}")
+
     @router.post("/webhooks/slack")
     async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
         raw_body = await request.body()
@@ -234,6 +265,12 @@ def create_slack_webhook_router(
             team_id = payload.get("team_id", "")
             if team_id:
                 background_tasks.add_task(_handle_tokens_revoked, team_id)
+            return Response(status_code=200)
+
+        if event_type == "app_uninstalled":
+            team_id = payload.get("team_id", "")
+            if team_id:
+                background_tasks.add_task(_handle_app_uninstalled, team_id)
             return Response(status_code=200)
 
         # Ack immediately, process in background

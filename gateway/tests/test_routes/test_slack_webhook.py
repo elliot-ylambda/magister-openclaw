@@ -328,3 +328,94 @@ def test_tokens_revoked_no_connection_is_noop(mock_fly, mock_supabase, settings)
     assert resp.status_code == 200
     mock_supabase.revoke_slack_connection.assert_not_called()
     mock_fly.unset_secrets.assert_not_called()
+
+
+# ── app_uninstalled ───────────────────────────────────────────
+
+
+def test_app_uninstalled_revokes_all_connections_and_removes_secrets(
+    mock_fly, mock_supabase, settings
+):
+    """app_uninstalled should revoke ALL connections for the team and remove Fly secrets."""
+    conn = _make_slack_connection()
+    machine = _make_machine()
+    mock_supabase.get_all_slack_connections_for_team.return_value = [conn]
+    mock_supabase.get_user_machine.return_value = machine
+
+    client = _make_app(mock_fly, mock_supabase, settings)
+    payload = _make_event_payload(
+        event_type="app_uninstalled",
+        event={"type": "app_uninstalled"},
+    )
+    body = json.dumps(payload).encode()
+    ts, sig = _sign_request(body, SIGNING_SECRET)
+    resp = client.post(
+        "/webhooks/slack",
+        content=body,
+        headers={
+            "x-slack-request-timestamp": ts,
+            "x-slack-signature": sig,
+            "content-type": "application/json",
+        },
+    )
+    assert resp.status_code == 200
+    mock_supabase.revoke_all_slack_connections_for_team.assert_called_once_with(TEAM_ID)
+    mock_fly.unset_secrets.assert_called_once_with(
+        "magister-user1", ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
+    )
+
+
+def test_app_uninstalled_no_connections_is_noop(mock_fly, mock_supabase, settings):
+    """app_uninstalled with no connections should not error."""
+    mock_supabase.get_all_slack_connections_for_team.return_value = []
+
+    client = _make_app(mock_fly, mock_supabase, settings)
+    payload = _make_event_payload(
+        event_type="app_uninstalled",
+        event={"type": "app_uninstalled"},
+    )
+    body = json.dumps(payload).encode()
+    ts, sig = _sign_request(body, SIGNING_SECRET)
+    resp = client.post(
+        "/webhooks/slack",
+        content=body,
+        headers={
+            "x-slack-request-timestamp": ts,
+            "x-slack-signature": sig,
+            "content-type": "application/json",
+        },
+    )
+    assert resp.status_code == 200
+    mock_supabase.revoke_all_slack_connections_for_team.assert_not_called()
+    mock_fly.unset_secrets.assert_not_called()
+
+
+def test_app_uninstalled_multiple_users(mock_fly, mock_supabase, settings):
+    """app_uninstalled with multiple connections should clean up all users' machines."""
+    conn1 = _make_slack_connection(id="conn-1", user_id="user-1")
+    conn2 = _make_slack_connection(id="conn-2", user_id="user-2")
+    machine1 = _make_machine(id="m-1", user_id="user-1", fly_app_name="magister-user1")
+    machine2 = _make_machine(id="m-2", user_id="user-2", fly_app_name="magister-user2")
+
+    mock_supabase.get_all_slack_connections_for_team.return_value = [conn1, conn2]
+    mock_supabase.get_user_machine.side_effect = [machine1, machine2]
+
+    client = _make_app(mock_fly, mock_supabase, settings)
+    payload = _make_event_payload(
+        event_type="app_uninstalled",
+        event={"type": "app_uninstalled"},
+    )
+    body = json.dumps(payload).encode()
+    ts, sig = _sign_request(body, SIGNING_SECRET)
+    resp = client.post(
+        "/webhooks/slack",
+        content=body,
+        headers={
+            "x-slack-request-timestamp": ts,
+            "x-slack-signature": sig,
+            "content-type": "application/json",
+        },
+    )
+    assert resp.status_code == 200
+    mock_supabase.revoke_all_slack_connections_for_team.assert_called_once_with(TEAM_ID)
+    assert mock_fly.unset_secrets.call_count == 2
