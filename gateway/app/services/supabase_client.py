@@ -146,6 +146,17 @@ class SupabaseService:
         )
         return [UserMachine(**row) for row in (result.data or [])]
 
+    async def get_running_machines(self) -> list[UserMachine]:
+        """Get all machines with status='running' that have a fly_machine_id."""
+        result = (
+            await self._client.table("user_machines")
+            .select("*")
+            .eq("status", "running")
+            .not_("fly_machine_id", "is", "null")
+            .execute()
+        )
+        return [UserMachine(**row) for row in (result.data or [])]
+
     # ── Slack Connections ──────────────────────────────────────────
 
     async def get_slack_connection_by_team(
@@ -195,6 +206,27 @@ class SupabaseService:
             self._client.table("slack_connections")
             .update({"status": "revoked"})
             .eq("user_id", user_id)
+            .eq("team_id", team_id)
+            .execute()
+        )
+
+    async def get_all_slack_connections_for_team(
+        self, team_id: str
+    ) -> list[SlackConnection]:
+        """Get all Slack connections for a team (any status) — used for app_uninstalled cleanup."""
+        result = (
+            await self._client.table("slack_connections")
+            .select("*")
+            .eq("team_id", team_id)
+            .execute()
+        )
+        return [SlackConnection(**row) for row in (result.data or [])]
+
+    async def revoke_all_slack_connections_for_team(self, team_id: str) -> None:
+        """Mark all Slack connections for a team as revoked."""
+        await (
+            self._client.table("slack_connections")
+            .update({"status": "revoked"})
             .eq("team_id", team_id)
             .execute()
         )
