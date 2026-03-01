@@ -132,7 +132,7 @@ describe('POST /api/stripe/checkout', () => {
         mode: 'subscription',
         client_reference_id: '00000000-0000-0000-0000-000000000001',
         line_items: [{ price: 'price_cmo', quantity: 1 }],
-        success_url: 'http://localhost:3020/chat?checkout=success',
+        success_url: 'http://localhost:3020/checkout/success',
         cancel_url: 'http://localhost:3020/pricing?checkout=cancelled',
       })
     );

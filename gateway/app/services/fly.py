@@ -165,6 +165,21 @@ class FlyClient:
             "DELETE", f"/apps/{app}/machines/{machine_id}"
         )
 
+    # ── Exec operations ───────────────────────────────────────
+
+    async def exec_command(
+        self, app: str, machine_id: str, cmd: list[str], *, timeout: int = 30
+    ) -> dict:
+        """Execute a command inside a running Fly Machine.
+
+        Returns dict with: stdout, stderr, exit_code, exit_signal.
+        """
+        return await self._request(
+            "POST",
+            f"/apps/{app}/machines/{machine_id}/exec",
+            json={"command": cmd, "timeout": min(timeout, 60)},
+        )
+
     # ── Lifecycle helper ─────────────────────────────────────────
 
     async def wait_for_state(

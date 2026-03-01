@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
-from app.jobs.idle_sweep import start_idle_sweep
 from app.jobs.reconciliation import start_reconciliation
 from app.middleware.auth import create_api_key_dependency, create_jwt_dependency
 from app.middleware.rate_limit import RateLimiter
@@ -17,8 +16,10 @@ from app.routes.chat import create_chat_router
 from app.routes.destroy import create_destroy_router
 from app.routes.health import router as health_router
 from app.routes.llm_proxy import create_llm_proxy_router
+from app.routes.files import create_files_router
 from app.routes.machine_control import create_machine_control_router
 from app.routes.provision import create_provision_router
+from app.routes.admin_secrets import create_admin_secrets_router
 from app.routes.slack_oauth import create_slack_oauth_router
 from app.routes.slack_webhook import create_slack_webhook_router
 from app.routes.status import create_status_router
@@ -95,6 +96,15 @@ async def lifespan(app: FastAPI):
         prefix="/api",
     )
     app.include_router(
+        create_files_router(
+            fly, supabase,
+            jwt_secret=settings.supabase_jwt_secret,
+            api_key=settings.gateway_api_key,
+            supabase_url=settings.supabase_url,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
         create_slack_webhook_router(fly, supabase, settings),
     )
     app.include_router(
@@ -102,24 +112,21 @@ async def lifespan(app: FastAPI):
         prefix="/api",
         dependencies=[verify_api_key],
     )
+    app.include_router(
+        create_admin_secrets_router(fly, supabase),
+        prefix="/api",
+        dependencies=[verify_api_key],
+    )
 
     # ── Background jobs ───────────────────────────────────────
-    sweep_task = start_idle_sweep(
-        fly, supabase, rate_limiter,
-        dev_machine_url=settings.dev_machine_url,
-    )
+    # NOTE: idle_sweep disabled — machines should never be auto-suspended.
     reconciliation_task = start_reconciliation(fly, supabase)
     logger.info("[gateway] All routes registered, background jobs started")
 
     yield
 
     # ── Shutdown ──────────────────────────────────────────────
-    sweep_task.cancel()
     reconciliation_task.cancel()
-    try:
-        await sweep_task
-    except Exception:
-        pass
     try:
         await reconciliation_task
     except Exception:

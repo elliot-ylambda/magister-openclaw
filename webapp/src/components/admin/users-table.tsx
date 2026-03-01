@@ -20,6 +20,7 @@ export type AdminUser = {
   plan: string | null;
   subStatus: string | null;
   machineStatus: string | null;
+  flyAppName: string | null;
   flyRegion: string | null;
   llmSpendCents: number;
   budgetDollars: number;
@@ -37,6 +38,8 @@ const STATUS_COLORS: Record<string, string> = {
   destroying: 'bg-gray-500',
   destroyed: 'bg-gray-500',
   suspending: 'bg-yellow-500',
+  stopping: 'bg-yellow-500',
+  stopped: 'bg-red-500',
 };
 
 function formatRelativeTime(iso: string): string {
@@ -249,6 +252,7 @@ export function UsersTable({ users }: { users: AdminUser[] }) {
                     <MachineControls
                       userId={user.id}
                       machineStatus={user.machineStatus}
+                      flyAppName={user.flyAppName}
                       onActionComplete={() => router.refresh()}
                     />
                   </TableCell>

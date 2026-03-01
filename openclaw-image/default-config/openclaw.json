@@ -27,6 +27,9 @@
       "endpoints": {
         "chatCompletions": {
           "enabled": true
+        },
+        "responses": {
+          "enabled": true
         }
       }
     }

@@ -2,19 +2,23 @@
 
 import { useActionState, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
+import { restartAgent } from '@/lib/gateway';
 import { ManageBillingButton } from '../dashboard/manage-billing-button';
 import { SlackConnection } from '@/components/settings/slack-connection';
 import { updateProfile, type ProfileUpdateState } from './actions';
@@ -26,6 +30,18 @@ type SettingsClientProps = {
   periodEnd: string | null;
   cancelAt: string | null;
   isAdmin?: boolean;
+  machineStatus: string | null;
+  machineRegion: string | null;
+};
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  running: { label: 'Agent ready', color: 'bg-emerald-500' },
+  suspended: { label: 'Agent sleeping', color: 'bg-yellow-500' },
+  stopped: { label: 'Agent stopped', color: 'bg-red-500' },
+  provisioning: { label: 'Setting up...', color: 'bg-blue-500' },
+  failed: { label: 'Agent offline', color: 'bg-red-500' },
+  destroying: { label: 'Shutting down...', color: 'bg-gray-500' },
+  destroyed: { label: 'Agent unavailable', color: 'bg-gray-500' },
 };
 
 function formatDate(iso: string): string {
@@ -38,7 +54,16 @@ function formatDate(iso: string): string {
 
 const profileInitialState: ProfileUpdateState = {};
 
-export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt, isAdmin }: SettingsClientProps) {
+export function SettingsClient({
+  email,
+  displayName,
+  plan,
+  periodEnd,
+  cancelAt,
+  isAdmin,
+  machineStatus,
+  machineRegion,
+}: SettingsClientProps) {
   const router = useRouter();
 
   // Profile form
@@ -55,6 +80,12 @@ export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt, 
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+
+  // Agent controls
+  const [agentLoading, setAgentLoading] = useState<string | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetOpen, setResetOpen] = useState(false);
 
   async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -91,6 +122,45 @@ export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt, 
     setPasswordSuccess(true);
     (e.target as HTMLFormElement).reset();
   }
+
+  async function handleRestart() {
+    setAgentLoading('restart');
+    setAgentError(null);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+      if (!gatewayUrl) return;
+      await restartAgent(gatewayUrl, session.access_token);
+      router.refresh();
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : 'Failed to restart agent');
+    } finally {
+      setAgentLoading(null);
+    }
+  }
+
+  async function handleReset() {
+    setAgentLoading('reset');
+    setAgentError(null);
+    try {
+      const res = await fetch('/api/machine/reset', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Failed to reset agent');
+      }
+      setResetOpen(false);
+      setResetConfirm('');
+      router.refresh();
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : 'Failed to reset agent');
+    } finally {
+      setAgentLoading(null);
+    }
+  }
+
+  const statusInfo = machineStatus ? STATUS_LABELS[machineStatus] : null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-6">
@@ -221,6 +291,100 @@ export function SettingsClient({ email, displayName, plan, periodEnd, cancelAt, 
 
       {/* Slack Integration */}
       <SlackConnection />
+
+      {/* Agent Section */}
+      {machineStatus && (
+        <section className="rounded-xl border border-border p-6 space-y-4">
+          <h2 className="text-lg font-medium">Agent</h2>
+
+          {agentError && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+              {agentError}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Status</span>
+              <span className="flex items-center gap-2">
+                {statusInfo && (
+                  <span className={`h-2 w-2 rounded-full ${statusInfo.color}`} />
+                )}
+                <span>{statusInfo?.label ?? machineStatus}</span>
+              </span>
+            </div>
+            {machineRegion && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Region</span>
+                <span className="font-mono">{machineRegion}</span>
+              </div>
+            )}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={agentLoading !== null}
+            onClick={handleRestart}
+          >
+            {agentLoading === 'restart' ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCw className="mr-2 h-3.5 w-3.5" />
+            )}
+            Restart Agent
+          </Button>
+
+          {/* Complete Reset */}
+          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium">Complete Reset</p>
+              <p className="text-xs text-muted-foreground">
+                This will delete all agent data and start fresh. Chat history is preserved.
+              </p>
+            </div>
+            <Dialog open={resetOpen} onOpenChange={(open) => { setResetOpen(open); if (!open) setResetConfirm(''); }}>
+              <DialogTrigger asChild>
+                <Button variant="destructive" size="sm" disabled={agentLoading !== null}>
+                  Reset Agent
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Complete Reset</DialogTitle>
+                  <DialogDescription>
+                    This will permanently delete your agent and all its data, then create a fresh one.
+                    Your chat history will be preserved, but all agent memory and files will be lost.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2">
+                  <Label htmlFor="resetConfirm">
+                    Type <span className="font-mono font-bold">RESET</span> to confirm
+                  </Label>
+                  <Input
+                    id="resetConfirm"
+                    value={resetConfirm}
+                    onChange={(e) => setResetConfirm(e.target.value)}
+                    placeholder="RESET"
+                  />
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </DialogClose>
+                  <Button
+                    variant="destructive"
+                    disabled={resetConfirm !== 'RESET' || agentLoading === 'reset'}
+                    onClick={handleReset}
+                  >
+                    {agentLoading === 'reset' ? 'Resetting...' : 'Confirm Reset'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </section>
+      )}
 
       {/* Danger Zone */}
       <Separator />

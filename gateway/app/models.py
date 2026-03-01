@@ -9,6 +9,8 @@ class MachineStatus(str, Enum):
     running = "running"
     suspending = "suspending"
     suspended = "suspended"
+    stopping = "stopping"
+    stopped = "stopped"
     failed = "failed"
     destroying = "destroying"
     destroyed = "destroyed"
@@ -40,11 +42,18 @@ class ProvisionRequest(BaseModel):
     region: str = "iad"
 
 
+class Attachment(BaseModel):
+    name: str
+    type: str  # MIME type
+    data: str  # base64-encoded content
+
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     agent_id: str | None = None
     stream: bool = True
+    attachments: list[Attachment] | None = None
 
 
 class LLMCompletionRequest(BaseModel):

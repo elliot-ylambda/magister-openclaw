@@ -13,8 +13,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-# --- OpenClaw (local source) ---
-COPY openclaw/ /app/openclaw/
+# --- OpenClaw (local source from our fork) ---
+COPY magister-openclaw/ /app/openclaw/
 RUN cd /app/openclaw \
     && corepack enable \
     && pnpm install --frozen-lockfile \

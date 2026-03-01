@@ -77,7 +77,7 @@ describe('POST /api/stripe/portal', () => {
 
     expect(mockStripe.billingPortal.sessions.create).toHaveBeenCalledWith({
       customer: 'cus_existing_789',
-      return_url: 'http://localhost:3020/chat',
+      return_url: 'http://localhost:3020/dashboard',
     });
   });
 

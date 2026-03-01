@@ -1,4 +1,4 @@
-"""Background job: clean up failed machine provisions."""
+"""Background job: clean up failed provisions + sync running machine state."""
 
 from __future__ import annotations
 
@@ -14,16 +14,53 @@ logger = logging.getLogger("gateway.reconciliation")
 RECONCILIATION_INTERVAL_SECONDS = 300  # 5 minutes
 COOLDOWN_MINUTES = 5  # Don't clean up machines that just failed
 
+# Fly.io states that indicate a machine is not running
+FLY_STOPPED_STATES = {"suspended", "stopped"}
 
-async def _run_reconciliation(
+
+async def _reconcile_running_machines(
     fly: FlyClient,
     supabase: SupabaseService,
 ) -> None:
-    """Single reconciliation iteration.
+    """Check machines marked 'running' in DB against actual Fly.io state.
 
-    Finds machines with status='failed', tears down any partial Fly
-    resources, and marks them as 'destroyed'.
+    If Fly.io has stopped or suspended a machine unexpectedly, restart it
+    so user machines stay running at all times.
     """
+    machines = await supabase.get_running_machines()
+    if not machines:
+        return
+
+    for machine in machines:
+        try:
+            info = await fly.get_machine(
+                machine.fly_app_name, machine.fly_machine_id
+            )
+            fly_state = info.get("state")
+            if fly_state in FLY_STOPPED_STATES:
+                # Machine was stopped/suspended unexpectedly — restart it
+                logger.info(
+                    f"[reconciliation] Machine {machine.id} is '{fly_state}' "
+                    f"on Fly but should be running — restarting"
+                )
+                await fly.start_machine(
+                    machine.fly_app_name, machine.fly_machine_id
+                )
+                logger.info(
+                    f"[reconciliation] Restarted machine {machine.id}"
+                )
+        except Exception:
+            logger.warning(
+                f"[reconciliation] Failed to check/restart machine {machine.id}"
+            )
+
+
+async def _cleanup_failed_machines(
+    fly: FlyClient,
+    supabase: SupabaseService,
+) -> None:
+    """Find machines with status='failed', tear down partial Fly resources,
+    and mark them as 'destroyed'."""
     machines = await supabase.get_failed_machines(COOLDOWN_MINUTES)
     if not machines:
         return
@@ -88,9 +125,13 @@ async def _reconciliation_loop(
     )
     while True:
         try:
-            await _run_reconciliation(fly, supabase)
+            await _reconcile_running_machines(fly, supabase)
         except Exception:
-            logger.exception("[reconciliation] Iteration failed")
+            logger.exception("[reconciliation] State sync failed")
+        try:
+            await _cleanup_failed_machines(fly, supabase)
+        except Exception:
+            logger.exception("[reconciliation] Failed cleanup failed")
         await asyncio.sleep(RECONCILIATION_INTERVAL_SECONDS)
 
 

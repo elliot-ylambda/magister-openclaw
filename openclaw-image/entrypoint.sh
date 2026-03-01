@@ -14,14 +14,24 @@ if [ ! -f "$OPENCLAW_HOME/openclaw.json" ]; then
 fi
 
 # Revert bind to "lan" if a previous image set it to an invalid value
+# and ensure OpenResponses endpoint is enabled for image/file uploads
 node -e "
 const fs = require('fs');
 const p = '${OPENCLAW_HOME}/openclaw.json';
 const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+let changed = false;
 if (c.gateway && c.gateway.bind !== 'lan') {
   c.gateway.bind = 'lan';
-  fs.writeFileSync(p, JSON.stringify(c, null, 2));
+  changed = true;
 }
+if (!c.gateway) c.gateway = {};
+if (!c.gateway.http) c.gateway.http = {};
+if (!c.gateway.http.endpoints) c.gateway.http.endpoints = {};
+if (!c.gateway.http.endpoints.responses || !c.gateway.http.endpoints.responses.enabled) {
+  c.gateway.http.endpoints.responses = { enabled: true };
+  changed = true;
+}
+if (changed) fs.writeFileSync(p, JSON.stringify(c, null, 2));
 "
 
 # Copy/update marketing skills on every boot (picks up new skills on image update)
@@ -55,7 +65,11 @@ delete c.models.providers.anthropic;
 c.models.providers.openrouter = {
   baseUrl: '${LLM_BASE_URL:-http://magister-gateway.internal:8081/llm/v1}',
   api: 'openai-completions',
-  models: []
+  apiKey: 'OPENROUTER_API_KEY',
+  models: [
+    { id: '${DEFAULT_MODEL}', name: 'Default', reasoning: false, input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 16384 }
+  ]
 };
 if (!c.agents) c.agents = {};
 if (!c.agents.defaults) c.agents.defaults = {};

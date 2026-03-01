@@ -6,6 +6,7 @@ import {
   MessageSquarePlus,
   Trash2,
   LayoutDashboard,
+  FolderOpen,
   Settings,
   MessageSquare,
 } from "lucide-react";
@@ -161,6 +162,15 @@ export function AppSidebar({
               >
                 <LayoutDashboard className="h-4 w-4" />
                 Dashboard
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => router.push("/files")}
+                className="gap-2"
+              >
+                <FolderOpen className="h-4 w-4" />
+                Files
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>

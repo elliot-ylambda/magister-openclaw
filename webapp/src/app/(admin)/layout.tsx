@@ -32,6 +32,12 @@ export default async function AdminLayout({
           >
             Users
           </Link>
+          <Link
+            href="/admin/secrets"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Secrets
+          </Link>
         </nav>
         <div className="flex-1" />
         <Link

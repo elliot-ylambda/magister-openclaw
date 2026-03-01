@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { streamChat } from "@/lib/gateway";
+import { streamChat, type Attachment } from "@/lib/gateway";
 import { ChatInput } from "@/components/chat/chat-input";
-import { ChatMessage, type Message } from "@/components/chat/chat-message";
+import { ChatMessage, type Message, type MessageAttachment } from "@/components/chat/chat-message";
 
 const SCROLL_THRESHOLD = 100;
 const WAKING_RETRY_DELAY = 5_000;
 const MAX_WAKE_RETRIES = 3;
+
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -40,40 +42,88 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Load chat history from Supabase on mount
+  // Load chat history from Supabase when sessionId changes
   useEffect(() => {
+    // Clear stale messages from the previous session immediately
+    setMessages([]);
+    isFirstMessageRef.current = true;
+
     async function loadHistory() {
-      const { data } = await supabase
+      const { data, error: queryError } = await supabase
         .from("chat_messages")
-        .select("id, role, content, created_at")
+        .select("id, role, content, created_at, attachments")
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true });
 
+      if (queryError) {
+        console.error("Failed to load chat history:", queryError);
+        setError("Failed to load conversation history.");
+        return;
+      }
+
       if (data?.length) {
-        setMessages(
-          data.map((m) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            createdAt: new Date(m.created_at),
-          }))
+        // Generate signed URLs for image attachments
+        const messagesWithUrls = await Promise.all(
+          data.map(async (m) => {
+            let attachments: MessageAttachment[] | undefined;
+            if (m.attachments && Array.isArray(m.attachments)) {
+              attachments = await Promise.all(
+                (m.attachments as Array<{ name: string; type: string; size: number; storage_path: string }>).map(
+                  async (a) => {
+                    let url: string | undefined;
+                    if (IMAGE_TYPES.has(a.type)) {
+                      const { data: signedData } = await supabase.storage
+                        .from("chat-attachments")
+                        .createSignedUrl(a.storage_path, 3600);
+                      url = signedData?.signedUrl;
+                    }
+                    return { name: a.name, type: a.type, size: a.size, url };
+                  }
+                )
+              );
+            }
+            return {
+              id: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              createdAt: new Date(m.created_at),
+              attachments,
+            };
+          })
         );
+
+        setMessages(messagesWithUrls);
         isFirstMessageRef.current = false;
+      } else {
+        // New empty session — refresh the layout so the sidebar includes it
+        router.refresh();
       }
     }
     loadHistory();
-  }, [sessionId, supabase]);
+  }, [sessionId, supabase, router]);
 
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, attachments?: Attachment[]) => {
       setError(null);
       setIsWaking(false);
+
+      // Build optimistic attachments with local preview URLs
+      const optimisticAttachments: MessageAttachment[] | undefined =
+        attachments?.map((a) => ({
+          name: a.name,
+          type: a.type,
+          size: a.data.length, // approximate
+          url: IMAGE_TYPES.has(a.type)
+            ? `data:${a.type};base64,${a.data}`
+            : undefined,
+        }));
 
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
         content,
         createdAt: new Date(),
+        attachments: optimisticAttachments,
       };
 
       const assistantMessage: Message = {
@@ -115,18 +165,67 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         return;
       }
 
-      // Persist user message to Supabase (skip on wake retries to avoid duplicates)
-      if (retryCountRef.current === 0) {
-        const { error: insertErr } = await supabase
-          .from("chat_messages")
-          .insert({
+      // Upload attachments to Supabase Storage in parallel (don't block chat)
+      type PersistedAttachment = {
+        name: string;
+        type: string;
+        size: number;
+        storage_path: string;
+      };
+      let persistedAttachments: PersistedAttachment[] | null = null;
+
+      const storageUploadPromise = attachments?.length
+        ? (async () => {
+            const results: PersistedAttachment[] = [];
+            for (const att of attachments) {
+              const ext = att.name.split(".").pop() || "bin";
+              const storagePath = `${user.id}/${sessionId}/${crypto.randomUUID()}.${ext}`;
+              // Convert base64 back to binary for upload
+              const bytes = Uint8Array.from(atob(att.data), (c) => c.charCodeAt(0));
+              const blob = new Blob([bytes], { type: att.type });
+              const { error: uploadErr } = await supabase.storage
+                .from("chat-attachments")
+                .upload(storagePath, blob, { contentType: att.type });
+              if (uploadErr) {
+                console.error("Storage upload failed:", uploadErr);
+                continue;
+              }
+              results.push({
+                name: att.name,
+                type: att.type,
+                size: bytes.length,
+                storage_path: storagePath,
+              });
+            }
+            persistedAttachments = results.length > 0 ? results : null;
+          })()
+        : Promise.resolve();
+
+      // Persist user message after storage upload completes (so we have storage paths)
+      const persistUserMessage = async () => {
+        await storageUploadPromise;
+        if (retryCountRef.current === 0) {
+          const insertData: Record<string, unknown> = {
             session_id: sessionId,
             user_id: user.id,
             role: "user",
             content,
-          });
-        if (insertErr) console.error("Failed to persist user message:", insertErr);
-      }
+          };
+          if (persistedAttachments) {
+            insertData.attachments = persistedAttachments;
+          }
+          const { error: insertErr } = await supabase
+            .from("chat_messages")
+            .insert(insertData);
+          if (insertErr) {
+            console.error("Failed to persist user message:", insertErr);
+            setError("Message may not be saved. Check your connection.");
+          }
+        }
+      };
+
+      // Start persistence in background — don't block streaming
+      const persistPromise = persistUserMessage();
 
       let gotContent = false;
       let accumulatedContent = "";
@@ -136,7 +235,8 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
           gatewayUrl,
           session.access_token,
           content,
-          sessionId
+          sessionId,
+          attachments
         )) {
           switch (event.type) {
             case "session":
@@ -155,6 +255,18 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
             case "done":
               break;
             case "error":
+              if (event.message.includes("stopped")) {
+                if (!gotContent) {
+                  setMessages((prev) =>
+                    prev.filter((m) => m.id !== assistantMessage.id)
+                  );
+                }
+                setError(
+                  "Your agent is stopped. Start it from the status badge above."
+                );
+                setIsStreaming(false);
+                return;
+              }
               if (event.message.includes("waking up")) {
                 if (retryCountRef.current >= MAX_WAKE_RETRIES) {
                   setError(
@@ -174,7 +286,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
                 );
                 setTimeout(() => {
                   setIsWaking(false);
-                  handleSend(content);
+                  handleSend(content, attachments);
                 }, WAKING_RETRY_DELAY);
                 return;
               }
@@ -198,6 +310,9 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         setIsStreaming(false);
       }
 
+      // Wait for user message persistence to complete
+      await persistPromise;
+
       // Persist assistant message to Supabase
       if (accumulatedContent) {
         const { error: insertErr } = await supabase
@@ -208,7 +323,10 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
             role: "assistant",
             content: accumulatedContent,
           });
-        if (insertErr) console.error("Failed to persist assistant message:", insertErr);
+        if (insertErr) {
+          console.error("Failed to persist assistant message:", insertErr);
+          setError("Response may not be saved. Check your connection.");
+        }
       }
 
       // Touch session to refresh sidebar ordering

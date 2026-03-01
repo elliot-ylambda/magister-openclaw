@@ -46,17 +46,12 @@ def create_slack_oauth_router(
         if machine.status in (MachineStatus.destroyed, MachineStatus.destroying):
             raise HTTPException(status_code=410, detail="Machine destroyed")
 
-        await fly.set_secrets(
-            machine.fly_app_name,
-            {
-                "SLACK_BOT_TOKEN": req.bot_token,
-                "SLACK_SIGNING_SECRET": req.signing_secret,
-            },
-        )
-        logger.info(f"[slack] injected Slack secrets for user {req.user_id}")
-
-        # Start machine if suspended so it picks up new secrets
-        if machine.status == MachineStatus.suspended:
+        # Start machine BEFORE setting secrets — the GraphQL setSecrets
+        # mutation triggers a Fly deployment that fails with "no machines
+        # available" if the machine is suspended/stopped.
+        if machine.fly_machine_id and machine.status in (
+            MachineStatus.suspended, MachineStatus.stopped,
+        ):
             try:
                 await fly.start_machine(
                     machine.fly_app_name, machine.fly_machine_id
@@ -72,8 +67,17 @@ def create_slack_oauth_router(
                 )
             except Exception:
                 logger.exception(
-                    f"[slack] failed to start machine after secret injection for {req.user_id}"
+                    f"[slack] failed to start machine before secret injection for {req.user_id}"
                 )
+
+        await fly.set_secrets(
+            machine.fly_app_name,
+            {
+                "SLACK_BOT_TOKEN": req.bot_token,
+                "SLACK_SIGNING_SECRET": req.signing_secret,
+            },
+        )
+        logger.info(f"[slack] injected Slack secrets for user {req.user_id}")
 
         return {"status": "secrets_injected"}
 

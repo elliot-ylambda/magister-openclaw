@@ -1,10 +1,12 @@
 .PHONY: up down logs seed reset \
-	image-build image-push \
+	image-build image-push openclaw-pin \
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build \
 	supabase-start supabase-migrate supabase-reset connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
 	health status chat provision slack-challenge \
-	deploy-gateway deploy-image deploy-machines deploy-all
+	deploy-gateway deploy-image deploy-machines deploy-all \
+	start-gateway start-machine start-machines \
+	stop-gateway stop-machine stop-machines
 
 # ─── Docker Compose ───────────────────────────────────────────
 
@@ -35,6 +37,14 @@ image-build:
 
 image-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
+
+# Pin OpenClaw to the current HEAD of ../magister-openclaw
+# Workflow: edit ../magister-openclaw → commit + push → make openclaw-pin → make deploy-image
+openclaw-pin:
+	@HASH=$$(cd ../magister-openclaw && git rev-parse HEAD); \
+	echo "Pinning OpenClaw to $$HASH"; \
+	sed -i '' "s|^ARG OPENCLAW_VERSION=.*|ARG OPENCLAW_VERSION=$$HASH|" openclaw-image/Dockerfile; \
+	echo "Done. Run 'make deploy-image' to build with new version."
 
 # ─── Production Deploy ───────────────────────────────────────
 
@@ -102,7 +112,121 @@ deploy-machines:
 	if [ $$FAILED -gt 0 ]; then echo "WARNING: $$FAILED machine(s) failed."; exit 1; fi
 
 # Deploy everything: image + gateway + rolling update machines
-deploy-all: deploy-image deploy-gateway deploy-machines
+deploy-backend: deploy-image deploy-gateway deploy-machines start-gateway start-machines
+
+# ─── Production Start ───────────────────────────────────────
+
+# Start the production gateway (all stopped/suspended machines)
+start-gateway:
+	@MACHINES=$$(flyctl machines list -a $(GATEWAY_APP) --json 2>/dev/null \
+		| python3 -c "import json,sys; ms=json.load(sys.stdin); print(' '.join(m['id'] for m in ms if m.get('state') in ('stopped','suspended')))"); \
+	if [ -z "$$MACHINES" ]; then echo "No stopped/suspended gateway machines."; exit 0; fi; \
+	for MID in $$MACHINES; do \
+		echo "Starting $$MID..."; \
+		flyctl machines start $$MID -a $(GATEWAY_APP) 2>&1; \
+	done; \
+	echo "Gateway started."
+
+# Start a specific user machine.  Usage: make start-machine app=magister-XXXXXXXX
+start-machine:
+	@if [ -z "$(app)" ]; then echo "Usage: make start-machine app=magister-XXXXXXXX"; exit 1; fi; \
+	MACHINE_ID=$$(flyctl machines list -a $(app) --json 2>/dev/null \
+		| python3 -c "import json,sys; ms=json.load(sys.stdin); print(ms[0]['id'] if ms else '')" 2>/dev/null); \
+	if [ -z "$$MACHINE_ID" ]; then echo "No machines found in $(app)."; exit 1; fi; \
+	echo "Starting $$MACHINE_ID in $(app)..."; \
+	flyctl machines start $$MACHINE_ID -a $(app) 2>&1; \
+	echo "Done."
+
+# Start ALL stopped/suspended user machines across all magister-* apps
+start-machines:
+	@APPS=$$(flyctl apps list --json 2>/dev/null \
+		| python3 -c "import json,sys; \
+			skip={'$(GATEWAY_APP)','magister-user-machine'}; \
+			apps=[a['Name'] for a in json.load(sys.stdin) if a['Name'].startswith('magister-') and a['Name'] not in skip]; \
+			print('\n'.join(apps))" \
+	); \
+	if [ -z "$$APPS" ]; then echo "No user machine apps found."; exit 0; fi; \
+	TOTAL=$$(echo "$$APPS" | wc -l | tr -d ' '); \
+	echo "Starting all stopped/suspended machines in $$TOTAL app(s):"; \
+	echo "$$APPS" | sed 's/^/  /'; \
+	echo "---"; \
+	I=0; STARTED=0; \
+	for APP in $$APPS; do \
+		I=$$((I + 1)); \
+		MACHINE_IDS=$$(flyctl machines list -a $$APP --json 2>/dev/null \
+			| python3 -c "import json,sys; ms=json.load(sys.stdin); ids=[m['id'] for m in ms if m.get('state') in ('stopped','suspended')]; print(' '.join(ids))" 2>/dev/null); \
+		if [ -z "$$MACHINE_IDS" ]; then \
+			echo "[$$I/$$TOTAL] $$APP: no stopped/suspended machines"; \
+			continue; \
+		fi; \
+		for MID in $$MACHINE_IDS; do \
+			echo "[$$I/$$TOTAL] $$APP: starting $$MID..."; \
+			if flyctl machines start $$MID -a $$APP 2>&1; then \
+				STARTED=$$((STARTED + 1)); \
+			fi; \
+		done; \
+	done; \
+	echo "---"; \
+	echo "Done: started $$STARTED machine(s) across $$TOTAL app(s)."
+
+# ─── Production Stop ────────────────────────────────────────
+
+# Stop the production gateway (all machines)
+stop-gateway:
+	@echo "This will stop ALL gateway machines in $(GATEWAY_APP)."; \
+	read -p "Are you sure? [y/N] " CONFIRM; \
+	if [ "$$CONFIRM" != "y" ] && [ "$$CONFIRM" != "Y" ]; then echo "Aborted."; exit 0; fi; \
+	MACHINES=$$(flyctl machines list -a $(GATEWAY_APP) --json 2>/dev/null \
+		| python3 -c "import json,sys; ms=json.load(sys.stdin); print(' '.join(m['id'] for m in ms if m.get('state') in ('started','running')))"); \
+	if [ -z "$$MACHINES" ]; then echo "No running gateway machines."; exit 0; fi; \
+	for MID in $$MACHINES; do \
+		echo "Stopping $$MID..."; \
+		flyctl machines stop $$MID -a $(GATEWAY_APP) 2>&1; \
+	done; \
+	echo "Gateway stopped."
+
+# Stop a specific user machine.  Usage: make stop-machine app=magister-XXXXXXXX
+app ?=
+stop-machine:
+	@if [ -z "$(app)" ]; then echo "Usage: make stop-machine app=magister-XXXXXXXX"; exit 1; fi; \
+	echo "This will stop the machine in $(app)."; \
+	read -p "Are you sure? [y/N] " CONFIRM; \
+	if [ "$$CONFIRM" != "y" ] && [ "$$CONFIRM" != "Y" ]; then echo "Aborted."; exit 0; fi; \
+	MACHINE_ID=$$(flyctl machines list -a $(app) --json 2>/dev/null \
+		| python3 -c "import json,sys; ms=json.load(sys.stdin); print(ms[0]['id'] if ms else '')" 2>/dev/null); \
+	if [ -z "$$MACHINE_ID" ]; then echo "No machines found in $(app)."; exit 1; fi; \
+	echo "Stopping $$MACHINE_ID..."; \
+	flyctl machines stop $$MACHINE_ID -a $(app) 2>&1; \
+	echo "Done."
+
+# Stop ALL user machines across all magister-* apps
+stop-machines:
+	@APPS=$$(flyctl apps list --json 2>/dev/null \
+		| python3 -c "import json,sys; \
+			skip={'$(GATEWAY_APP)','magister-user-machine'}; \
+			apps=[a['Name'] for a in json.load(sys.stdin) if a['Name'].startswith('magister-') and a['Name'] not in skip]; \
+			print('\n'.join(apps))" \
+	); \
+	if [ -z "$$APPS" ]; then echo "No user machine apps found."; exit 0; fi; \
+	TOTAL=$$(echo "$$APPS" | wc -l | tr -d ' '); \
+	echo "This will stop ALL running machines in $$TOTAL app(s):"; \
+	echo "$$APPS" | sed 's/^/  /'; \
+	echo ""; \
+	read -p "Are you sure? [y/N] " CONFIRM; \
+	if [ "$$CONFIRM" != "y" ] && [ "$$CONFIRM" != "Y" ]; then echo "Aborted."; exit 0; fi; \
+	for APP in $$APPS; do \
+		MACHINE_ID=$$(flyctl machines list -a $$APP --json 2>/dev/null \
+			| python3 -c "import json,sys; ms=json.load(sys.stdin); ids=[m['id'] for m in ms if m.get('state') in ('started','running')]; print(' '.join(ids))" 2>/dev/null); \
+		if [ -z "$$MACHINE_ID" ]; then \
+			echo "$$APP: no running machines"; \
+			continue; \
+		fi; \
+		for MID in $$MACHINE_ID; do \
+			echo "$$APP: stopping $$MID..."; \
+			flyctl machines stop $$MID -a $$APP 2>&1; \
+		done; \
+	done; \
+	echo "All machines stopped."
 
 # ─── Webapp ───────────────────────────────────────────────────
 

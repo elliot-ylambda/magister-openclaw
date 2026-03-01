@@ -25,6 +25,20 @@ MODEL_COSTS: dict[str, dict[str, int]] = {
 
 CACHE_TTL_SECONDS = 30
 
+# kwargs that must never be forwarded from the request body to litellm.
+# Prevents callers from overriding credentials, routing, or provider selection.
+_BLOCKED_KWARGS = frozenset({
+    "api_key", "api_base", "base_url", "api_version",
+    "custom_llm_provider", "model", "stream_options",
+})
+
+
+def _sanitize_kwargs(kwargs: dict) -> dict:
+    """Strip security-sensitive keys from the litellm kwargs dict."""
+    for key in _BLOCKED_KWARGS:
+        kwargs.pop(key, None)
+    return kwargs
+
 
 class LLMService:
     """Wraps litellm.acompletion() with budget enforcement and usage tracking."""
@@ -103,6 +117,7 @@ class LLMService:
         (streaming).
         """
         litellm_model = f"openrouter/{model}"
+        _sanitize_kwargs(kwargs)
 
         if stream:
             return self._stream_completion(

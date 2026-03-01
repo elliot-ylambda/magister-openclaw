@@ -3,6 +3,9 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+type Action = 'stop' | 'start' | 'restart' | 'reset' | 'destroy';
+const VALID_ACTIONS: Action[] = ['stop', 'start', 'restart', 'reset', 'destroy'];
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -35,8 +38,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing action or user_id' }, { status: 400 });
   }
 
-  if (action !== 'restart' && action !== 'suspend') {
-    return NextResponse.json({ error: 'Invalid action. Use "restart" or "suspend".' }, { status: 400 });
+  if (!VALID_ACTIONS.includes(action as Action)) {
+    return NextResponse.json(
+      { error: `Invalid action. Use one of: ${VALID_ACTIONS.join(', ')}` },
+      { status: 400 }
+    );
   }
 
   if (!UUID_RE.test(user_id)) {
@@ -50,7 +56,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Gateway not configured' }, { status: 500 });
   }
 
-  if (action === 'restart') {
+  const gatewayHeaders = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${GATEWAY_API_KEY}`,
+  };
+
+  // Stop / Start / Restart — call new machine control endpoints
+  if (action === 'stop' || action === 'start' || action === 'restart') {
+    const res = await fetch(`${GATEWAY_URL}/api/machine/${action}`, {
+      method: 'POST',
+      headers: gatewayHeaders,
+      body: JSON.stringify({ user_id }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`[admin/machines] Gateway ${action} failed for user ${user_id}:`, text);
+      return NextResponse.json({ error: `Failed to ${action} machine` }, { status: 502 });
+    }
+
+    return NextResponse.json({ success: true, action });
+  }
+
+  // Reset — destroy + re-provision
+  if (action === 'reset') {
     const { data: subscription } = await serviceClient
       .from('subscriptions')
       .select('plan')
@@ -58,37 +87,45 @@ export async function POST(request: Request) {
       .eq('status', 'active')
       .single();
 
-    const res = await fetch(`${GATEWAY_URL}/api/provision`, {
+    const destroyRes = await fetch(`${GATEWAY_URL}/api/destroy`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${GATEWAY_API_KEY}`,
-      },
+      headers: gatewayHeaders,
+      body: JSON.stringify({ user_id }),
+    });
+
+    if (!destroyRes.ok) {
+      const text = await destroyRes.text();
+      console.error(`[admin/machines] Gateway destroy (reset) failed for user ${user_id}:`, text);
+      return NextResponse.json({ error: 'Failed to destroy machine for reset' }, { status: 502 });
+    }
+
+    const provisionRes = await fetch(`${GATEWAY_URL}/api/provision`, {
+      method: 'POST',
+      headers: gatewayHeaders,
       body: JSON.stringify({ user_id, plan: subscription?.plan ?? 'cmo' }),
     });
 
-    if (!res.ok) {
-      console.error(`[admin/machines] Gateway restart failed for user ${user_id}:`, await res.text());
-      return NextResponse.json({ error: 'Failed to restart machine' }, { status: 502 });
+    if (!provisionRes.ok) {
+      const text = await provisionRes.text();
+      console.error(`[admin/machines] Gateway provision (reset) failed for user ${user_id}:`, text);
+      return NextResponse.json({ error: 'Failed to re-provision machine after reset' }, { status: 502 });
     }
 
-    return NextResponse.json({ success: true, action: 'restart' });
+    return NextResponse.json({ success: true, action: 'reset' });
   }
 
-  // action === 'suspend'
+  // Destroy — permanent delete
   const res = await fetch(`${GATEWAY_URL}/api/destroy`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${GATEWAY_API_KEY}`,
-    },
+    headers: gatewayHeaders,
     body: JSON.stringify({ user_id }),
   });
 
   if (!res.ok) {
-    console.error(`[admin/machines] Gateway suspend failed for user ${user_id}:`, await res.text());
-    return NextResponse.json({ error: 'Failed to suspend machine' }, { status: 502 });
+    const text = await res.text();
+    console.error(`[admin/machines] Gateway destroy failed for user ${user_id}:`, text);
+    return NextResponse.json({ error: 'Failed to destroy machine' }, { status: 502 });
   }
 
-  return NextResponse.json({ success: true, action: 'suspend' });
+  return NextResponse.json({ success: true, action: 'destroy' });
 }

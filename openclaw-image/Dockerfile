@@ -13,12 +13,11 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 WORKDIR /app
 
 # --- OpenClaw ---
-# Clone and build OpenClaw (pin to a specific commit for reproducibility)
-# TODO: Replace with a specific tag/commit hash before GA
-ARG OPENCLAW_VERSION=main
-RUN git clone --depth 1 --branch ${OPENCLAW_VERSION} \
-    https://github.com/openclaw/openclaw.git /app/openclaw \
+# Clone and build OpenClaw from our fork (pinned to a specific commit)
+ARG OPENCLAW_VERSION=19023eed8607746e2540ed1657f73358ec3c3a43
+RUN git clone https://github.com/elliot-ylambda/magister-openclaw.git /app/openclaw \
     && cd /app/openclaw \
+    && git checkout ${OPENCLAW_VERSION} \
     && corepack enable \
     && pnpm install --frozen-lockfile \
     && pnpm build

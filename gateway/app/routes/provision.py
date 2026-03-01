@@ -87,9 +87,14 @@ def create_provision_router(
 
             # Step 2: Generate token + set Fly secrets (combined for atomicity)
             if machine.provisioning_step < 2:
+                # Start with admin-managed global secrets (filtered for reserved prefixes)
+                global_secrets = await supabase.get_merged_secrets_for_user(user_id)
+                fly_secrets: dict[str, str] = {**global_secrets}
+
+                # System secrets set AFTER globals so they can't be overwritten
                 token = machine.gateway_token or secrets.token_urlsafe(32)
                 token_hash = hash_token(token)
-                fly_secrets: dict[str, str] = {"GATEWAY_TOKEN": token}
+                fly_secrets["GATEWAY_TOKEN"] = token
 
                 # Include Slack tokens if user already connected Slack
                 slack_conn = await supabase.get_slack_connection(user_id)

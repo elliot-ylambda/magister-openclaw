@@ -152,7 +152,7 @@ class SupabaseService:
             await self._client.table("user_machines")
             .select("*")
             .eq("status", "running")
-            .not_("fly_machine_id", "is", "null")
+            .filter("fly_machine_id", "not.is", "null")
             .execute()
         )
         return [UserMachine(**row) for row in (result.data or [])]
@@ -230,6 +230,63 @@ class SupabaseService:
             .eq("team_id", team_id)
             .execute()
         )
+
+    # ── Global Secrets ─────────────────────────────────────────────
+
+    RESERVED_SECRET_PREFIXES = ("GATEWAY_", "SLACK_")
+
+    async def get_all_global_secrets(self) -> list[dict]:
+        """Return all global secrets."""
+        result = (
+            await self._client.table("global_secrets")
+            .select("*")
+            .order("key")
+            .execute()
+        )
+        return result.data or []
+
+    async def get_user_secret_overrides(self, user_id: str) -> list[dict]:
+        """Return all secret overrides for a specific user."""
+        result = (
+            await self._client.table("user_secret_overrides")
+            .select("*")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return result.data or []
+
+    async def get_merged_secrets_for_user(self, user_id: str) -> dict[str, str]:
+        """Return global secrets merged with user overrides (overrides win).
+
+        Filters out keys with reserved prefixes to avoid clobbering
+        system secrets (GATEWAY_TOKEN, SLACK_BOT_TOKEN, etc.).
+        """
+        globals_ = await self.get_all_global_secrets()
+        overrides = await self.get_user_secret_overrides(user_id)
+
+        merged: dict[str, str] = {}
+        for secret in globals_:
+            key = secret["key"]
+            if not any(key.startswith(p) for p in self.RESERVED_SECRET_PREFIXES):
+                merged[key] = secret["value"]
+
+        for override in overrides:
+            key = override["secret_key"]
+            if not any(key.startswith(p) for p in self.RESERVED_SECRET_PREFIXES):
+                merged[key] = override["value"]
+
+        return merged
+
+    async def get_active_machines(self) -> list[UserMachine]:
+        """Get machines with status running or suspended that have a fly_machine_id."""
+        result = (
+            await self._client.table("user_machines")
+            .select("*")
+            .in_("status", ["running", "suspended"])
+            .filter("fly_machine_id", "not.is", "null")
+            .execute()
+        )
+        return [UserMachine(**row) for row in (result.data or [])]
 
     # ── Usage Tracking ───────────────────────────────────────────
 

@@ -3,6 +3,9 @@
 Translates the webapp's simple chat request into an OpenAI-compatible
 POST /v1/chat/completions call against the user's OpenClaw instance,
 then parses the JSON SSE stream back into plain-text SSE events.
+
+When attachments are present, routes through OpenResponses /v1/responses
+endpoint instead, which supports multimodal input (images + files).
 """
 
 from __future__ import annotations
@@ -19,11 +22,13 @@ from fastapi import APIRouter, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from app.middleware.rate_limit import RateLimiter
-from app.models import ChatRequest, MachineStatus
+from app.models import Attachment, ChatRequest, MachineStatus
 from app.services.fly import FlyClient
 from app.services.supabase_client import SupabaseService
 
 logger = logging.getLogger("gateway.chat")
+
+IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 # Per-instance concurrency lock: one streaming request per user
 _active_requests: set[str] = set()
@@ -69,6 +74,12 @@ def create_chat_router(
         if machine.status == MachineStatus.provisioning:
             raise HTTPException(
                 status_code=503, detail="Machine is still provisioning"
+            )
+        if machine.status == MachineStatus.stopped:
+            raise HTTPException(status_code=423, detail="Machine is stopped")
+        if machine.status == MachineStatus.stopping:
+            raise HTTPException(
+                status_code=503, detail="Machine is stopping"
             )
 
         # Concurrency lock
@@ -125,6 +136,14 @@ def create_chat_router(
         # Ensure we always have a session_id (generate one for new conversations)
         session_id = req.session_id or str(uuid.uuid4())
 
+        # Fire-and-forget: upload files to OpenClaw workspace (persistent access)
+        if req.attachments:
+            asyncio.create_task(
+                _upload_files_to_workspace(
+                    machine_url, machine, req.attachments, session_id, user_id
+                )
+            )
+
         if req.stream:
             return EventSourceResponse(
                 _stream_chat(machine_url, machine, req, session_id, user_id, supabase)
@@ -145,6 +164,68 @@ def create_chat_router(
 
         return {"content": "".join(content_parts), "session_id": session_id}
 
+    async def _upload_files_to_workspace(
+        machine_url: str,
+        machine,
+        attachments: list[Attachment],
+        session_id: str,
+        user_id: str,
+    ) -> None:
+        """Upload files to OpenClaw /v1/files for persistent workspace access."""
+        try:
+            files_payload = [
+                {"name": a.name, "type": a.type, "data": a.data}
+                for a in attachments
+            ]
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{machine_url}/v1/files",
+                    json={
+                        "files": files_payload,
+                        "session_key": f"webchat:{session_id}",
+                    },
+                    headers={"Authorization": f"Bearer {machine.gateway_token}"},
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        f"[chat] file upload failed for {user_id}: {resp.status_code}"
+                    )
+        except Exception:
+            logger.exception(f"[chat] file upload error for {user_id}")
+
+    def _build_openresponses_body(
+        message: str, attachments: list[Attachment]
+    ) -> dict:
+        """Build an OpenResponses /v1/responses request body with multimodal content."""
+        content: list[dict] = []
+        for att in attachments:
+            if att.type in IMAGE_MIME_TYPES:
+                content.append({
+                    "type": "input_image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": att.type,
+                        "data": att.data,
+                    },
+                })
+            else:
+                content.append({
+                    "type": "input_file",
+                    "source": {
+                        "type": "base64",
+                        "media_type": att.type,
+                        "data": att.data,
+                        "filename": att.name,
+                    },
+                })
+        if message:
+            content.append({"type": "input_text", "text": message})
+        return {
+            "model": "openclaw",
+            "input": [{"type": "message", "role": "user", "content": content}],
+            "stream": True,
+        }
+
     async def _stream_chat(
         machine_url: str,
         machine,
@@ -155,6 +236,7 @@ def create_chat_router(
     ) -> AsyncIterator[dict]:
         _active_requests.add(user_id)
         last_activity_update = 0.0
+        has_attachments = bool(req.attachments)
         try:
             headers = {
                 "Authorization": f"Bearer {machine.gateway_token}",
@@ -163,49 +245,39 @@ def create_chat_router(
             if req.agent_id:
                 headers["x-openclaw-agent-id"] = req.agent_id
 
+            # Choose endpoint and body based on whether attachments are present
+            if has_attachments:
+                endpoint = f"{machine_url}/v1/responses"
+                body = _build_openresponses_body(req.message, req.attachments)
+            else:
+                endpoint = f"{machine_url}/v1/chat/completions"
+                body = {
+                    "model": "openclaw",
+                    "messages": [{"role": "user", "content": req.message}],
+                    "stream": True,
+                }
+
             async with httpx.AsyncClient(timeout=300.0) as client:
                 async with client.stream(
                     "POST",
-                    f"{machine_url}/v1/chat/completions",
-                    json={
-                        "model": "openclaw",
-                        "messages": [{"role": "user", "content": req.message}],
-                        "stream": True,
-                    },
+                    endpoint,
+                    json=body,
                     headers=headers,
                 ) as resp:
                     if resp.status_code != 200:
-                        body = await resp.aread()
+                        resp_body = await resp.aread()
                         logger.warning(
-                            f"[chat] upstream {resp.status_code} for {user_id}: {body[:500]}"
+                            f"[chat] upstream {resp.status_code} for {user_id}: {resp_body[:500]}"
                         )
                         yield {"event": "error", "data": f"Upstream {resp.status_code}"}
                         return
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            if line:
-                                logger.debug(f"[chat] non-data line from upstream: {line[:200]}")
-                            continue
-                        payload = line[6:]  # strip "data: "
-                        if payload == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(payload)
-                            content = chunk["choices"][0]["delta"].get("content", "")
-                            if content:
-                                yield {"event": "chunk", "data": content}
-                        except (json.JSONDecodeError, KeyError, IndexError):
-                            logger.warning(f"[chat] unparseable upstream chunk: {payload[:300]}")
-                            continue
 
-                        # Debounced activity tracking
-                        now = time.monotonic()
-                        if now - last_activity_update > ACTIVITY_DEBOUNCE_SECONDS:
-                            last_activity_update = now
-                            try:
-                                await supabase.update_last_activity(user_id)
-                            except Exception:
-                                pass
+                    if has_attachments:
+                        async for event in _parse_openresponses_sse(resp, user_id, supabase):
+                            yield event
+                    else:
+                        async for event in _parse_chatcompletions_sse(resp, user_id, supabase):
+                            yield event
 
             yield {"event": "done", "data": ""}
         except Exception as exc:
@@ -213,10 +285,87 @@ def create_chat_router(
             yield {"event": "error", "data": str(exc)}
         finally:
             _active_requests.discard(user_id)
-            # Always update activity on stream end
             try:
                 await supabase.update_last_activity(user_id)
             except Exception:
                 pass
+
+    async def _parse_chatcompletions_sse(
+        resp: httpx.Response,
+        user_id: str,
+        supabase: SupabaseService,
+    ) -> AsyncIterator[dict]:
+        """Parse OpenAI chat completions SSE format."""
+        last_activity_update = 0.0
+        async for line in resp.aiter_lines():
+            if not line or not line.startswith("data: "):
+                if line:
+                    logger.debug(f"[chat] non-data line from upstream: {line[:200]}")
+                continue
+            payload = line[6:]
+            if payload == "[DONE]":
+                break
+            try:
+                chunk = json.loads(payload)
+                content = chunk["choices"][0]["delta"].get("content", "")
+                if content:
+                    yield {"event": "chunk", "data": content}
+            except (json.JSONDecodeError, KeyError, IndexError):
+                logger.warning(f"[chat] unparseable upstream chunk: {payload[:300]}")
+                continue
+
+            now = time.monotonic()
+            if now - last_activity_update > ACTIVITY_DEBOUNCE_SECONDS:
+                last_activity_update = now
+                try:
+                    await supabase.update_last_activity(user_id)
+                except Exception:
+                    pass
+
+    async def _parse_openresponses_sse(
+        resp: httpx.Response,
+        user_id: str,
+        supabase: SupabaseService,
+    ) -> AsyncIterator[dict]:
+        """Parse OpenResponses SSE format and translate to chunk/done/error events."""
+        last_activity_update = 0.0
+        current_event = ""
+        async for line in resp.aiter_lines():
+            if line.startswith("event:"):
+                current_event = line[6:].strip()
+                continue
+            if not line.startswith("data:"):
+                continue
+            raw = line[5:].lstrip()
+            if raw == "[DONE]":
+                break
+
+            if current_event == "response.output_text.delta":
+                try:
+                    data = json.loads(raw)
+                    delta = data.get("delta", "")
+                    if delta:
+                        yield {"event": "chunk", "data": delta}
+                except (json.JSONDecodeError, KeyError):
+                    logger.warning(f"[chat] unparseable responses chunk: {raw[:300]}")
+            elif current_event == "response.failed":
+                try:
+                    data = json.loads(raw)
+                    error_msg = data.get("error", {}).get("message", "Agent error")
+                    yield {"event": "error", "data": error_msg}
+                except (json.JSONDecodeError, KeyError):
+                    yield {"event": "error", "data": "Agent error"}
+            elif current_event == "response.completed":
+                break
+
+            current_event = ""
+
+            now = time.monotonic()
+            if now - last_activity_update > ACTIVITY_DEBOUNCE_SECONDS:
+                last_activity_update = now
+                try:
+                    await supabase.update_last_activity(user_id)
+                except Exception:
+                    pass
 
     return router

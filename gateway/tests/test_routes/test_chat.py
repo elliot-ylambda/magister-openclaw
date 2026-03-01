@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -141,8 +142,10 @@ def test_chat_non_streaming(mock_fly, mock_supabase, rate_limiter):
     client = _make_app(mock_fly, mock_supabase, rate_limiter)
 
     async def _fake_lines():
-        for line in ["Hello ", "world"]:
-            yield line
+        for content in ["Hello ", "world"]:
+            chunk = {"choices": [{"delta": {"content": content}}]}
+            yield f"data: {json.dumps(chunk)}"
+        yield "data: [DONE]"
 
     with patch("app.routes.chat.httpx.AsyncClient") as mock_httpx:
         # Health-check response
@@ -177,7 +180,7 @@ def test_chat_non_streaming(mock_fly, mock_supabase, rate_limiter):
     assert resp.status_code == 200
     data = resp.json()
     assert data["content"] == "Hello world"
-    assert data["session_id"] is None
+    assert data["session_id"] is not None  # auto-generated UUID when none provided
 
 
 def test_chat_concurrent_request(mock_fly, mock_supabase, rate_limiter):

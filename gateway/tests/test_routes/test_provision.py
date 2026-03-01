@@ -45,6 +45,7 @@ def mock_supabase():
     )
     mock.update_user_machine.return_value = None
     mock.delete_user_machine.return_value = None
+    mock.get_merged_secrets_for_user.return_value = {}
     return mock
 
 

@@ -1,14 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
-import { getAgentStatus, type AgentStatus } from "@/lib/gateway";
+import { Loader2, Power, Play, RotateCw } from "lucide-react";
+import {
+  getAgentStatus,
+  stopAgent,
+  startAgent,
+  restartAgent,
+  type AgentStatus,
+} from "@/lib/gateway";
 import { createClient } from "@/lib/supabase/client";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 
 const STATUS_CONFIG: Record<
   AgentStatus["status"],
@@ -18,6 +26,8 @@ const STATUS_CONFIG: Record<
   suspended: { color: "bg-yellow-500", label: "Agent sleeping", dot: true },
   provisioning: { color: "", label: "Setting up...", dot: false },
   suspending: { color: "bg-yellow-500", label: "Suspending...", dot: true },
+  stopping: { color: "bg-yellow-500", label: "Stopping...", dot: false },
+  stopped: { color: "bg-red-500", label: "Agent stopped", dot: true },
   failed: { color: "bg-red-500", label: "Agent offline", dot: true },
   destroying: { color: "bg-muted-foreground", label: "Shutting down...", dot: true },
   destroyed: { color: "bg-muted-foreground", label: "Agent unavailable", dot: true },
@@ -37,6 +47,7 @@ function formatRelativeTime(iso: string): string {
 
 export function AgentStatusBadge() {
   const [status, setStatus] = useState<AgentStatus | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
   const supabase = createClient();
 
@@ -72,9 +83,33 @@ export function AgentStatusBadge() {
     };
   }, [poll]);
 
+  async function handleAction(action: "stop" | "start" | "restart") {
+    setActionLoading(action);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+      if (!gatewayUrl) return;
+
+      const fn = { stop: stopAgent, start: startAgent, restart: restartAgent }[action];
+      await fn(gatewayUrl, session.access_token);
+      await poll();
+    } catch (err) {
+      console.error(`Failed to ${action} agent:`, err);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   if (!status) return null;
 
   const config = STATUS_CONFIG[status.status];
+  const canStop = status.status === "running";
+  const canStart = status.status === "stopped" || status.status === "suspended";
+  const canRestart = status.status === "running";
 
   return (
     <Popover>
@@ -111,6 +146,62 @@ export function AgentStatusBadge() {
             <span className="uppercase">{status.plan}</span>
           </div>
         </div>
+
+        {(canStop || canStart || canRestart) && (
+          <>
+            <Separator className="my-3" />
+            <div className="flex flex-col gap-1.5">
+              {canStart && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  disabled={actionLoading !== null}
+                  onClick={() => handleAction("start")}
+                >
+                  {actionLoading === "start" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                  Start Agent
+                </Button>
+              )}
+              {canRestart && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  disabled={actionLoading !== null}
+                  onClick={() => handleAction("restart")}
+                >
+                  {actionLoading === "restart" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCw className="h-3.5 w-3.5" />
+                  )}
+                  Restart Agent
+                </Button>
+              )}
+              {canStop && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  disabled={actionLoading !== null}
+                  onClick={() => handleAction("stop")}
+                >
+                  {actionLoading === "stop" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Power className="h-3.5 w-3.5" />
+                  )}
+                  Stop Agent
+                </Button>
+              )}
+            </div>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );
