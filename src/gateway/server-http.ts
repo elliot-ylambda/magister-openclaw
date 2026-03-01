@@ -46,6 +46,7 @@ import {
   resolveHookDeliver,
 } from "./hooks.js";
 import { sendGatewayAuthFailure, setDefaultSecurityHeaders } from "./http-common.js";
+import { handleFilesHttpRequest } from "./files-http.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
 import {
@@ -616,6 +617,16 @@ export function createGatewayHttpServer(opts: {
             }),
         });
       }
+      requestStages.push({
+        name: "files",
+        run: () =>
+          handleFilesHttpRequest(req, res, {
+            auth: resolvedAuth,
+            trustedProxies,
+            allowRealIpFallback,
+            rateLimiter,
+          }),
+      });
       if (canvasHost) {
         requestStages.push({
           name: "canvas-auth",
