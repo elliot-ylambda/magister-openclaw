@@ -17,8 +17,11 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     supabase_jwt_secret: str
 
-    # LLM (Anthropic key used by litellm directly)
-    anthropic_api_key: str
+    # LLM — OpenRouter (primary, used by litellm for all new machines)
+    openrouter_api_key: str
+
+    # LLM — Anthropic (legacy, used by /v1/messages proxy for old machines)
+    anthropic_api_key: str = ""
 
     # OpenClaw image (optional for local dev — required in production)
     openclaw_image: str = ""
@@ -45,10 +48,22 @@ class Settings(BaseSettings):
         "cmo_plus": 15000,  # $150/mo
     }
 
-    # Per-plan model allowlists (CMO users cannot access Opus)
+    # Per-plan model allowlists (provider/model format for OpenRouter)
     plan_allowed_models: dict[str, list[str]] = {
-        "cmo": ["claude-sonnet-4-6", "claude-haiku-4-5"],
-        "cmo_plus": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"],
+        "cmo": [
+            "anthropic/claude-sonnet-4-6",
+            "anthropic/claude-haiku-4-5",
+            "openai/gpt-4o",
+            "google/gemini-2.5-flash",
+        ],
+        "cmo_plus": [
+            "anthropic/claude-sonnet-4-6",
+            "anthropic/claude-haiku-4-5",
+            "anthropic/claude-opus-4-6",
+            "openai/gpt-4o",
+            "google/gemini-2.5-pro",
+            "google/gemini-2.5-flash",
+        ],
     }
 
     model_config = {"env_prefix": "", "case_sensitive": False}

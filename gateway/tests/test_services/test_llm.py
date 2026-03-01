@@ -21,13 +21,26 @@ def mock_supabase():
 @pytest.fixture
 def llm_service(mock_supabase):
     return LLMService(
-        anthropic_api_key="test-key",
+        openrouter_api_key="test-openrouter-key",
         supabase=mock_supabase,
         plan_budgets={"cmo": 5000, "cmo_plus": 15000},
         plan_allowed_models={
-            "cmo": ["claude-sonnet-4-6", "claude-haiku-4-5"],
-            "cmo_plus": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"],
+            "cmo": [
+                "anthropic/claude-sonnet-4-6",
+                "anthropic/claude-haiku-4-5",
+                "openai/gpt-4o",
+                "google/gemini-2.5-flash",
+            ],
+            "cmo_plus": [
+                "anthropic/claude-sonnet-4-6",
+                "anthropic/claude-haiku-4-5",
+                "anthropic/claude-opus-4-6",
+                "openai/gpt-4o",
+                "google/gemini-2.5-pro",
+                "google/gemini-2.5-flash",
+            ],
         },
+        anthropic_api_key="test-anthropic-key",
     )
 
 
@@ -60,37 +73,51 @@ class TestCheckBudget:
 
 class TestValidateModel:
     def test_sonnet_allowed_on_cmo(self, llm_service):
-        assert llm_service.validate_model("claude-sonnet-4-6", "cmo") is True
+        assert llm_service.validate_model("anthropic/claude-sonnet-4-6", "cmo") is True
 
     def test_haiku_allowed_on_cmo(self, llm_service):
-        assert llm_service.validate_model("claude-haiku-4-5", "cmo") is True
+        assert llm_service.validate_model("anthropic/claude-haiku-4-5", "cmo") is True
 
     def test_opus_blocked_on_cmo(self, llm_service):
-        assert llm_service.validate_model("claude-opus-4-6", "cmo") is False
+        assert llm_service.validate_model("anthropic/claude-opus-4-6", "cmo") is False
 
     def test_opus_allowed_on_cmo_plus(self, llm_service):
-        assert llm_service.validate_model("claude-opus-4-6", "cmo_plus") is True
+        assert llm_service.validate_model("anthropic/claude-opus-4-6", "cmo_plus") is True
+
+    def test_gpt4o_allowed_on_cmo(self, llm_service):
+        assert llm_service.validate_model("openai/gpt-4o", "cmo") is True
+
+    def test_gemini_pro_blocked_on_cmo(self, llm_service):
+        assert llm_service.validate_model("google/gemini-2.5-pro", "cmo") is False
+
+    def test_gemini_pro_allowed_on_cmo_plus(self, llm_service):
+        assert llm_service.validate_model("google/gemini-2.5-pro", "cmo_plus") is True
 
     def test_unknown_model_blocked(self, llm_service):
-        assert llm_service.validate_model("gpt-4o", "cmo") is False
+        assert llm_service.validate_model("unknown/model", "cmo") is False
 
     def test_unknown_plan_blocks_all(self, llm_service):
-        assert llm_service.validate_model("claude-sonnet-4-6", "free") is False
+        assert llm_service.validate_model("anthropic/claude-sonnet-4-6", "free") is False
 
 
 # ── Cost Calculation ─────────────────────────────────────────────
 
 class TestCalculateCost:
     def test_uses_ceil_and_minimum_one_cent(self):
-        # 1 input token of sonnet: 300 / 1M = 0.0003 cents → ceil = 1
-        cost = LLMService._calculate_cost("claude-sonnet-4-6", 1, 0)
+        # 1 input token of sonnet: 317 / 1M = 0.000317 cents → ceil = 1
+        cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1, 0)
         assert cost == 1
 
-    def test_real_usage_sonnet(self):
-        # 1000 input + 500 output for sonnet:
-        # input: 1000 * 300 / 1M = 0.3
-        # output: 500 * 1500 / 1M = 0.75
-        # total: 1.05 → ceil = 2
+    def test_real_usage_sonnet_prefixed(self):
+        # 1000 input + 500 output for sonnet (prefixed):
+        # input: 1000 * 317 / 1M = 0.317
+        # output: 500 * 1583 / 1M = 0.7915
+        # total: 1.1085 → ceil = 2
+        cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1000, 500)
+        assert cost == 2
+
+    def test_legacy_bare_name_still_works(self):
+        # Legacy bare model names still resolve for /v1/messages proxy
         cost = LLMService._calculate_cost("claude-sonnet-4-6", 1000, 500)
         assert cost == 2
 
@@ -99,12 +126,28 @@ class TestCalculateCost:
         assert cost == 1
 
     def test_opus_expensive(self):
-        # 10000 input + 5000 output for opus:
-        # input: 10000 * 1500 / 1M = 15.0
-        # output: 5000 * 7500 / 1M = 37.5
-        # total: 52.5 → ceil = 53
-        cost = LLMService._calculate_cost("claude-opus-4-6", 10000, 5000)
-        assert cost == 53
+        # 10000 input + 5000 output for opus (prefixed):
+        # input: 10000 * 1583 / 1M = 15.83
+        # output: 5000 * 7913 / 1M = 39.565
+        # total: 55.395 → ceil = 56
+        cost = LLMService._calculate_cost("anthropic/claude-opus-4-6", 10000, 5000)
+        assert cost == 56
+
+    def test_gpt4o_cost(self):
+        # 1000 input + 500 output for gpt-4o:
+        # input: 1000 * 264 / 1M = 0.264
+        # output: 500 * 1055 / 1M = 0.5275
+        # total: 0.7915 → ceil = 1
+        cost = LLMService._calculate_cost("openai/gpt-4o", 1000, 500)
+        assert cost == 1
+
+    def test_gemini_flash_cost(self):
+        # 10000 input + 5000 output for gemini flash:
+        # input: 10000 * 32 / 1M = 0.32
+        # output: 5000 * 158 / 1M = 0.79
+        # total: 1.11 → ceil = 2
+        cost = LLMService._calculate_cost("google/gemini-2.5-flash", 10000, 5000)
+        assert cost == 2
 
 
 # ── Spend Cache ──────────────────────────────────────────────────
@@ -159,22 +202,22 @@ class TestCompletion:
         mock_acompletion.return_value = mock_response
 
         result = await llm_service.completion(
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             messages=[{"role": "user", "content": "hello"}],
             user_id="u1",
         )
 
         assert result is mock_response
         mock_acompletion.assert_called_once_with(
-            model="anthropic/claude-sonnet-4-6",
+            model="openrouter/anthropic/claude-sonnet-4-6",
             messages=[{"role": "user", "content": "hello"}],
-            api_key="test-key",
+            api_key="test-openrouter-key",
         )
         # Verify usage event was inserted
         mock_supabase.insert_usage_event.assert_called_once()
         event = mock_supabase.insert_usage_event.call_args[0][0]
         assert event.user_id == "u1"
-        assert event.model == "claude-sonnet-4-6"
+        assert event.model == "anthropic/claude-sonnet-4-6"
         assert event.input_tokens == 100
         assert event.output_tokens == 50
         assert event.cost_cents >= 1

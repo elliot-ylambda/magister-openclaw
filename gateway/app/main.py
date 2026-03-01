@@ -17,6 +17,7 @@ from app.routes.chat import create_chat_router
 from app.routes.destroy import create_destroy_router
 from app.routes.health import router as health_router
 from app.routes.llm_proxy import create_llm_proxy_router
+from app.routes.machine_control import create_machine_control_router
 from app.routes.provision import create_provision_router
 from app.routes.slack_oauth import create_slack_oauth_router
 from app.routes.slack_webhook import create_slack_webhook_router
@@ -40,10 +41,11 @@ async def lifespan(app: FastAPI):
     )
     fly = FlyClient(settings.fly_api_token, settings.fly_org)
     llm = LLMService(
-        anthropic_api_key=settings.anthropic_api_key,
+        openrouter_api_key=settings.openrouter_api_key,
         supabase=supabase,
         plan_budgets=settings.plan_budgets,
         plan_allowed_models=settings.plan_allowed_models,
+        anthropic_api_key=settings.anthropic_api_key,
     )
     app.state.supabase = supabase
     app.state.fly = fly
@@ -83,6 +85,15 @@ async def lifespan(app: FastAPI):
     app.include_router(
         create_llm_proxy_router(llm, supabase),
         prefix="/llm",
+    )
+    app.include_router(
+        create_machine_control_router(
+            fly, supabase,
+            jwt_secret=settings.supabase_jwt_secret,
+            api_key=settings.gateway_api_key,
+            supabase_url=settings.supabase_url,
+        ),
+        prefix="/api",
     )
     app.include_router(
         create_slack_webhook_router(fly, supabase, settings),

@@ -40,6 +40,7 @@ def _make_settings(**overrides) -> Settings:
         supabase_url="http://localhost:54321",
         supabase_service_role_key="test-service-role-key",
         supabase_jwt_secret="test-jwt-secret",
+        openrouter_api_key="test-openrouter-key",
         anthropic_api_key="test-anthropic-key",
         slack_signing_secret=SIGNING_SECRET,
     )

@@ -57,9 +57,9 @@ def create_llm_proxy_router(
         model = body.get("model", "unknown")
         is_stream = body.get("stream", False)
 
-        # Build headers for Anthropic
+        # Build headers for Anthropic (legacy path uses direct Anthropic key)
         fwd = {
-            "x-api-key": llm._api_key,
+            "x-api-key": llm._anthropic_key,
             "content-type": "application/json",
             "anthropic-version": "2023-06-01",
         }

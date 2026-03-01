@@ -20,14 +20,27 @@ def settings() -> Settings:
         supabase_url="http://localhost:54321",
         supabase_service_role_key="test-service-role-key",
         supabase_jwt_secret="test-jwt-secret",
+        openrouter_api_key="test-openrouter-key",
         anthropic_api_key="test-anthropic-key",
         openclaw_image="registry.fly.io/openclaw:test",
         default_region="iad",
         default_budget_cents=5000,
         plan_budgets={"cmo": 5000, "cmo_plus": 15000},
         plan_allowed_models={
-            "cmo": ["claude-sonnet-4-6", "claude-haiku-4-5"],
-            "cmo_plus": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"],
+            "cmo": [
+                "anthropic/claude-sonnet-4-6",
+                "anthropic/claude-haiku-4-5",
+                "openai/gpt-4o",
+                "google/gemini-2.5-flash",
+            ],
+            "cmo_plus": [
+                "anthropic/claude-sonnet-4-6",
+                "anthropic/claude-haiku-4-5",
+                "anthropic/claude-opus-4-6",
+                "openai/gpt-4o",
+                "google/gemini-2.5-pro",
+                "google/gemini-2.5-flash",
+            ],
         },
     )
 

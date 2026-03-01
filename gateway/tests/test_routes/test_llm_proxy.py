@@ -71,7 +71,7 @@ def _make_app(mock_llm, mock_supabase):
     return TestClient(app)
 
 
-def _llm_request(model="claude-sonnet-4-6"):
+def _llm_request(model="anthropic/claude-sonnet-4-6"):
     return {
         "model": model,
         "messages": [{"role": "user", "content": "Hello"}],
@@ -104,7 +104,7 @@ def test_llm_proxy_model_not_allowed(mock_llm, mock_supabase):
     client = _make_app(mock_llm, mock_supabase)
     resp = client.post(
         "/llm/v1/chat/completions",
-        json=_llm_request(model="claude-opus-4-6"),
+        json=_llm_request(model="anthropic/claude-opus-4-6"),
         headers={"Authorization": "Bearer test-token"},
     )
     assert resp.status_code == 403

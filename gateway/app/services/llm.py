@@ -12,11 +12,19 @@ from app.models import UsageEvent
 from app.services.supabase_client import SupabaseService
 
 
-# Cost per 1M tokens in cents
+# Cost per 1M tokens in cents (OpenRouter pricing includes ~5.5% platform fee)
 MODEL_COSTS: dict[str, dict[str, int]] = {
-    "claude-sonnet-4-6": {"input": 300, "output": 1500},
-    "claude-haiku-4-5": {"input": 80, "output": 400},
-    "claude-opus-4-6": {"input": 1500, "output": 7500},
+    # Prefixed format (OpenRouter path)
+    "anthropic/claude-sonnet-4-6": {"input": 317, "output": 1583},
+    "anthropic/claude-haiku-4-5":  {"input": 106, "output": 528},
+    "anthropic/claude-opus-4-6":   {"input": 1583, "output": 7913},
+    "openai/gpt-4o":               {"input": 264, "output": 1055},
+    "google/gemini-2.5-flash":     {"input": 32, "output": 158},
+    "google/gemini-2.5-pro":       {"input": 132, "output": 528},
+    # Legacy bare names (for /v1/messages proxy until cleanup)
+    "claude-sonnet-4-6": {"input": 317, "output": 1583},
+    "claude-haiku-4-5":  {"input": 106, "output": 528},
+    "claude-opus-4-6":   {"input": 1583, "output": 7913},
 }
 
 CACHE_TTL_SECONDS = 30
@@ -27,12 +35,14 @@ class LLMService:
 
     def __init__(
         self,
-        anthropic_api_key: str,
+        openrouter_api_key: str,
         supabase: SupabaseService,
         plan_budgets: dict[str, int],
         plan_allowed_models: dict[str, list[str]],
+        anthropic_api_key: str = "",
     ) -> None:
-        self._api_key = anthropic_api_key
+        self._openrouter_key = openrouter_api_key
+        self._anthropic_key = anthropic_api_key  # legacy, for /v1/messages proxy
         self._supabase = supabase
         self._plan_budgets = plan_budgets
         self._plan_allowed_models = plan_allowed_models
@@ -98,7 +108,7 @@ class LLMService:
         Returns the litellm response (non-streaming) or an async generator
         (streaming).
         """
-        litellm_model = f"anthropic/{model}"
+        litellm_model = f"openrouter/{model}"
 
         if stream:
             return self._stream_completion(
@@ -108,7 +118,7 @@ class LLMService:
         response = await litellm.acompletion(
             model=litellm_model,
             messages=messages,
-            api_key=self._api_key,
+            api_key=self._openrouter_key,
             **kwargs,
         )
 
@@ -136,7 +146,7 @@ class LLMService:
         response = await litellm.acompletion(
             model=litellm_model,
             messages=messages,
-            api_key=self._api_key,
+            api_key=self._openrouter_key,
             stream=True,
             stream_options={"include_usage": True},
             **kwargs,
