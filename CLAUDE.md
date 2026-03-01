@@ -21,6 +21,7 @@ All commands run from the **repo root** via the top-level Makefile:
 | Dev server | `make webapp-dev` (port 3020, also starts Stripe webhook listener) |
 | Build | `make webapp-build` |
 | Lint | `make webapp-lint` |
+| Clean | `make webapp-clean` |
 | Run all tests | `cd webapp && pnpm test:run` |
 | Run single test | `cd webapp && pnpm vitest run path/to/file.test.ts` |
 | **Gateway** | |
@@ -33,21 +34,37 @@ All commands run from the **repo root** via the top-level Makefile:
 | Start local | `make supabase-start` |
 | Run migrations | `make supabase-migrate` |
 | Reset DB (with seed) | `make supabase-reset` |
+| Seed only | `make seed` |
 | Connect psql | `make connect-local-db` |
 | **Docker (full stack)** | |
 | Start all | `make up` (gateway + user-machine) |
 | Stop all | `make down` |
 | Logs | `make logs` |
 | Reset (wipe volumes + reseed) | `make reset` |
-| **Production (Fly.io)** | |
+| **OpenClaw Image** | |
+| Build locally | `make image-build` |
+| Push to registry | `make image-push` |
+| Pin to current HEAD | `make openclaw-pin` (updates Dockerfile ARG) |
+| **Production Deploy (Fly.io)** | |
 | Deploy gateway | `make deploy-gateway` |
-| Deploy machine image | `make deploy-image` |
+| Deploy machine image | `make deploy-image` (remote build + push to Fly registry) |
 | Rolling update machines | `make deploy-machines` |
-| Deploy everything | `make deploy-all` |
-| **Local testing** | |
+| Deploy everything | `make deploy-backend` (image + gateway + machines + start all) |
+| **Production Start/Stop** | |
+| Start gateway | `make start-gateway` |
+| Stop gateway | `make stop-gateway` |
+| Start all user machines | `make start-machines` |
+| Stop all user machines | `make stop-machines` |
+| Start one machine | `make start-machine app=magister-XXXXXXXX` |
+| Stop one machine | `make stop-machine app=magister-XXXXXXXX` |
+| **Local Dev Testing** | |
 | Chat (JSON) | `make chat m="Hello"` |
 | Chat (SSE stream) | `make chat m="Hello" s=true` |
+| Continue session | `make chat m="Hello" sid=<session_id>` |
 | Health check | `make health` |
+| Machine status | `make status` |
+| Provision machine | `make provision` |
+| Slack challenge test | `make slack-challenge` |
 
 ## Architecture
 
@@ -56,14 +73,14 @@ All commands run from the **repo root** via the top-level Makefile:
 ```
 Browser → Next.js webapp (Vercel) → Gateway (Fly.io) → User Machine (Fly.io per-user app)
                                          ↓
-                                    LLM Proxy → Anthropic API (via litellm)
+                                    LLM Proxy → OpenRouter → LLM providers (via litellm)
 ```
 
 1. User sends a chat message from the webapp
 2. Webapp streams POST to `gateway/api/chat` with Supabase JWT
 3. Gateway looks up the user's Fly machine, starts it if suspended, proxies the request via SSE
 4. The user machine (OpenClaw) makes LLM calls back through the gateway's `/llm/v1` proxy endpoint
-5. Gateway enforces per-plan model allowlists and budget limits, then forwards to Anthropic via litellm
+5. Gateway enforces per-plan model allowlists and budget limits, then forwards to OpenRouter via litellm
 
 ### Webapp (`webapp/`)
 
@@ -78,7 +95,8 @@ Browser → Next.js webapp (Vercel) → Gateway (Fly.io) → User Machine (Fly.i
 - Path alias: `@/*` → `./src/*`
 
 Route groups:
-- `(app)/` — authenticated app pages (chat, dashboard, settings) with sidebar layout
+- `(app)/` — authenticated app pages (chat, dashboard, settings, files) with sidebar layout
+- `(admin)/` — admin pages (machine management, secrets, user management)
 - `(auth)/` — login, signup, reset-password
 - `/` root — public marketing landing page (`page.tsx`, ~2000 lines, self-contained)
 - `api/` — Next.js API routes for Stripe, Slack, billing webhooks, admin, machine control
@@ -91,6 +109,7 @@ Supabase clients:
 Key libs:
 - `src/lib/gateway.ts` — SSE streaming client + agent status/control helpers
 - `src/lib/stripe.ts` — Stripe client and price/plan mapping
+- `src/lib/auth.ts` — auth utilities (getUser, requireAuth helpers)
 - `src/middleware.ts` — auth routing (public vs protected routes, redirects)
 
 ### Gateway (`gateway/`)
@@ -98,16 +117,16 @@ Key libs:
 - **FastAPI** with async lifespan pattern (services + routes initialized at startup)
 - **Python 3.12**, venv-based, dependencies in `requirements.txt`
 - **pydantic-settings** for config (`app/config.py`, reads env vars)
-- **litellm** for LLM proxy to Anthropic (enforces plan-based model allowlists + budgets)
+- **litellm** for LLM proxy via OpenRouter (enforces plan-based model allowlists + budgets)
 - **httpx** async client for Fly.io API calls
 - **sse-starlette** for streaming SSE responses
 - **pytest** + pytest-asyncio for tests
 
 Structure:
-- `app/routes/` — route modules (chat, provision, destroy, status, llm_proxy, machine_control, slack_webhook, slack_oauth, health)
+- `app/routes/` — route modules (chat, provision, destroy, status, llm_proxy, machine_control, files, admin_secrets, slack_webhook, slack_oauth, health)
 - `app/services/` — core services (fly.py for Fly.io API, llm.py for LLM proxy, supabase_client.py)
 - `app/middleware/` — JWT auth + API key auth + rate limiting
-- `app/jobs/` — background tasks (idle_sweep stops inactive machines, reconciliation syncs Fly state with DB)
+- `app/jobs/` — background tasks (idle_sweep currently disabled, reconciliation syncs Fly state with DB)
 - `app/models.py` — Pydantic models (MachineStatus enum, UserMachine, ChatRequest, etc.)
 - `app/config.py` — Settings class with plan budgets, model allowlists, Fly/Supabase/Slack config
 
@@ -139,6 +158,7 @@ Migrations in `webapp/supabase/migrations/`. Key tables:
 - `chat_sessions` / `chat_messages` — conversation persistence
 - `slack_connections` — Slack OAuth tokens per user
 - `signup_allowlist` — invite-gated signups
+- `global_secrets` — admin-managed secrets pushed to user machines
 
 Seed data in `webapp/supabase/seed.sql` (dev user, profile, machine) — only runs on `supabase db reset --local`.
 
@@ -151,7 +171,7 @@ Seed data in `webapp/supabase/seed.sql` (dev user, profile, machine) — only ru
 
 **Gateway** (`.env.gateway.docker` or direct env):
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
-- `ANTHROPIC_API_KEY`, `GATEWAY_API_KEY`
+- `OPENROUTER_API_KEY`, `GATEWAY_API_KEY`
 - `FLY_API_TOKEN`, `FLY_ORG`
 - `DEV_MACHINE_URL` (local dev override, skips Fly DNS)
 - Slack credentials (optional)
