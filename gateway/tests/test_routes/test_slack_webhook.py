@@ -104,6 +104,9 @@ def mock_supabase():
     mock.get_user_machine.return_value = None
     mock.update_user_machine.return_value = None
     mock.update_last_activity.return_value = None
+    mock.revoke_slack_connection.return_value = None
+    mock.get_all_slack_connections_for_team.return_value = []
+    mock.revoke_all_slack_connections_for_team.return_value = None
     return mock
 
 
@@ -264,3 +267,64 @@ def test_forward_schedules_background_task(mock_fly, mock_supabase, settings):
     )
     # Should ack immediately
     assert resp.status_code == 200
+
+
+# ── tokens_revoked ────────────────────────────────────────────
+
+
+def test_tokens_revoked_revokes_connection_and_removes_secrets(
+    mock_fly, mock_supabase, settings
+):
+    """tokens_revoked event should revoke the connection and remove Fly secrets."""
+    conn = _make_slack_connection()
+    machine = _make_machine()
+    mock_supabase.get_slack_connection_by_team.return_value = conn
+    mock_supabase.get_user_machine.return_value = machine
+
+    client = _make_app(mock_fly, mock_supabase, settings)
+    payload = _make_event_payload(
+        event_type="tokens_revoked",
+        event={"type": "tokens_revoked", "tokens": {"bot": ["xoxb-test-token"]}},
+    )
+    body = json.dumps(payload).encode()
+    ts, sig = _sign_request(body, SIGNING_SECRET)
+    resp = client.post(
+        "/webhooks/slack",
+        content=body,
+        headers={
+            "x-slack-request-timestamp": ts,
+            "x-slack-signature": sig,
+            "content-type": "application/json",
+        },
+    )
+    assert resp.status_code == 200
+    mock_supabase.get_slack_connection_by_team.assert_called_once_with(TEAM_ID)
+    mock_supabase.revoke_slack_connection.assert_called_once_with(USER_ID, TEAM_ID)
+    mock_fly.unset_secrets.assert_called_once_with(
+        "magister-user1", ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
+    )
+
+
+def test_tokens_revoked_no_connection_is_noop(mock_fly, mock_supabase, settings):
+    """tokens_revoked with no active connection should not error."""
+    mock_supabase.get_slack_connection_by_team.return_value = None
+
+    client = _make_app(mock_fly, mock_supabase, settings)
+    payload = _make_event_payload(
+        event_type="tokens_revoked",
+        event={"type": "tokens_revoked", "tokens": {"bot": []}},
+    )
+    body = json.dumps(payload).encode()
+    ts, sig = _sign_request(body, SIGNING_SECRET)
+    resp = client.post(
+        "/webhooks/slack",
+        content=body,
+        headers={
+            "x-slack-request-timestamp": ts,
+            "x-slack-signature": sig,
+            "content-type": "application/json",
+        },
+    )
+    assert resp.status_code == 200
+    mock_supabase.revoke_slack_connection.assert_not_called()
+    mock_fly.unset_secrets.assert_not_called()

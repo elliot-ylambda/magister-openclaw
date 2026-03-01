@@ -176,6 +176,31 @@ def create_slack_webhook_router(
         except Exception:
             logger.exception(f"[slack] error forwarding event for team {team_id}")
 
+    SLACK_SECRET_KEYS = ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
+
+    async def _handle_tokens_revoked(team_id: str) -> None:
+        """Revoke connection and remove Fly secrets when tokens are revoked."""
+        try:
+            conn = await supabase.get_slack_connection_by_team(team_id)
+            if not conn:
+                logger.info(f"[slack] tokens_revoked for team {team_id} — no active connection")
+                return
+
+            # Mark connection as revoked
+            await supabase.revoke_slack_connection(conn.user_id, team_id)
+
+            # Remove Fly secrets
+            machine = await supabase.get_user_machine(conn.user_id)
+            if machine and machine.status not in (
+                MachineStatus.destroyed,
+                MachineStatus.destroying,
+            ):
+                await fly.unset_secrets(machine.fly_app_name, SLACK_SECRET_KEYS)
+
+            logger.info(f"[slack] tokens_revoked: revoked connection for team {team_id}, user {conn.user_id}")
+        except Exception:
+            logger.exception(f"[slack] error handling tokens_revoked for team {team_id}")
+
     @router.post("/webhooks/slack")
     async def slack_webhook(request: Request, background_tasks: BackgroundTasks):
         raw_body = await request.body()
@@ -200,6 +225,15 @@ def create_slack_webhook_router(
         event_id = payload.get("event_id", "")
         if event_id and await _dedup_check(event_id):
             logger.debug(f"[slack] duplicate event {event_id}, skipping")
+            return Response(status_code=200)
+
+        # Handle lifecycle events (don't forward to machine)
+        event_type = payload.get("event", {}).get("type", "")
+
+        if event_type == "tokens_revoked":
+            team_id = payload.get("team_id", "")
+            if team_id:
+                background_tasks.add_task(_handle_tokens_revoked, team_id)
             return Response(status_code=200)
 
         # Ack immediately, process in background
