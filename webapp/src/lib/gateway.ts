@@ -26,6 +26,7 @@ export type AgentStatus = {
   last_activity: string | null;
   plan: string;
   llm_spend_cents: number;
+  provisioning_step?: number;
 };
 
 const ERROR_MESSAGES: Record<number, string> = {
