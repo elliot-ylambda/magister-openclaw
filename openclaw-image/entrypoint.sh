@@ -42,20 +42,27 @@ if [ -n "$BYOK_ANTHROPIC_KEY" ]; then
     export ANTHROPIC_API_KEY="${BYOK_ANTHROPIC_KEY}"
     echo "[entrypoint] BYOK mode — using user-provided Anthropic API key"
 elif [ -n "$GATEWAY_TOKEN" ]; then
-    export ANTHROPIC_API_KEY="${GATEWAY_TOKEN}"
+    export OPENROUTER_API_KEY="${GATEWAY_TOKEN}"
+    DEFAULT_MODEL="${DEFAULT_MODEL:-anthropic/claude-sonnet-4-6}"
     node -e "
 const fs = require('fs');
 const p = '${OPENCLAW_HOME}/openclaw.json';
 const c = JSON.parse(fs.readFileSync(p, 'utf8'));
 if (!c.models) c.models = {};
 if (!c.models.providers) c.models.providers = {};
-c.models.providers.anthropic = {
+// Remove old anthropic provider override (from previous image)
+delete c.models.providers.anthropic;
+c.models.providers.openrouter = {
   baseUrl: '${LLM_BASE_URL:-http://magister-gateway.internal:8081/llm/v1}',
+  api: 'openai-completions',
   models: []
 };
+if (!c.agents) c.agents = {};
+if (!c.agents.defaults) c.agents.defaults = {};
+c.agents.defaults.model = { primary: 'openrouter/${DEFAULT_MODEL}' };
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 "
-    echo "[entrypoint] Proxy mode — LLM calls route through gateway"
+    echo "[entrypoint] Proxy mode — LLM calls route through gateway (openrouter)"
 fi
 
 # Toggle Slack channel based on env vars (set via Fly secrets after OAuth)
