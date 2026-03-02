@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -87,10 +88,11 @@ export function AppSidebar({
       <Sidebar>
         <SidebarHeader className="p-4">
           <div className="flex items-center gap-2 mb-3">
-            <img
+            <Image
               src="/magister-logo-white.svg"
               alt="Magister"
-              className="h-5 w-5"
+              width={20}
+              height={20}
             />
             <span className="text-sm font-semibold tracking-tight">
               Magister

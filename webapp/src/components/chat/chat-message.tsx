@@ -56,6 +56,7 @@ function AttachmentDisplay({ attachments }: { attachments: MessageAttachment[] }
               rel="noopener noreferrer"
               className="block overflow-hidden rounded-lg border border-border/50"
             >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={img.url}
                 alt={img.name}

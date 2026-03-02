@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { MachineControls } from './machine-controls';
+import { DeleteUserDialog } from './delete-user-dialog';
 
 export type AdminUser = {
   id: string;
@@ -249,12 +250,19 @@ export function UsersTable({ users }: { users: AdminUser[] }) {
                     {user.lastActivity ? formatRelativeTime(user.lastActivity) : 'Never'}
                   </TableCell>
                   <TableCell>
-                    <MachineControls
-                      userId={user.id}
-                      machineStatus={user.machineStatus}
-                      flyAppName={user.flyAppName}
-                      onActionComplete={() => router.refresh()}
-                    />
+                    <div className="flex items-center gap-2">
+                      <MachineControls
+                        userId={user.id}
+                        machineStatus={user.machineStatus}
+                        flyAppName={user.flyAppName}
+                        onActionComplete={() => router.refresh()}
+                      />
+                      <DeleteUserDialog
+                        userId={user.id}
+                        email={user.email}
+                        onDeleted={() => router.refresh()}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

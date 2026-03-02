@@ -1,4 +1,5 @@
 import Image from 'next/image';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { PricingCards } from '@/components/pricing/pricing-cards';
@@ -40,7 +41,7 @@ export default async function PricingPage() {
       {user && (
         <nav className="fixed top-0 left-0 right-0 z-50 h-[72px] flex items-center border-b border-border/40">
           <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 md:px-10">
-            <a href="/" className="flex items-center gap-2.5">
+            <Link href="/" className="flex items-center gap-2.5">
               <Image src="/magister-logo-white.svg" alt="Magister" width={28} height={30} />
               <span
                 className="text-[15px] font-medium text-white tracking-[0.12em] uppercase"
@@ -48,7 +49,7 @@ export default async function PricingPage() {
               >
                 Magister
               </span>
-            </a>
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

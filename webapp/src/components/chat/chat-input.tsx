@@ -221,6 +221,7 @@ export function ChatInput({
                 className="group relative flex items-center gap-2 rounded-lg border bg-muted/50 px-2.5 py-1.5"
               >
                 {file.previewUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img
                     src={file.previewUrl}
                     alt={file.name}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState, useEffect } from 'react';
+import { useActionState, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
@@ -12,22 +12,16 @@ const initialState: SignupState = {};
 
 export function SignupForm() {
   const [state, formAction, pending] = useActionState(signup, initialState);
-  const [shaking, setShaking] = useState(false);
-  const [shakeKey, setShakeKey] = useState(0);
-  const [pulsing, setPulsing] = useState(false);
-  const [pulseKey, setPulseKey] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
+  const [prevState, setPrevState] = useState(state);
 
-  useEffect(() => {
+  // Derive animation trigger during render (React-recommended pattern)
+  if (state !== prevState) {
+    setPrevState(state);
     if (state.error) {
-      setShakeKey((k) => k + 1);
-      setShaking(true);
-      setPulseKey((k) => k + 1);
-      setPulsing(true);
-      const shakeTimer = setTimeout(() => setShaking(false), 500);
-      const pulseTimer = setTimeout(() => setPulsing(false), 1200);
-      return () => { clearTimeout(shakeTimer); clearTimeout(pulseTimer); };
+      setErrorCount((c) => c + 1);
     }
-  }, [state]);
+  }
 
   return (
     <div className="space-y-6">
@@ -37,8 +31,8 @@ export function SignupForm() {
       </div>
 
       <motion.div
-        key={pulseKey}
-        animate={pulsing ? { scale: [1, 1.03, 1, 1.03, 1] } : {}}
+        key={`pulse-${errorCount}`}
+        animate={errorCount > 0 ? { scale: [1, 1.03, 1, 1.03, 1] } : {}}
         transition={{ duration: 1.2 }}
         className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-4 text-center text-sm text-yellow-500"
       >
@@ -71,8 +65,8 @@ export function SignupForm() {
         </div>
 
         <motion.div
-          key={shakeKey}
-          animate={shaking ? { x: [0, -8, 8, -6, 6, -3, 3, 0] } : {}}
+          key={`shake-${errorCount}`}
+          animate={errorCount > 0 ? { x: [0, -8, 8, -6, 6, -3, 3, 0] } : {}}
           transition={{ duration: 0.5 }}
         >
           <Button type="submit" className="w-full" disabled={pending}>
