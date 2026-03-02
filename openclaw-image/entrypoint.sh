@@ -86,15 +86,19 @@ const fs = require('fs');
 const p = '${OPENCLAW_HOME}/openclaw.json';
 const c = JSON.parse(fs.readFileSync(p, 'utf8'));
 if (!c.channels) c.channels = {};
-if (!c.channels.slack) c.channels.slack = {};
-c.channels.slack.enabled = true;
-c.channels.slack.mode = 'http';
-c.channels.slack.webhookPath = '/slack/events';
-if (!c.channels.slack.dm) c.channels.slack.dm = {};
-c.channels.slack.dm.enabled = true;
-c.channels.slack.dm.policy = 'open';
-c.channels.slack.groupPolicy = 'open';
-c.channels.slack.requireMention = true;
+// Replace entire slack config to avoid stale keys from previous boots
+c.channels.slack = {
+  enabled: true,
+  mode: 'http',
+  botToken: process.env.SLACK_BOT_TOKEN,
+  appToken: 'xapp-http-mode-placeholder',
+  signingSecret: process.env.SLACK_SIGNING_SECRET,
+  webhookPath: '/slack/events',
+  dmPolicy: 'open',
+  allowFrom: ['*'],
+  groupPolicy: 'open',
+  requireMention: true
+};
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 "
     echo "[entrypoint] Slack channel enabled"
@@ -103,7 +107,7 @@ else
 const fs = require('fs');
 const p = '${OPENCLAW_HOME}/openclaw.json';
 const c = JSON.parse(fs.readFileSync(p, 'utf8'));
-if (c.channels && c.channels.slack) c.channels.slack.enabled = false;
+if (c.channels) delete c.channels.slack;
 fs.writeFileSync(p, JSON.stringify(c, null, 2));
 "
     echo "[entrypoint] Slack channel disabled (no credentials)"

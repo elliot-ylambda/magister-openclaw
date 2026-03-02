@@ -21,7 +21,7 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "https://YOUR_WEBAPP_DOMAIN/api/slack/callback"
+      "https://magistermarketing.com/api/slack/callback"
     ],
     "scopes": {
       "bot": [
@@ -44,7 +44,7 @@
   },
   "settings": {
     "event_subscriptions": {
-      "request_url": "https://YOUR_GATEWAY_DOMAIN/webhooks/slack",
+      "request_url": "https://magister-gateway.fly.dev/webhooks/slack",
       "bot_events": [
         "app_mention",
         "app_uninstalled",
