@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 
+import httpx
 from fastapi import APIRouter, HTTPException
 
 from app.config import Settings
@@ -158,20 +160,42 @@ def create_provision_router(
                 machine.fly_machine_id = result["id"]
                 logger.info(f"[provision] step 4 done: machine created for {user_id}")
 
-            # Step 5: Wait for started state
+            # Step 5: Wait for Fly container to start
             if machine.provisioning_step < 5:
                 await fly.wait_for_state(
                     machine.fly_app_name,
                     machine.fly_machine_id,
                     "started",
-                    timeout_s=60,
+                    timeout_s=180,
                 )
                 await supabase.update_user_machine(
-                    machine.id,
-                    status=MachineStatus.running.value,
-                    provisioning_step=5,
+                    machine.id, provisioning_step=5
                 )
-                logger.info(f"[provision] step 5 done: machine running for {user_id}")
+                machine.provisioning_step = 5
+                logger.info(f"[provision] step 5 done: container started for {user_id}")
+
+            # Step 6: Poll health until OpenClaw is fully ready
+            # (UI build + agent init takes ~60s after container starts)
+            if machine.status not in (MachineStatus.running, MachineStatus.suspended):
+                health_url = (
+                    f"http://{machine.fly_machine_id}.vm."
+                    f"{machine.fly_app_name}.internal:18790/health"
+                )
+                for _ in range(24):  # up to ~120s
+                    try:
+                        async with httpx.AsyncClient(timeout=5.0) as hc:
+                            resp = await hc.get(health_url)
+                            resp.raise_for_status()
+                        break
+                    except Exception:
+                        await asyncio.sleep(5)
+                else:
+                    raise TimeoutError("OpenClaw health check never passed")
+
+                await supabase.update_user_machine(
+                    machine.id, status=MachineStatus.running.value
+                )
+                logger.info(f"[provision] app healthy, machine running for {user_id}")
 
             return {"status": "provisioned", "machine_id": machine.id}
 

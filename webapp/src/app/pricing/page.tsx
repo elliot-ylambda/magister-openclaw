@@ -9,17 +9,15 @@ export default async function PricingPage() {
   const { data: { user } } = await supabase.auth.getUser();
 
   let currentPlan: 'cmo' | 'cmo_plus' | null = null;
+  let isAdmin = false;
   if (user) {
-    // Check if admin — admins bypass pricing
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (profile?.role === 'admin') {
-      redirect('/chat');
-    }
+    isAdmin = profile?.role === 'admin';
 
     const { data } = await supabase
       .from('subscriptions')
@@ -29,6 +27,12 @@ export default async function PricingPage() {
       .limit(1)
       .maybeSingle();
     currentPlan = data?.plan ?? null;
+
+    // Admins without a subscription stay on pricing to go through checkout.
+    // Admins WITH a subscription go straight to chat.
+    if (isAdmin && currentPlan) {
+      redirect('/chat');
+    }
   }
 
   return (
@@ -69,6 +73,7 @@ export default async function PricingPage() {
       <PricingCards
         isAuthenticated={!!user}
         currentPlan={currentPlan}
+        isAdmin={isAdmin}
       />
     </div>
   );

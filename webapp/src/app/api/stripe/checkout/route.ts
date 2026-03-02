@@ -1,3 +1,4 @@
+import Stripe from 'stripe';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getStripe, priceIdFromPlan } from '@/lib/stripe';
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     const serviceClient = createServiceClient();
     const { data: profile } = await serviceClient
       .from('profiles')
-      .select('stripe_customer_id')
+      .select('stripe_customer_id, role')
       .eq('id', user.id)
       .single();
 
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
         .eq('id', user.id);
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'subscription',
       customer: customerId,
       client_reference_id: user.id,
@@ -48,7 +49,14 @@ export async function POST(req: NextRequest) {
       metadata: { plan },
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing?checkout=cancelled`,
-    });
+    };
+
+    // Auto-apply 100% coupon for admin users
+    if (profile?.role === 'admin' && process.env.STRIPE_ADMIN_COUPON_ID) {
+      sessionParams.discounts = [{ coupon: process.env.STRIPE_ADMIN_COUPON_ID }];
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     return NextResponse.json({ url: session.url });
   } catch (err) {

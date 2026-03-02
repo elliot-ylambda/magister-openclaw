@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
@@ -8,8 +8,9 @@ import { getAgentStatus } from '@/lib/gateway';
 
 const SUBSCRIPTION_POLL_MS = 2_000;
 const STATUS_POLL_MS = 3_000;
-const TIMEOUT_MS = 180_000; // 3 minutes
+const TIMEOUT_MS = 360_000; // 6 minutes — covers worst case provisioning
 const REDIRECT_DELAY_MS = 1_500;
+const STEP_PACE_MS = 25_000; // visual step pacing: advance one step per 25s
 
 const SETUP_STEPS = [
   { step: 0, label: 'Initializing agent' },
@@ -27,6 +28,8 @@ export default function CheckoutSuccessPage() {
   const supabase = useMemo(() => createClient(), []);
   const [phase, setPhase] = useState<Phase>('subscription');
   const [provisioningStep, setProvisioningStep] = useState(-1);
+  const [displayStep, setDisplayStep] = useState(-1);
+  const backendStepRef = useRef(-1);
   const [errorMessage, setErrorMessage] = useState('');
 
   // Phase 1: Poll for subscription activation
@@ -62,6 +65,27 @@ export default function CheckoutSuccessPage() {
     poll();
     return () => clearTimeout(timer);
   }, [phase]);
+
+  // Keep ref in sync so the pacing timer always reads the latest backend step
+  useEffect(() => {
+    backendStepRef.current = provisioningStep;
+  }, [provisioningStep]);
+
+  // Visual step pacing: advance displayStep toward backendStep at a fixed cadence
+  useEffect(() => {
+    if (phase !== 'provisioning' || displayStep >= backendStepRef.current) return;
+
+    // First step shows immediately, subsequent steps wait STEP_PACE_MS
+    const delay = displayStep === -1 ? 0 : STEP_PACE_MS;
+    const timer = setTimeout(() => {
+      setDisplayStep((prev) => {
+        const target = backendStepRef.current;
+        return prev < target ? prev + 1 : prev;
+      });
+    }, delay);
+
+    return () => clearTimeout(timer);
+  }, [phase, displayStep, provisioningStep]);
 
   // Phase 2: Poll gateway for provisioning progress
   useEffect(() => {
@@ -133,6 +157,8 @@ export default function CheckoutSuccessPage() {
     setErrorMessage('');
     setPhase('provisioning');
     setProvisioningStep(-1);
+    setDisplayStep(-1);
+    backendStepRef.current = -1;
 
     try {
       await fetch('/api/provision/retry', { method: 'POST' });
@@ -169,7 +195,7 @@ export default function CheckoutSuccessPage() {
             <p className="text-sm text-muted-foreground">
               {phase === 'subscription'
                 ? 'Activating your subscription...'
-                : 'This usually takes about a minute.'}
+                : 'This usually takes a couple of minutes.'}
             </p>
           </div>
         )}
@@ -178,9 +204,9 @@ export default function CheckoutSuccessPage() {
         {phase !== 'subscription' && (
           <div className="space-y-3">
             {SETUP_STEPS.map(({ step, label }) => {
-              const isCompleted = phase === 'ready' || provisioningStep > step;
+              const isCompleted = phase === 'ready' || displayStep > step;
               const isActive =
-                phase === 'provisioning' && provisioningStep === step;
+                phase === 'provisioning' && displayStep === step;
 
               return (
                 <div key={step} className="flex items-center gap-3">
@@ -223,7 +249,7 @@ export default function CheckoutSuccessPage() {
               <div
                 className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
                 style={{
-                  width: `${phase === 'ready' ? 100 : Math.max(5, ((provisioningStep + 1) / SETUP_STEPS.length) * 100)}%`,
+                  width: `${phase === 'ready' ? 100 : Math.max(5, ((displayStep + 1) / SETUP_STEPS.length) * 100)}%`,
                 }}
               />
             </div>

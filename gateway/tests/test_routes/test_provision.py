@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -60,6 +60,23 @@ def mock_fly():
     return mock
 
 
+@pytest.fixture
+def mock_httpx_health():
+    """Mock httpx.AsyncClient used by step 6 health polling (succeeds immediately)."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_response
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routes.provision.httpx.AsyncClient", return_value=mock_client) as mock_cls, \
+         patch("app.routes.provision.asyncio.sleep", new_callable=AsyncMock):
+        mock_cls._client = mock_client  # expose for assertions
+        yield mock_cls
+
+
 def _make_app(mock_fly, mock_supabase, settings):
     """Uses the shared `settings` fixture from conftest.py."""
     app = FastAPI()
@@ -70,8 +87,8 @@ def _make_app(mock_fly, mock_supabase, settings):
     return TestClient(app)
 
 
-def test_provision_new_user(mock_fly, mock_supabase, settings):
-    """Fresh provisioning creates app, volume, machine."""
+def test_provision_new_user(mock_fly, mock_supabase, settings, mock_httpx_health):
+    """Fresh provisioning creates app, volume, machine, and polls health."""
     client = _make_app(mock_fly, mock_supabase, settings)
     resp = client.post("/api/provision", json={"user_id": "user-1", "plan": "cmo"})
     assert resp.status_code == 200
@@ -80,6 +97,8 @@ def test_provision_new_user(mock_fly, mock_supabase, settings):
     mock_fly.set_secrets.assert_called_once()
     mock_fly.create_volume.assert_called_once()
     mock_fly.create_machine.assert_called_once()
+    # Step 6: health check was called
+    mock_httpx_health._client.get.assert_called()
 
 
 def test_provision_already_running(mock_fly, mock_supabase, settings):
@@ -94,7 +113,7 @@ def test_provision_already_running(mock_fly, mock_supabase, settings):
     mock_fly.create_app.assert_not_called()
 
 
-def test_provision_resumes_from_step(mock_fly, mock_supabase, settings):
+def test_provision_resumes_from_step(mock_fly, mock_supabase, settings, mock_httpx_health):
     """Resumes from provisioning_step if machine is in provisioning state."""
     mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
         status=MachineStatus.provisioning,
@@ -128,7 +147,7 @@ def test_provision_marks_failed_on_error(mock_fly, mock_supabase, settings):
 # ── New state-handling tests ──────────────────────────────────────
 
 
-def test_provision_failed_resumes(mock_fly, mock_supabase, settings):
+def test_provision_failed_resumes(mock_fly, mock_supabase, settings, mock_httpx_health):
     """Failed machine resets to provisioning and resumes from last step."""
     mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
         status=MachineStatus.failed,
@@ -152,7 +171,7 @@ def test_provision_failed_resumes(mock_fly, mock_supabase, settings):
     mock_fly.create_machine.assert_called_once()
 
 
-def test_provision_destroyed_starts_fresh(mock_fly, mock_supabase, settings):
+def test_provision_destroyed_starts_fresh(mock_fly, mock_supabase, settings, mock_httpx_health):
     """Destroyed record is deleted, then a new machine is created from scratch."""
     mock_supabase.get_user_machine_for_provision.return_value = _make_machine(
         status=MachineStatus.destroyed,
@@ -197,3 +216,28 @@ def test_provision_destroying_returns_409(mock_fly, mock_supabase, settings):
     resp = client.post("/api/provision", json={"user_id": "user-1"})
     assert resp.status_code == 409
     mock_fly.create_app.assert_not_called()
+
+
+# ── Health polling tests ─────────────────────────────────────────
+
+
+def test_provision_health_timeout_marks_failed(mock_fly, mock_supabase, settings):
+    """All 24 health checks fail → machine marked failed, returns 500."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = Exception("Connection refused")
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = mock_response
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routes.provision.httpx.AsyncClient", return_value=mock_client), \
+         patch("app.routes.provision.asyncio.sleep", new_callable=AsyncMock):
+        client = _make_app(mock_fly, mock_supabase, settings)
+        resp = client.post("/api/provision", json={"user_id": "user-1", "plan": "cmo"})
+
+    assert resp.status_code == 500
+    # Machine should be marked failed
+    mock_supabase.update_user_machine.assert_called()
+    last_call_kwargs = mock_supabase.update_user_machine.call_args
+    assert last_call_kwargs[1].get("status") == MachineStatus.failed.value

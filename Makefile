@@ -1,6 +1,6 @@
 .PHONY: up down logs seed reset \
 	image-build image-push openclaw-pin \
-	webapp-clean webapp-install webapp-dev webapp-lint webapp-build \
+	webapp-clean webapp-install webapp-dev webapp-lint webapp-build create-admin-coupon \
 	supabase-start supabase-migrate supabase-reset connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
 	health status chat provision slack-challenge \
@@ -244,6 +244,11 @@ webapp-lint:
 
 webapp-build:
 	$(MAKE) -C webapp build
+
+# Create a 100% off Stripe coupon for admin provisioning
+create-admin-coupon:
+	@export $$(grep -v '^#' webapp/.env.local | xargs); \
+	cd webapp && npx tsx scripts/create-admin-coupon.ts
 
 # ─── Supabase ─────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 type PricingCardsProps = {
   isAuthenticated: boolean;
   currentPlan: 'cmo' | 'cmo_plus' | null;
+  isAdmin?: boolean;
 };
 
 const plans = [
@@ -32,7 +33,7 @@ const plans = [
   },
 ];
 
-export function PricingCards({ isAuthenticated, currentPlan }: PricingCardsProps) {
+export function PricingCards({ isAuthenticated, currentPlan, isAdmin }: PricingCardsProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const hasSubscription = currentPlan !== null;
 
@@ -74,6 +75,11 @@ export function PricingCards({ isAuthenticated, currentPlan }: PricingCardsProps
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl w-full">
+      {isAdmin && !hasSubscription && (
+        <div className="col-span-full text-center text-sm text-muted-foreground border border-border/40 rounded-lg px-4 py-2">
+          Admin — your agent will be provisioned at no cost.
+        </div>
+      )}
       {plans.map((plan) => {
         const isCurrentPlan = currentPlan === plan.slug;
 
@@ -121,7 +127,7 @@ export function PricingCards({ isAuthenticated, currentPlan }: PricingCardsProps
                   onClick={() => handleCheckout(plan.slug)}
                   disabled={loading === plan.slug}
                 >
-                  {loading === plan.slug ? 'Loading...' : 'Subscribe'}
+                  {loading === plan.slug ? 'Loading...' : isAdmin ? 'Create Agent' : 'Subscribe'}
                 </Button>
               )}
             </div>
