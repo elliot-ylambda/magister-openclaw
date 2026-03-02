@@ -1,0 +1,117 @@
+"""Authentication dependencies for the Gateway API.
+
+Three auth paths:
+- JWT (Supabase)  — user-facing routes (/api/chat, /api/status)
+- API Key         — internal routes called by Vercel webhook (/api/provision, /api/destroy)
+- Machine Token   — OpenClaw calling the LLM proxy (/llm/v1/messages, /llm/v1/chat/completions)
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+
+from fastapi import Depends, HTTPException, Request
+
+
+def hash_token(token: str) -> str:
+    """SHA-256 hash of a bearer token."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _extract_bearer(request: Request) -> str:
+    """Extract bearer token from Authorization header or raise 401."""
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    return auth[7:]
+
+
+# ── JWT Auth (Supabase) ──────────────────────────────────────
+
+
+def create_jwt_dependency(jwt_secret: str, supabase_url: str = ""):
+    """Factory: returns a FastAPI Depends that decodes a Supabase JWT and returns user_id.
+
+    Supports both HS256 (legacy) and ES256 (newer Supabase projects).
+    For ES256, the public key is fetched from Supabase's JWKS endpoint.
+    """
+    import logging
+    import jwt as pyjwt
+    from jwt import PyJWKClient
+
+    logger = logging.getLogger("gateway.auth")
+
+    # Set up JWKS client for ES256 verification (if Supabase URL is available)
+    jwks_client = None
+    if supabase_url:
+        jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+        jwks_client = PyJWKClient(jwks_url, cache_keys=True)
+
+    async def verify_jwt(request: Request) -> str:
+        token = _extract_bearer(request)
+        try:
+            # Peek at the header to determine algorithm
+            header = pyjwt.get_unverified_header(token)
+            alg = header.get("alg", "HS256")
+
+            if alg == "ES256" and jwks_client:
+                signing_key = jwks_client.get_signing_key_from_jwt(token)
+                payload = pyjwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["ES256"],
+                    audience="authenticated",
+                )
+            else:
+                payload = pyjwt.decode(
+                    token,
+                    jwt_secret,
+                    algorithms=["HS256"],
+                    audience="authenticated",
+                )
+        except pyjwt.exceptions.PyJWTError as exc:
+            logger.warning(f"[jwt] rejected: {exc}")
+            raise HTTPException(status_code=401, detail=f"Invalid JWT: {exc}")
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="JWT missing sub claim")
+        return user_id
+
+    return Depends(verify_jwt)
+
+
+# ── API Key Auth ─────────────────────────────────────────────
+
+
+def create_api_key_dependency(api_key: str):
+    """Factory: returns a FastAPI Depends that validates GATEWAY_API_KEY (guard only)."""
+
+    async def verify_api_key(request: Request) -> None:
+        token = _extract_bearer(request)
+        if not hmac.compare_digest(token, api_key):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+
+    return Depends(verify_api_key)
+
+
+# ── Machine Token Auth ───────────────────────────────────────
+
+
+async def verify_machine_token(request: Request) -> str:
+    """Dependency: extract machine token and return its SHA-256 hash.
+
+    Checks two header formats:
+    - Authorization: Bearer <token>  (OpenAI-compatible clients)
+    - x-api-key: <token>             (Anthropic SDK / OpenClaw)
+    """
+    # Try Authorization header first, then x-api-key (Anthropic SDK format)
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return hash_token(auth[7:])
+
+    api_key = request.headers.get("x-api-key", "")
+    if api_key:
+        return hash_token(api_key)
+
+    raise HTTPException(status_code=401, detail="Missing bearer token or x-api-key")

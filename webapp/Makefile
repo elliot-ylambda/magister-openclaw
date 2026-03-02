@@ -13,7 +13,16 @@ dev:
 	else \
 		PORT=3020; \
 	fi; \
+	PID=$$(lsof -ti :$$PORT 2>/dev/null); \
+	if [ -n "$$PID" ]; then \
+		echo "Killing existing process on port $$PORT (PID $$PID)"; \
+		kill -9 $$PID 2>/dev/null || true; \
+		sleep 1; \
+	fi; \
 	echo "Starting dev server on port $$PORT"; \
+	stripe listen --forward-to localhost:$$PORT/api/billing/webhook & \
+	STRIPE_PID=$$!; \
+	trap "kill $$STRIPE_PID 2>/dev/null" EXIT; \
 	pnpm exec next dev --port $$PORT
 
 lint:
@@ -23,7 +32,7 @@ build:
 	pnpm run build
 
 supabase-start-local:
-	supabase start --local
+	supabase start
 
 supabase-migrate-local:
 	supabase unlink || true

@@ -1,0 +1,37 @@
+{
+  "agents": {
+    "list": [
+      {
+        "id": "marketing",
+        "name": "Magister Marketing Agent",
+        "workspace": "/data/.openclaw/workspace"
+      }
+    ],
+    "defaults": {
+      "maxConcurrent": 4,
+      "sandbox": {
+        "mode": "off"
+      }
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token"
+    },
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        },
+        "responses": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}

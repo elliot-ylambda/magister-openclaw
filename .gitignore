@@ -31,6 +31,24 @@ yarn-error.log*
 # env files
 .env*
 !.env.example
+!.env.gateway.docker.example
+
+# worktrees
+.worktrees/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# supabase
+supabase/.temp/
+
+# worktrees
+.worktrees/
+
+# worktrees
+.worktrees/
 
 # vercel
 .vercel
@@ -38,3 +56,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# venv
+**/.venv
+
+
+# supabase
+supabase/.temp
+supabase/.branches
