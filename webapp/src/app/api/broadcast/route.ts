@@ -29,17 +29,18 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { template, testEmail, subject, heading, previewText, contentHtml } =
+  const { template, to, testEmails, subject, heading, previewText, contentHtml } =
     body as {
       template?: string;
-      testEmail?: string;
+      to?: string | string[];
+      testEmails?: string | string[];
       subject?: string;
       heading?: string;
       previewText?: string;
       contentHtml?: string;
     };
 
-  // Resolve which email to send
+  // Resolve template
   const namedTemplate = template ? templates[template] : undefined;
 
   if (template && !namedTemplate) {
@@ -57,44 +58,87 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Test mode: send to a single email without querying the waitlist
-  if (testEmail) {
-    try {
-      const unsubscribeUrl = buildUnsubscribeUrl(testEmail);
-
-      const reactElement = namedTemplate
-        ? React.createElement(namedTemplate.component, { unsubscribeUrl })
-        : React.createElement(UpdateBroadcastEmail, {
-            heading,
-            previewText,
-            content: contentHtml
-              ? React.createElement("div", {
-                  dangerouslySetInnerHTML: { __html: contentHtml },
-                })
-              : undefined,
-            unsubscribeUrl,
-          });
-
-      await resend.emails.send({
-        from: "Magister <waitlist@notifications.magistermarketing.com>",
-        replyTo: "team@magistermarketing.com",
-        to: testEmail,
-        subject: `[TEST] ${emailSubject}`,
-        react: reactElement,
-        headers: {
-          "List-Unsubscribe": `<${unsubscribeUrl}>`,
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-      });
-
-      return NextResponse.json({ sent: 1, test: true, to: testEmail });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Unknown error";
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
+  function buildReactElement(unsubscribeUrl: string) {
+    return namedTemplate
+      ? React.createElement(namedTemplate.component, { unsubscribeUrl })
+      : React.createElement(UpdateBroadcastEmail, {
+          heading,
+          previewText,
+          content: contentHtml
+            ? React.createElement("div", {
+                dangerouslySetInnerHTML: { __html: contentHtml },
+              })
+            : undefined,
+          unsubscribeUrl,
+        });
   }
 
-  // Fetch all subscribed waitlist emails
+  async function sendToRecipients(
+    recipients: string[],
+    subjectLine: string
+  ) {
+    let sent = 0;
+    const errors: { email: string; error: string }[] = [];
+
+    for (const email of recipients) {
+      try {
+        const unsubscribeUrl = buildUnsubscribeUrl(email);
+
+        await resend.emails.send({
+          from: "Magister <waitlist@notifications.magistermarketing.com>",
+          replyTo: "team@magistermarketing.com",
+          to: email,
+          subject: subjectLine,
+          react: buildReactElement(unsubscribeUrl),
+          headers: {
+            "List-Unsubscribe": `<${unsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
+        });
+
+        sent++;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        console.error(`Failed to send to ${email}:`, message);
+        errors.push({ email, error: message });
+      }
+    }
+
+    return { sent, errors };
+  }
+
+  // Test mode: send with [TEST] prefix
+  if (testEmails) {
+    const recipients = Array.isArray(testEmails) ? testEmails : [testEmails];
+    const { sent, errors } = await sendToRecipients(
+      recipients,
+      `[TEST] ${emailSubject}`
+    );
+
+    return NextResponse.json({
+      sent,
+      failed: errors.length,
+      test: true,
+      to: recipients,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  }
+
+  // Direct send: specific addresses, real subject
+  if (to) {
+    const recipients = Array.isArray(to) ? to : [to];
+    const { sent, errors } = await sendToRecipients(recipients, emailSubject);
+
+    return NextResponse.json({
+      sent,
+      failed: errors.length,
+      total: recipients.length,
+      to: recipients,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  }
+
+  // Waitlist broadcast: all subscribed emails
   const { data: subscribers, error } = await supabase
     .from("waitlist")
     .select("email")
@@ -112,45 +156,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sent: 0, message: "No subscribers found" });
   }
 
-  let sent = 0;
-  const errors: { email: string; error: string }[] = [];
-
-  for (const { email } of subscribers) {
-    try {
-      const unsubscribeUrl = buildUnsubscribeUrl(email);
-
-      const reactElement = namedTemplate
-        ? React.createElement(namedTemplate.component, { unsubscribeUrl })
-        : React.createElement(UpdateBroadcastEmail, {
-            heading,
-            previewText,
-            content: contentHtml
-              ? React.createElement("div", {
-                  dangerouslySetInnerHTML: { __html: contentHtml },
-                })
-              : undefined,
-            unsubscribeUrl,
-          });
-
-      await resend.emails.send({
-        from: "Magister <waitlist@notifications.magistermarketing.com>",
-        replyTo: "team@magistermarketing.com",
-        to: email,
-        subject: emailSubject,
-        react: reactElement,
-        headers: {
-          "List-Unsubscribe": `<${unsubscribeUrl}>`,
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-      });
-
-      sent++;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Unknown error";
-      console.error(`Failed to send to ${email}:`, message);
-      errors.push({ email, error: message });
-    }
-  }
+  const { sent, errors } = await sendToRecipients(
+    subscribers.map((s) => s.email),
+    emailSubject
+  );
 
   return NextResponse.json({
     sent,
