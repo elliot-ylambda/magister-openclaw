@@ -29,10 +29,10 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { template, testEmail, subject, heading, previewText, contentHtml } =
+  const { template, testEmails, subject, heading, previewText, contentHtml } =
     body as {
       template?: string;
-      testEmail?: string;
+      testEmails?: string | string[];
       subject?: string;
       heading?: string;
       previewText?: string;
@@ -57,41 +57,55 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Test mode: send to a single email without querying the waitlist
-  if (testEmail) {
-    try {
-      const unsubscribeUrl = buildUnsubscribeUrl(testEmail);
+  // Test mode: send to specific addresses without querying the waitlist
+  if (testEmails) {
+    const recipients = Array.isArray(testEmails) ? testEmails : [testEmails];
+    let sent = 0;
+    const errors: { email: string; error: string }[] = [];
 
-      const reactElement = namedTemplate
-        ? React.createElement(namedTemplate.component, { unsubscribeUrl })
-        : React.createElement(UpdateBroadcastEmail, {
-            heading,
-            previewText,
-            content: contentHtml
-              ? React.createElement("div", {
-                  dangerouslySetInnerHTML: { __html: contentHtml },
-                })
-              : undefined,
-            unsubscribeUrl,
-          });
+    for (const to of recipients) {
+      try {
+        const unsubscribeUrl = buildUnsubscribeUrl(to);
 
-      await resend.emails.send({
-        from: "Magister <waitlist@notifications.magistermarketing.com>",
-        replyTo: "team@magistermarketing.com",
-        to: testEmail,
-        subject: `[TEST] ${emailSubject}`,
-        react: reactElement,
-        headers: {
-          "List-Unsubscribe": `<${unsubscribeUrl}>`,
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-      });
+        const reactElement = namedTemplate
+          ? React.createElement(namedTemplate.component, { unsubscribeUrl })
+          : React.createElement(UpdateBroadcastEmail, {
+              heading,
+              previewText,
+              content: contentHtml
+                ? React.createElement("div", {
+                    dangerouslySetInnerHTML: { __html: contentHtml },
+                  })
+                : undefined,
+              unsubscribeUrl,
+            });
 
-      return NextResponse.json({ sent: 1, test: true, to: testEmail });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Unknown error";
-      return NextResponse.json({ error: message }, { status: 500 });
+        await resend.emails.send({
+          from: "Magister <waitlist@notifications.magistermarketing.com>",
+          replyTo: "team@magistermarketing.com",
+          to,
+          subject: `[TEST] ${emailSubject}`,
+          react: reactElement,
+          headers: {
+            "List-Unsubscribe": `<${unsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
+        });
+
+        sent++;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unknown error";
+        errors.push({ email: to, error: message });
+      }
     }
+
+    return NextResponse.json({
+      sent,
+      failed: errors.length,
+      test: true,
+      to: recipients,
+      errors: errors.length > 0 ? errors : undefined,
+    });
   }
 
   // Fetch all subscribed waitlist emails
