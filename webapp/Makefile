@@ -52,11 +52,11 @@ connect-local-db:
 #   make broadcast t=waitlist-update-1
 
 BROADCAST_URL ?= $(shell grep NEXT_PUBLIC_APP_URL .env.local 2>/dev/null | cut -d= -f2)/api/broadcast
-BROADCAST_KEY  = $(shell grep SUPABASE_SERVICE_ROLE_KEY .env.local 2>/dev/null | cut -d= -f2)
+BROADCAST_KEY ?= $(shell grep SUPABASE_SERVICE_ROLE_KEY .env.local 2>/dev/null | cut -d= -f2)
 
 # Send test emails (subject prefixed with [TEST])
 broadcast-test:
-	@if [ -z "$(to)" ]; then echo "Usage: make broadcast-test to=\"email@example.com\" t=template-name"; exit 1; fi
+	@if [ -z "$(to)" ] || [ -z "$(t)" ]; then echo "Usage: make broadcast-test to=\"email@example.com\" t=template-name"; exit 1; fi
 	@EMAILS=$$(echo '$(to)' | sed 's/,/","/g'); \
 	curl -s -X POST $(BROADCAST_URL) \
 		-H "Authorization: Bearer $(BROADCAST_KEY)" \
@@ -65,7 +65,7 @@ broadcast-test:
 
 # Send to specific email addresses (real send, no [TEST] prefix)
 broadcast-send:
-	@if [ -z "$(to)" ]; then echo "Usage: make broadcast-send to=\"email@example.com\" t=template-name"; exit 1; fi
+	@if [ -z "$(to)" ] || [ -z "$(t)" ]; then echo "Usage: make broadcast-send to=\"email@example.com\" t=template-name"; exit 1; fi
 	@EMAILS=$$(echo '$(to)' | sed 's/,/","/g'); \
 	curl -s -X POST $(BROADCAST_URL) \
 		-H "Authorization: Bearer $(BROADCAST_KEY)" \
