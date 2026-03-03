@@ -141,6 +141,18 @@ def create_slack_webhook_router(
                                 "started",
                                 timeout_s=WAKE_TIMEOUT_S,
                             )
+                            # Poll health until OpenClaw is ready (mirrors chat route)
+                            base = _machine_url(machine, settings.dev_machine_url)
+                            for _ in range(12):  # up to ~60s
+                                try:
+                                    async with httpx.AsyncClient(timeout=5.0) as hc:
+                                        resp = await hc.get(f"{base}/health")
+                                        resp.raise_for_status()
+                                    break
+                                except Exception:
+                                    await asyncio.sleep(5)
+                            else:
+                                raise TimeoutError("OpenClaw health check never passed")
                             await supabase.update_user_machine(
                                 machine.id, status=MachineStatus.running.value
                             )
@@ -151,24 +163,35 @@ def create_slack_webhook_router(
                             )
                             return
 
-            # 4. Forward raw event to OpenClaw
+            # 4. Forward raw event to OpenClaw (retry on connection errors)
             base_url = _machine_url(machine, settings.dev_machine_url)
             headers = {
                 "content-type": "application/json",
                 "x-slack-request-timestamp": slack_timestamp,
                 "x-slack-signature": slack_signature,
             }
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    f"{base_url}/slack/events",
-                    content=raw_body,
-                    headers=headers,
-                )
-                if resp.status_code >= 400:
-                    logger.warning(
-                        f"[slack] OpenClaw returned {resp.status_code} for team {team_id}: "
-                        f"{resp.text[:200]}"
-                    )
+            last_exc: Exception | None = None
+            for attempt in range(4):  # up to ~15s of retries
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        resp = await client.post(
+                            f"{base_url}/slack/events",
+                            content=raw_body,
+                            headers=headers,
+                        )
+                        if resp.status_code >= 400:
+                            logger.warning(
+                                f"[slack] OpenClaw returned {resp.status_code} for team {team_id}: "
+                                f"{resp.text[:200]}"
+                            )
+                        last_exc = None
+                        break
+                except (httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+                    last_exc = exc
+                    if attempt < 3:
+                        await asyncio.sleep(5)
+            if last_exc:
+                logger.error(f"[slack] failed to reach OpenClaw for team {team_id} after retries: {last_exc}")
 
             # 5. Update activity
             await supabase.update_last_activity(conn.user_id)

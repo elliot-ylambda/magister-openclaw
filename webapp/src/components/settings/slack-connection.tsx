@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -135,9 +136,17 @@ export function SlackConnection() {
           <p className="text-sm text-muted-foreground">
             Connect your Slack workspace to chat with your marketing agent via DMs and @mentions.
           </p>
-          <Button size="sm" onClick={handleConnect}>
-            Connect Slack
-          </Button>
+          <button
+            onClick={handleConnect}
+            className="opacity-90 hover:opacity-100 transition-opacity"
+          >
+            <Image
+              alt="Add to Slack"
+              height={40}
+              width={139}
+              src="https://platform.slack-edge.com/img/add_to_slack@2x.png"
+            />
+          </button>
         </div>
       )}
     </section>
