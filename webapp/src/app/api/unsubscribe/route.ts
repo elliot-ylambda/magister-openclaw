@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createServiceClient } from "@/lib/supabase/server";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 import { resend } from "@/lib/resend";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 async function unsubscribe(token: string): Promise<string | null> {
   const email = verifyUnsubscribeToken(token);
   if (!email) return null;
+
+  const supabase = createServiceClient();
 
   // Update Supabase (primary source of truth)
   await supabase

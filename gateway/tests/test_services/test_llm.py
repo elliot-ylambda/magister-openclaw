@@ -1,0 +1,217 @@
+"""Tests for LLMService — mocks litellm, no real API calls."""
+
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.services.llm import LLMService, MODEL_COSTS, CACHE_TTL_SECONDS
+
+
+# ── Fixtures ─────────────────────────────────────────────────────
+
+@pytest.fixture
+def mock_supabase():
+    mock = AsyncMock()
+    mock.get_monthly_llm_spend.return_value = 0
+    mock.insert_usage_event.return_value = None
+    return mock
+
+
+@pytest.fixture
+def llm_service(mock_supabase):
+    return LLMService(
+        openrouter_api_key="test-openrouter-key",
+        supabase=mock_supabase,
+        plan_budgets={"cmo": 5000, "cmo_plus": 15000},
+        plan_allowed_models={
+            "cmo": [
+                "anthropic/claude-sonnet-4-6",
+                "anthropic/claude-haiku-4-5",
+                "openai/gpt-4o",
+                "google/gemini-2.5-flash",
+            ],
+            "cmo_plus": [
+                "anthropic/claude-sonnet-4-6",
+                "anthropic/claude-haiku-4-5",
+                "anthropic/claude-opus-4-6",
+                "openai/gpt-4o",
+                "google/gemini-2.5-pro",
+                "google/gemini-2.5-flash",
+            ],
+        },
+    )
+
+
+# ── Budget Checks ───────────────────────────────────────────────
+
+class TestCheckBudget:
+    async def test_within_budget(self, llm_service, mock_supabase):
+        mock_supabase.get_monthly_llm_spend.return_value = 2000
+
+        result = await llm_service.check_budget("u1", "cmo")
+
+        assert result is True  # 2000 < 5000
+
+    async def test_over_budget(self, llm_service, mock_supabase):
+        mock_supabase.get_monthly_llm_spend.return_value = 5500
+
+        result = await llm_service.check_budget("u1", "cmo")
+
+        assert result is False  # 5500 >= 5000
+
+    async def test_at_exact_budget_is_over(self, llm_service, mock_supabase):
+        mock_supabase.get_monthly_llm_spend.return_value = 5000
+
+        result = await llm_service.check_budget("u1", "cmo")
+
+        assert result is False  # 5000 is not < 5000
+
+
+# ── Model Validation ────────────────────────────────────────────
+
+class TestValidateModel:
+    def test_sonnet_allowed_on_cmo(self, llm_service):
+        assert llm_service.validate_model("anthropic/claude-sonnet-4-6", "cmo") is True
+
+    def test_haiku_allowed_on_cmo(self, llm_service):
+        assert llm_service.validate_model("anthropic/claude-haiku-4-5", "cmo") is True
+
+    def test_opus_blocked_on_cmo(self, llm_service):
+        assert llm_service.validate_model("anthropic/claude-opus-4-6", "cmo") is False
+
+    def test_opus_allowed_on_cmo_plus(self, llm_service):
+        assert llm_service.validate_model("anthropic/claude-opus-4-6", "cmo_plus") is True
+
+    def test_gpt4o_allowed_on_cmo(self, llm_service):
+        assert llm_service.validate_model("openai/gpt-4o", "cmo") is True
+
+    def test_gemini_pro_blocked_on_cmo(self, llm_service):
+        assert llm_service.validate_model("google/gemini-2.5-pro", "cmo") is False
+
+    def test_gemini_pro_allowed_on_cmo_plus(self, llm_service):
+        assert llm_service.validate_model("google/gemini-2.5-pro", "cmo_plus") is True
+
+    def test_unknown_model_blocked(self, llm_service):
+        assert llm_service.validate_model("unknown/model", "cmo") is False
+
+    def test_unknown_plan_blocks_all(self, llm_service):
+        assert llm_service.validate_model("anthropic/claude-sonnet-4-6", "free") is False
+
+
+# ── Cost Calculation ─────────────────────────────────────────────
+
+class TestCalculateCost:
+    def test_uses_ceil_and_minimum_one_cent(self):
+        # 1 input token of sonnet: 317 / 1M = 0.000317 cents → ceil = 1
+        cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1, 0)
+        assert cost == 1
+
+    def test_real_usage_sonnet_prefixed(self):
+        # 1000 input + 500 output for sonnet (prefixed):
+        # input: 1000 * 317 / 1M = 0.317
+        # output: 500 * 1583 / 1M = 0.7915
+        # total: 1.1085 → ceil = 2
+        cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1000, 500)
+        assert cost == 2
+
+    def test_unknown_model_returns_one_cent(self):
+        cost = LLMService._calculate_cost("unknown-model", 1000, 500)
+        assert cost == 1
+
+    def test_opus_expensive(self):
+        # 10000 input + 5000 output for opus (prefixed):
+        # input: 10000 * 1583 / 1M = 15.83
+        # output: 5000 * 7913 / 1M = 39.565
+        # total: 55.395 → ceil = 56
+        cost = LLMService._calculate_cost("anthropic/claude-opus-4-6", 10000, 5000)
+        assert cost == 56
+
+    def test_gpt4o_cost(self):
+        # 1000 input + 500 output for gpt-4o:
+        # input: 1000 * 264 / 1M = 0.264
+        # output: 500 * 1055 / 1M = 0.5275
+        # total: 0.7915 → ceil = 1
+        cost = LLMService._calculate_cost("openai/gpt-4o", 1000, 500)
+        assert cost == 1
+
+    def test_gemini_flash_cost(self):
+        # 10000 input + 5000 output for gemini flash:
+        # input: 10000 * 32 / 1M = 0.32
+        # output: 5000 * 158 / 1M = 0.79
+        # total: 1.11 → ceil = 2
+        cost = LLMService._calculate_cost("google/gemini-2.5-flash", 10000, 5000)
+        assert cost == 2
+
+
+# ── Spend Cache ──────────────────────────────────────────────────
+
+class TestSpendCache:
+    async def test_caches_within_ttl(self, llm_service, mock_supabase):
+        mock_supabase.get_monthly_llm_spend.return_value = 1000
+
+        # First call fetches from DB
+        spend1 = await llm_service._get_cached_spend("u1")
+        assert spend1 == 1000
+        assert mock_supabase.get_monthly_llm_spend.call_count == 1
+
+        # Second call uses cache
+        spend2 = await llm_service._get_cached_spend("u1")
+        assert spend2 == 1000
+        assert mock_supabase.get_monthly_llm_spend.call_count == 1  # no new call
+
+    async def test_refetches_after_ttl(self, llm_service, mock_supabase):
+        mock_supabase.get_monthly_llm_spend.return_value = 1000
+
+        # Seed the cache with an expired entry
+        llm_service._spend_cache["u1"] = (
+            1000,
+            time.time() - CACHE_TTL_SECONDS - 1,
+        )
+
+        mock_supabase.get_monthly_llm_spend.return_value = 2000
+        spend = await llm_service._get_cached_spend("u1")
+        assert spend == 2000
+        assert mock_supabase.get_monthly_llm_spend.call_count == 1
+
+    async def test_invalidate_clears_cache(self, llm_service, mock_supabase):
+        mock_supabase.get_monthly_llm_spend.return_value = 1000
+        await llm_service._get_cached_spend("u1")
+
+        llm_service._invalidate_cache("u1")
+        assert "u1" not in llm_service._spend_cache
+
+
+# ── Completion ───────────────────────────────────────────────────
+
+class TestCompletion:
+    @patch("app.services.llm.litellm.acompletion", new_callable=AsyncMock)
+    async def test_non_streaming_records_usage(
+        self, mock_acompletion, llm_service, mock_supabase
+    ):
+        # Set up mock response with usage
+        mock_response = MagicMock()
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
+        mock_acompletion.return_value = mock_response
+
+        result = await llm_service.completion(
+            model="anthropic/claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "hello"}],
+            user_id="u1",
+        )
+
+        assert result is mock_response
+        mock_acompletion.assert_called_once_with(
+            model="openrouter/anthropic/claude-sonnet-4-6",
+            messages=[{"role": "user", "content": "hello"}],
+            api_key="test-openrouter-key",
+        )
+        # Verify usage event was inserted
+        mock_supabase.insert_usage_event.assert_called_once()
+        event = mock_supabase.insert_usage_event.call_args[0][0]
+        assert event.user_id == "u1"
+        assert event.model == "anthropic/claude-sonnet-4-6"
+        assert event.input_tokens == 100
+        assert event.output_tokens == 50
+        assert event.cost_cents >= 1
