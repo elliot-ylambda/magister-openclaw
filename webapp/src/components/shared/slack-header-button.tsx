@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 
 const POLL_INTERVAL = 30_000;
 
@@ -73,12 +74,11 @@ export function SlackHeaderButton() {
       disabled={connecting}
       className="flex-shrink-0 opacity-90 hover:opacity-100 transition-opacity disabled:opacity-50"
     >
-      <img
+      <Image
         alt="Add to Slack"
         height={28}
         width={97}
-        src="https://platform.slack-edge.com/img/add_to_slack.png"
-        srcSet="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x"
+        src="https://platform.slack-edge.com/img/add_to_slack@2x.png"
       />
     </button>
   );
