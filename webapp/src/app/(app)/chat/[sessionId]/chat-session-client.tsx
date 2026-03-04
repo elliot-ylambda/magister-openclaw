@@ -22,6 +22,8 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   const [isWaking, setIsWaking] = useState(false);
   const [currentModelLabel, setCurrentModelLabel] = useState<string | null>(null);
   const currentModelLabelRef = useRef<string | null>(null);
+  const currentModelIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
   const isFirstMessageRef = useRef(true);
   const retryCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -37,14 +39,31 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   }), []);
 
   const handleModelChange = useCallback(
-    (modelId: string, displayName: string) => {
+    async (modelId: string, displayName: string) => {
+      currentModelIdRef.current = modelId;
       const price = MODEL_OUTPUT_PRICES[modelId];
       const text = price
         ? `Switched to ${displayName} — ${price} output tokens`
         : `Switched to ${displayName}`;
       setMessages((prev) => [...prev, makeSystemMessage(text)]);
+
+      // Persist the switch indicator to DB so it reconstructs on reload
+      if (userIdRef.current) {
+        const { error: insertErr } = await supabase
+          .from("chat_messages")
+          .insert({
+            session_id: sessionId,
+            user_id: userIdRef.current,
+            role: "system",
+            content: text,
+            model: modelId,
+          });
+        if (insertErr) {
+          console.error("Failed to persist model switch:", insertErr);
+        }
+      }
     },
-    [makeSystemMessage]
+    [makeSystemMessage, supabase, sessionId]
   );
 
   const isNearBottom = useCallback(() => {
@@ -69,12 +88,13 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
     setMessages([]);
     setCurrentModelLabel(null);
     currentModelLabelRef.current = null;
+    currentModelIdRef.current = null;
     isFirstMessageRef.current = true;
 
     async function loadHistory() {
       const { data, error: queryError } = await supabase
         .from("chat_messages")
-        .select("id, role, content, created_at, attachments")
+        .select("id, role, content, created_at, attachments, model")
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true });
 
@@ -84,24 +104,19 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         return;
       }
 
-      // Fetch current model for the indicator
+      // Fetch current model and store user ID
       const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) userIdRef.current = authUser.id;
+      }
       const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
-      let modelSystemMsg: Message | null = null;
+      let liveModelId: string | null = null;
       if (session && gatewayUrl) {
         const result = await getAvailableModels(gatewayUrl, session.access_token);
         if (result) {
-          const name = MODEL_DISPLAY_NAMES[result.current] ?? result.current;
-          const price = MODEL_OUTPUT_PRICES[result.current];
-          const text = price ? `${name} — ${price} output tokens` : name;
-          setCurrentModelLabel(text);
-          currentModelLabelRef.current = text;
-          modelSystemMsg = {
-            id: `system-${crypto.randomUUID()}`,
-            role: "system",
-            content: text,
-            createdAt: new Date(0), // earliest possible so it sorts first
-          };
+          liveModelId = result.current;
+          currentModelIdRef.current = result.current;
         }
       }
 
@@ -128,7 +143,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
             }
             return {
               id: m.id,
-              role: m.role as "user" | "assistant",
+              role: m.role as "user" | "assistant" | "system",
               content: m.content,
               createdAt: new Date(m.created_at),
               attachments,
@@ -136,10 +151,38 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
           })
         );
 
+        // Determine what model to show at the top of the conversation:
+        // Use the first assistant message's model (historical truth), falling back
+        // to the live model for old conversations without model data.
+        const firstAssistantModel = data.find((m) => m.role === "assistant" && m.model)?.model;
+        const topModelId = firstAssistantModel ?? liveModelId;
+
+        let modelSystemMsg: Message | null = null;
+        if (topModelId) {
+          const name = MODEL_DISPLAY_NAMES[topModelId] ?? topModelId;
+          const price = MODEL_OUTPUT_PRICES[topModelId];
+          const text = price ? `${name} — ${price} output tokens` : name;
+          setCurrentModelLabel(text);
+          currentModelLabelRef.current = text;
+          modelSystemMsg = {
+            id: `system-${crypto.randomUUID()}`,
+            role: "system",
+            content: text,
+            createdAt: new Date(0),
+          };
+        }
+
         setMessages(modelSystemMsg ? [modelSystemMsg, ...messagesWithUrls] : messagesWithUrls);
         isFirstMessageRef.current = false;
       } else {
-        // New empty session — refresh the layout so the sidebar includes it
+        // New empty session — show live model label and refresh sidebar
+        if (liveModelId) {
+          const name = MODEL_DISPLAY_NAMES[liveModelId] ?? liveModelId;
+          const price = MODEL_OUTPUT_PRICES[liveModelId];
+          const text = price ? `${name} — ${price} output tokens` : name;
+          setCurrentModelLabel(text);
+          currentModelLabelRef.current = text;
+        }
         router.refresh();
       }
     }
@@ -198,6 +241,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         setMessages((prev) => prev.filter((m) => m.id !== assistantMessage.id));
         return;
       }
+      userIdRef.current = user.id;
 
       const {
         data: { session },
@@ -374,6 +418,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
             user_id: user.id,
             role: "assistant",
             content: accumulatedContent,
+            model: currentModelIdRef.current,
           });
         if (insertErr) {
           console.error("Failed to persist assistant message:", insertErr);
@@ -401,7 +446,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         router.refresh();
       }
     },
-    [sessionId, supabase, router]
+    [sessionId, supabase, router, makeSystemMessage]
   );
 
   return (

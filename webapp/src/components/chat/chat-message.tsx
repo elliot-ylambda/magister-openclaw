@@ -94,6 +94,18 @@ export function ChatMessage({
   message: Message;
   isStreaming?: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may be unavailable in insecure contexts
+    }
+  }, [message.content]);
+
   if (message.role === "system") {
     return (
       <div className="flex items-center gap-3 py-1">
@@ -106,17 +118,6 @@ export function ChatMessage({
 
   const isUser = message.role === "user";
   const hasAttachments = message.attachments && message.attachments.length > 0;
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API may be unavailable in insecure contexts
-    }
-  }, [message.content]);
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>

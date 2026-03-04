@@ -35,7 +35,6 @@ supabase-start-local:
 	supabase start
 
 supabase-migrate-local:
-	supabase unlink || true
 	supabase migration up --local
 
 supabase-reset-local:
