@@ -7,7 +7,7 @@
 	deploy-gateway deploy-image deploy-machines deploy-all \
 	start-gateway start-machine start-machines \
 	stop-gateway stop-machine stop-machines \
-	delete-user
+	delete-user make-admin
 
 # ─── Docker Compose ───────────────────────────────────────────
 
@@ -407,3 +407,27 @@ delete-user:
 	else echo "  Error: delete returned HTTP $$DEL_CODE"; echo "$$DEL_RES" | head -1; exit 1; fi; \
 	echo ""; \
 	echo "User $(email) fully deleted."
+
+# Promote a user to admin role.
+# Usage: make make-admin email=user@example.com
+make-admin:
+	@if [ -z "$(email)" ]; then echo "Usage: make make-admin email=user@example.com"; exit 1; fi; \
+	export $$(grep -v '^#' webapp/.env.local | grep -v '^$$' | xargs); \
+	echo "Looking up user: $(email)..."; \
+	SB_URL=$${SUPABASE_URL:-$$NEXT_PUBLIC_SUPABASE_URL}; \
+	USER_ID=$$(curl -s "$$SB_URL/auth/v1/admin/users" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -c "import json,sys; users=json.load(sys.stdin).get('users',[]); matches=[u for u in users if u.get('email')=='$(email)']; print(matches[0]['id'] if matches else '')" 2>/dev/null); \
+	if [ -z "$$USER_ID" ]; then echo "Error: No user found with email $(email)"; exit 1; fi; \
+	echo "Found user: $$USER_ID"; \
+	echo "Updating role to admin..."; \
+	RESULT=$$(curl -s -w "\n%{http_code}" -X PATCH "$$SB_URL/rest/v1/profiles?id=eq.$$USER_ID" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "Content-Type: application/json" \
+		-H "Prefer: return=minimal" \
+		-d '{"role": "admin"}'); \
+	HTTP_CODE=$$(echo "$$RESULT" | tail -1); \
+	if [ "$$HTTP_CODE" = "204" ]; then echo "User $(email) is now an admin."; \
+	else echo "Error: update returned HTTP $$HTTP_CODE"; echo "$$RESULT" | head -1; exit 1; fi
