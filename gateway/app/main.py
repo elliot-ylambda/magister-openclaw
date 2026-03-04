@@ -20,6 +20,7 @@ from app.routes.files import create_files_router
 from app.routes.machine_control import create_machine_control_router
 from app.routes.provision import create_provision_router
 from app.routes.admin_secrets import create_admin_secrets_router
+from app.routes.model_selection import create_model_selection_router
 from app.routes.slack_oauth import create_slack_oauth_router
 from app.routes.slack_webhook import create_slack_webhook_router
 from app.routes.status import create_status_router
@@ -116,6 +117,15 @@ async def lifespan(app: FastAPI):
         create_admin_secrets_router(fly, supabase),
         prefix="/api",
         dependencies=[verify_api_key],
+    )
+    app.include_router(
+        create_model_selection_router(
+            supabase, settings,
+            jwt_secret=settings.supabase_jwt_secret,
+            api_key=settings.gateway_api_key,
+            supabase_url=settings.supabase_url,
+        ),
+        prefix="/api",
     )
 
     # ── Background jobs ───────────────────────────────────────

@@ -103,15 +103,15 @@ class TestValidateModel:
 
 class TestCalculateCost:
     def test_uses_ceil_and_minimum_one_cent(self):
-        # 1 input token of sonnet: 317 / 1M = 0.000317 cents → ceil = 1
+        # 1 input token of sonnet: 300 / 1M = 0.0003 cents → ceil = 1
         cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1, 0)
         assert cost == 1
 
     def test_real_usage_sonnet_prefixed(self):
         # 1000 input + 500 output for sonnet (prefixed):
-        # input: 1000 * 317 / 1M = 0.317
-        # output: 500 * 1583 / 1M = 0.7915
-        # total: 1.1085 → ceil = 2
+        # input: 1000 * 300 / 1M = 0.3
+        # output: 500 * 1500 / 1M = 0.75
+        # total: 1.05 → ceil = 2
         cost = LLMService._calculate_cost("anthropic/claude-sonnet-4-6", 1000, 500)
         assert cost == 2
 
@@ -121,25 +121,25 @@ class TestCalculateCost:
 
     def test_opus_expensive(self):
         # 10000 input + 5000 output for opus (prefixed):
-        # input: 10000 * 1583 / 1M = 15.83
-        # output: 5000 * 7913 / 1M = 39.565
-        # total: 55.395 → ceil = 56
+        # input: 10000 * 500 / 1M = 5.0
+        # output: 5000 * 2500 / 1M = 12.5
+        # total: 17.5 → ceil = 18
         cost = LLMService._calculate_cost("anthropic/claude-opus-4-6", 10000, 5000)
-        assert cost == 56
+        assert cost == 18
 
     def test_gpt4o_cost(self):
         # 1000 input + 500 output for gpt-4o:
-        # input: 1000 * 264 / 1M = 0.264
-        # output: 500 * 1055 / 1M = 0.5275
-        # total: 0.7915 → ceil = 1
+        # input: 1000 * 250 / 1M = 0.25
+        # output: 500 * 1000 / 1M = 0.5
+        # total: 0.75 → ceil = 1
         cost = LLMService._calculate_cost("openai/gpt-4o", 1000, 500)
         assert cost == 1
 
     def test_gemini_flash_cost(self):
         # 10000 input + 5000 output for gemini flash:
-        # input: 10000 * 32 / 1M = 0.32
-        # output: 5000 * 158 / 1M = 0.79
-        # total: 1.11 → ceil = 2
+        # input: 10000 * 30 / 1M = 0.3
+        # output: 5000 * 250 / 1M = 1.25
+        # total: 1.55 → ceil = 2
         cost = LLMService._calculate_cost("google/gemini-2.5-flash", 10000, 5000)
         assert cost == 2
 

@@ -13,7 +13,7 @@ export interface MessageAttachment {
 
 export interface Message {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   createdAt: Date;
   attachments?: MessageAttachment[];
@@ -94,6 +94,16 @@ export function ChatMessage({
   message: Message;
   isStreaming?: boolean;
 }) {
+  if (message.role === "system") {
+    return (
+      <div className="flex items-center gap-3 py-1">
+        <div className="h-px flex-1 bg-border" />
+        <span className="shrink-0 text-xs text-muted-foreground">{message.content}</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+    );
+  }
+
   const isUser = message.role === "user";
   const hasAttachments = message.attachments && message.attachments.length > 0;
   const [copied, setCopied] = useState(false);

@@ -12,11 +12,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const MODEL_OUTPUT_PRICES: Record<string, string> = {
+  'anthropic/claude-sonnet-4-6': '$15/M',
+  'anthropic/claude-opus-4-6': '$25/M',
+  'google/gemini-3.1-pro-preview': '$12/M',
+  'openai/gpt-5.2': '$14/M',
+  'minimax/minimax-m2.5': '$1.20/M',
+  'moonshotai/kimi-k2.5': '$2.20/M',
+};
+
 const SWITCHABLE_MODELS = [
+  { id: 'minimax/minimax-m2.5', name: 'MiniMax M2.5' },
+  { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+  { id: 'google/gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
+  { id: 'openai/gpt-5.2', name: 'ChatGPT 5.2' },
   { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
   { id: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6' },
-  { id: 'google/gemini-3-pro-preview', name: 'Gemini 3 Pro' },
-  { id: 'openai/gpt-5.2', name: 'ChatGPT 5.2' },
 ];
 
 export function AdminSettings({ defaultModel }: { defaultModel: string }) {
@@ -76,7 +87,12 @@ export function AdminSettings({ defaultModel }: { defaultModel: string }) {
           <SelectContent>
             {SWITCHABLE_MODELS.map((m) => (
               <SelectItem key={m.id} value={m.id}>
-                {m.name}
+                <span className="flex items-center justify-between w-full gap-2">
+                  <span>{m.name}</span>
+                  {MODEL_OUTPUT_PRICES[m.id] && (
+                    <span className="text-[10px] text-muted-foreground">{MODEL_OUTPUT_PRICES[m.id]}</span>
+                  )}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

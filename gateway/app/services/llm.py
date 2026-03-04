@@ -13,14 +13,18 @@ from app.services.supabase_client import SupabaseService
 
 
 # Cost per 1M tokens in cents (OpenRouter pricing includes ~5.5% platform fee)
-MODEL_COSTS: dict[str, dict[str, int]] = {
-    # Prefixed format (OpenRouter path)
-    "anthropic/claude-sonnet-4-6": {"input": 317, "output": 1583},
-    "anthropic/claude-haiku-4-5":  {"input": 106, "output": 528},
-    "anthropic/claude-opus-4-6":   {"input": 1583, "output": 7913},
-    "openai/gpt-4o":               {"input": 264, "output": 1055},
-    "google/gemini-2.5-flash":     {"input": 32, "output": 158},
-    "google/gemini-2.5-pro":       {"input": 132, "output": 528},
+MODEL_COSTS: dict[str, dict[str, float]] = {
+    # Prefixed format (OpenRouter path) — prices in cents per 1M tokens
+    "anthropic/claude-sonnet-4-6": {"input": 300, "output": 1500},
+    "anthropic/claude-haiku-4-5":  {"input": 100, "output": 500},
+    "anthropic/claude-opus-4-6":   {"input": 500, "output": 2500},
+    "openai/gpt-4o":               {"input": 250, "output": 1000},
+    "google/gemini-2.5-flash":     {"input": 30, "output": 250},
+    "google/gemini-2.5-pro":       {"input": 125, "output": 1000},
+    "google/gemini-3.1-pro-preview": {"input": 200, "output": 1200},
+    "openai/gpt-5.2":              {"input": 175, "output": 1400},
+    "minimax/minimax-m2.5":        {"input": 29.5, "output": 120},
+    "moonshotai/kimi-k2.5":        {"input": 45, "output": 220},
 }
 
 CACHE_TTL_SECONDS = 30

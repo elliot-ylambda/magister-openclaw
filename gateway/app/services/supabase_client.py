@@ -320,6 +320,29 @@ class SupabaseService:
             .execute()
         )
 
+    # ── App Settings ──────────────────────────────────────────────
+
+    async def get_app_setting(self, key: str) -> str | None:
+        """Read a single value from app_settings."""
+        result = (
+            await self._client.table("app_settings")
+            .select("value")
+            .eq("key", key)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data["value"]
+
+    async def set_app_setting(self, key: str, value: str, description: str = "") -> None:
+        """Upsert a value into app_settings."""
+        await (
+            self._client.table("app_settings")
+            .upsert({"key": key, "value": value, "description": description})
+            .execute()
+        )
+
     # ── Usage Tracking ───────────────────────────────────────────
 
     async def insert_usage_event(self, event: UsageEvent) -> None:

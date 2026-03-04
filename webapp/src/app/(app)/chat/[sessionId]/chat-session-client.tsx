@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { streamChat, type Attachment } from "@/lib/gateway";
+import { streamChat, getAvailableModels, type Attachment } from "@/lib/gateway";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessage, type Message, type MessageAttachment } from "@/components/chat/chat-message";
+import { MODEL_DISPLAY_NAMES, MODEL_OUTPUT_PRICES } from "@/components/chat/model-picker";
 
 const SCROLL_THRESHOLD = 100;
 const WAKING_RETRY_DELAY = 5_000;
@@ -19,12 +20,32 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isWaking, setIsWaking] = useState(false);
+  const [currentModelLabel, setCurrentModelLabel] = useState<string | null>(null);
+  const currentModelLabelRef = useRef<string | null>(null);
   const isFirstMessageRef = useRef(true);
   const retryCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const supabase = createClient();
+
+  const makeSystemMessage = useCallback((content: string): Message => ({
+    id: `system-${crypto.randomUUID()}`,
+    role: "system",
+    content,
+    createdAt: new Date(),
+  }), []);
+
+  const handleModelChange = useCallback(
+    (modelId: string, displayName: string) => {
+      const price = MODEL_OUTPUT_PRICES[modelId];
+      const text = price
+        ? `Switched to ${displayName} — ${price} output tokens`
+        : `Switched to ${displayName}`;
+      setMessages((prev) => [...prev, makeSystemMessage(text)]);
+    },
+    [makeSystemMessage]
+  );
 
   const isNearBottom = useCallback(() => {
     const el = scrollAreaRef.current;
@@ -46,6 +67,8 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     // Clear stale messages from the previous session immediately
     setMessages([]);
+    setCurrentModelLabel(null);
+    currentModelLabelRef.current = null;
     isFirstMessageRef.current = true;
 
     async function loadHistory() {
@@ -59,6 +82,27 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         console.error("Failed to load chat history:", queryError);
         setError("Failed to load conversation history.");
         return;
+      }
+
+      // Fetch current model for the indicator
+      const { data: { session } } = await supabase.auth.getSession();
+      const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+      let modelSystemMsg: Message | null = null;
+      if (session && gatewayUrl) {
+        const result = await getAvailableModels(gatewayUrl, session.access_token);
+        if (result) {
+          const name = MODEL_DISPLAY_NAMES[result.current] ?? result.current;
+          const price = MODEL_OUTPUT_PRICES[result.current];
+          const text = price ? `${name} — ${price} output tokens` : name;
+          setCurrentModelLabel(text);
+          currentModelLabelRef.current = text;
+          modelSystemMsg = {
+            id: `system-${crypto.randomUUID()}`,
+            role: "system",
+            content: text,
+            createdAt: new Date(0), // earliest possible so it sorts first
+          };
+        }
       }
 
       if (data?.length) {
@@ -92,7 +136,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
           })
         );
 
-        setMessages(messagesWithUrls);
+        setMessages(modelSystemMsg ? [modelSystemMsg, ...messagesWithUrls] : messagesWithUrls);
         isFirstMessageRef.current = false;
       } else {
         // New empty session — refresh the layout so the sidebar includes it
@@ -133,7 +177,15 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         createdAt: new Date(),
       };
 
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setMessages((prev) => {
+        const hasRealMessages = prev.some((m) => m.role !== "system");
+        // On first message in a new conversation, prepend the model indicator
+        if (!hasRealMessages && currentModelLabelRef.current) {
+          const modelMsg = makeSystemMessage(currentModelLabelRef.current);
+          return [modelMsg, userMessage, assistantMessage];
+        }
+        return [...prev, userMessage, assistantMessage];
+      });
       setIsStreaming(true);
 
       // Use getUser() to ensure token freshness, then read session for JWT
@@ -364,6 +416,11 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
               <p className="text-sm text-muted-foreground max-w-sm">
                 Send a message to get started.
               </p>
+              {currentModelLabel && (
+                <p className="mt-4 text-xs text-muted-foreground">
+                  {currentModelLabel}
+                </p>
+              )}
             </div>
           )}
 
@@ -406,7 +463,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <ChatInput onSend={handleSend} isStreaming={isStreaming || isWaking} />
+      <ChatInput onSend={handleSend} isStreaming={isStreaming || isWaking} onModelChange={handleModelChange} />
     </div>
   );
 }

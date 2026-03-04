@@ -1,7 +1,7 @@
 .PHONY: up down logs seed reset \
 	image-build image-push openclaw-pin \
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build create-admin-coupon \
-	supabase-start supabase-migrate supabase-reset connect-local-db \
+	supabase-start supabase-migrate supabase-reset supabase-push-prod connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
 	health status chat provision slack-challenge \
 	deploy-gateway deploy-image deploy-machines deploy-all \
@@ -261,6 +261,9 @@ supabase-migrate:
 
 supabase-reset:
 	$(MAKE) -C webapp supabase-reset-local
+
+supabase-push-prod:
+	$(MAKE) -C webapp supabase-push-prod
 
 connect-local-db:
 	$(MAKE) -C webapp connect-local-db

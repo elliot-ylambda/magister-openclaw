@@ -39,18 +39,23 @@ def create_llm_proxy_router(
         user_id = machine.user_id
         plan = machine.plan
 
+        # Override model with user's preferred_model if set
+        effective_model = machine.preferred_model or req.model
+        if effective_model != req.model:
+            logger.info(f"[llm_proxy] Model override for {user_id}: {req.model} -> {effective_model}")
+
         # Fetch BYOK keys and determine if this request uses one
         user_keys = await supabase.get_user_api_keys(user_id)
         byok_keys = {k.provider: k.api_key for k in user_keys}
-        _, byok_key = resolve_byok_key(req.model, byok_keys)
+        _, byok_key = resolve_byok_key(effective_model, byok_keys)
         is_byok = byok_key is not None
 
         # Skip model validation and budget check for BYOK requests
         if not is_byok:
-            if not llm.validate_model(req.model, plan):
+            if not llm.validate_model(effective_model, plan):
                 raise HTTPException(
                     status_code=403,
-                    detail=f"Model {req.model} not allowed on plan {plan}",
+                    detail=f"Model {effective_model} not allowed on plan {plan}",
                 )
             if not await llm.check_budget(user_id, plan):
                 raise HTTPException(status_code=402, detail="Monthly budget exceeded")
@@ -64,12 +69,12 @@ def create_llm_proxy_router(
 
         if req.stream:
             return EventSourceResponse(
-                _stream_response(llm, req, user_id, byok_keys, kwargs)
+                _stream_response(llm, effective_model, req, user_id, byok_keys, kwargs)
             )
 
         # Non-streaming
         response = await llm.completion(
-            model=req.model,
+            model=effective_model,
             messages=req.messages,
             user_id=user_id,
             stream=False,
@@ -80,6 +85,7 @@ def create_llm_proxy_router(
 
     async def _stream_response(
         llm: LLMService,
+        model: str,
         req: LLMCompletionRequest,
         user_id: str,
         byok_keys: dict[str, str],
@@ -88,7 +94,7 @@ def create_llm_proxy_router(
         """Yield SSE data lines from a streaming LLM response."""
         try:
             stream = await llm.completion(
-                model=req.model,
+                model=model,
                 messages=req.messages,
                 user_id=user_id,
                 stream=True,

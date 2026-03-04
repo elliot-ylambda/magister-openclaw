@@ -135,3 +135,22 @@ def test_llm_proxy_non_streaming_success(mock_llm, mock_supabase):
     assert resp.status_code == 200
     assert "choices" in resp.json()
     mock_llm.completion.assert_called_once()
+
+
+def test_llm_proxy_preferred_model_override(mock_llm, mock_supabase):
+    """preferred_model from DB overrides the model in the request."""
+    mock_supabase.get_user_machine_by_token_hash.return_value = _make_machine(
+        preferred_model="google/gemini-3.1-pro-preview"
+    )
+    mock_supabase.get_user_api_keys = AsyncMock(return_value=[])
+    client = _make_app(mock_llm, mock_supabase)
+    resp = client.post(
+        "/llm/v1/chat/completions",
+        json=_llm_request(model="anthropic/claude-sonnet-4-6"),
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert resp.status_code == 200
+    call_kwargs = mock_llm.completion.call_args
+    assert call_kwargs.kwargs["model"] == "google/gemini-3.1-pro-preview"
+
+

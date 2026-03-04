@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,8 +17,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { createClient } from '@/lib/supabase/client';
-import { restartAgent } from '@/lib/gateway';
+import { restartAgent, getAvailableModels, setModel, type ModelInfo } from '@/lib/gateway';
 import { ManageBillingButton } from '../dashboard/manage-billing-button';
 import { ByokKeys } from '@/components/settings/byok-keys';
 import { SlackConnection } from '@/components/settings/slack-connection';
@@ -33,6 +40,16 @@ type SettingsClientProps = {
   isAdmin?: boolean;
   machineStatus: string | null;
   machineRegion: string | null;
+  machineModel: string | null;
+};
+
+const MODEL_OUTPUT_PRICES: Record<string, string> = {
+  "anthropic/claude-sonnet-4-6": "$15/M",
+  "anthropic/claude-opus-4-6": "$25/M",
+  "google/gemini-3.1-pro-preview": "$12/M",
+  "openai/gpt-5.2": "$14/M",
+  "minimax/minimax-m2.5": "$1.20/M",
+  "moonshotai/kimi-k2.5": "$2.20/M",
 };
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -64,6 +81,7 @@ export function SettingsClient({
   isAdmin,
   machineStatus,
   machineRegion,
+  machineModel,
 }: SettingsClientProps) {
   const router = useRouter();
 
@@ -87,6 +105,56 @@ export function SettingsClient({
   const [agentError, setAgentError] = useState<string | null>(null);
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetOpen, setResetOpen] = useState(false);
+
+  // Model selection
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [currentModel, setCurrentModel] = useState(machineModel ?? '');
+  const [pendingModel, setPendingModel] = useState<string | null>(null);
+  const [modelConfirmOpen, setModelConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!machineStatus) return;
+    (async () => {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+      if (!gatewayUrl) return;
+      const result = await getAvailableModels(gatewayUrl, session.access_token);
+      if (result) {
+        setModels(result.models);
+        setCurrentModel(result.current);
+      }
+    })();
+  }, [machineStatus]);
+
+  async function handleModelChange(newModel: string) {
+    if (newModel === currentModel) return;
+    setPendingModel(newModel);
+    setModelConfirmOpen(true);
+  }
+
+  async function confirmModelChange() {
+    if (!pendingModel) return;
+    setModelConfirmOpen(false);
+    setAgentLoading('model');
+    setAgentError(null);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+      if (!gatewayUrl) return;
+      await setModel(gatewayUrl, session.access_token, pendingModel);
+      setCurrentModel(pendingModel);
+      router.refresh();
+    } catch (err) {
+      setAgentError(err instanceof Error ? err.message : 'Failed to switch model');
+    } finally {
+      setAgentLoading(null);
+      setPendingModel(null);
+    }
+  }
 
   async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -325,8 +393,54 @@ export function SettingsClient({
             )}
           </div>
 
+          {models.length > 0 && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Model</span>
+              <Select
+                value={currentModel}
+                onValueChange={handleModelChange}
+                disabled={agentLoading !== null || machineStatus === 'provisioning' || machineStatus === 'destroying'}
+              >
+                <SelectTrigger className="w-48 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m.id} value={m.id} disabled={!m.allowed}>
+                      <span className="flex items-center justify-between w-full gap-2">
+                        <span>{m.name}{!m.allowed ? ' (CMO+ only)' : ''}</span>
+                        {MODEL_OUTPUT_PRICES[m.id] && (
+                          <span className="text-[10px] text-muted-foreground">{MODEL_OUTPUT_PRICES[m.id]}</span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Model change confirmation */}
+          <Dialog open={modelConfirmOpen} onOpenChange={setModelConfirmOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Change Model</DialogTitle>
+                <DialogDescription>
+                  Changing your model will restart your agent. Any in-progress work will be interrupted. Continue?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={confirmModelChange}>
+                  Confirm
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Button
-            variant="outline"
             size="sm"
             disabled={agentLoading !== null}
             onClick={handleRestart}
@@ -339,14 +453,21 @@ export function SettingsClient({
             Restart Agent
           </Button>
 
-          {/* Complete Reset */}
-          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 space-y-3">
-            <div>
-              <p className="text-sm font-medium">Complete Reset</p>
-              <p className="text-xs text-muted-foreground">
-                This will delete all agent data and start fresh. Chat history is preserved.
-              </p>
-            </div>
+        </section>
+      )}
+
+      {/* Danger Zone */}
+      <Separator />
+      <section className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 space-y-4">
+        <h2 className="text-lg font-medium text-red-500">Danger Zone</h2>
+
+        {/* Reset Agent */}
+        {machineStatus && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Reset Agent</p>
+            <p className="text-xs text-muted-foreground">
+              This will delete all agent data and start fresh. Chat history is preserved.
+            </p>
             <Dialog open={resetOpen} onOpenChange={(open) => { setResetOpen(open); if (!open) setResetConfirm(''); }}>
               <DialogTrigger asChild>
                 <Button variant="destructive" size="sm" disabled={agentLoading !== null}>
@@ -387,38 +508,39 @@ export function SettingsClient({
               </DialogContent>
             </Dialog>
           </div>
-        </section>
-      )}
+        )}
 
-      {/* Danger Zone */}
-      <Separator />
-      <section className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 space-y-4">
-        <h2 className="text-lg font-medium text-red-500">Danger Zone</h2>
-        <p className="text-sm text-muted-foreground">
-          Once you delete your account, there is no going back. This action cannot be undone.
-        </p>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="destructive" size="sm">
-              Delete account
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete account</DialogTitle>
-              <DialogDescription>
-                To delete your account and all associated data, please email{' '}
-                <a
-                  href="mailto:support@magistermarketing.com"
-                  className="text-primary underline underline-offset-4"
-                >
-                  support@magistermarketing.com
-                </a>{' '}
-                from your registered email address. We&apos;ll process your request within 48 hours.
-              </DialogDescription>
-            </DialogHeader>
-          </DialogContent>
-        </Dialog>
+        {machineStatus && <Separator className="border-red-500/20" />}
+
+        {/* Delete Account */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Delete Account</p>
+          <p className="text-xs text-muted-foreground">
+            Once you delete your account, there is no going back. This action cannot be undone.
+          </p>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="sm">
+                Delete account
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete account</DialogTitle>
+                <DialogDescription>
+                  To delete your account and all associated data, please email{' '}
+                  <a
+                    href="mailto:support@magistermarketing.com"
+                    className="text-primary underline underline-offset-4"
+                  >
+                    support@magistermarketing.com
+                  </a>{' '}
+                  from your registered email address. We&apos;ll process your request within 48 hours.
+                </DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+        </div>
       </section>
     </div>
   );

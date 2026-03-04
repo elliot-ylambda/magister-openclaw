@@ -15,7 +15,7 @@ export default async function AdminSettingsPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <AdminSettings defaultModel={data?.value ?? 'anthropic/claude-sonnet-4-6'} />
+      <AdminSettings defaultModel={data?.value ?? 'anthropic/claude-opus-4-6'} />
     </div>
   );
 }

@@ -18,6 +18,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  "anthropic/claude-sonnet-4-6": "Claude Sonnet 4.6",
+  "anthropic/claude-opus-4-6": "Claude Opus 4.6",
+  "google/gemini-3.1-pro-preview": "Gemini 3.1 Pro",
+  "openai/gpt-5.2": "ChatGPT 5.2",
+  "minimax/minimax-m2.5": "MiniMax M2.5",
+  "moonshotai/kimi-k2.5": "Kimi K2.5",
+};
+
+const MODEL_OUTPUT_PRICES: Record<string, string> = {
+  "anthropic/claude-sonnet-4-6": "$15/M",
+  "anthropic/claude-opus-4-6": "$25/M",
+  "google/gemini-3.1-pro-preview": "$12/M",
+  "openai/gpt-5.2": "$14/M",
+  "minimax/minimax-m2.5": "$1.20/M",
+  "moonshotai/kimi-k2.5": "$2.20/M",
+};
+
 const STATUS_CONFIG: Record<
   AgentStatus["status"],
   { color: string; label: string; dot: boolean }
@@ -145,6 +163,19 @@ export function AgentStatusBadge() {
             <span className="text-muted-foreground">Plan</span>
             <span className="uppercase">{status.plan}</span>
           </div>
+          {status.preferred_model && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Model</span>
+              <span>
+                {MODEL_DISPLAY_NAMES[status.preferred_model] ?? status.preferred_model}
+                {MODEL_OUTPUT_PRICES[status.preferred_model] && (
+                  <span className="ml-1.5 text-[10px] text-muted-foreground">
+                    {MODEL_OUTPUT_PRICES[status.preferred_model]}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         {(canStop || canStart || canRestart) && (
