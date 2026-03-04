@@ -6,7 +6,8 @@
 	health status chat provision slack-challenge \
 	deploy-gateway deploy-image deploy-machines deploy-all \
 	start-gateway start-machine start-machines \
-	stop-gateway stop-machine stop-machines
+	stop-gateway stop-machine stop-machines \
+	delete-user
 
 # ─── Docker Compose ───────────────────────────────────────────
 
@@ -342,3 +343,64 @@ slack-challenge:
 		-H "x-slack-request-timestamp: $$TS" \
 		-H "x-slack-signature: $$SIG" \
 		-d "$$BODY" | python3 -m json.tool
+
+# ─── Admin ───────────────────────────────────────────────────
+
+# Fully delete a user: destroy Fly machine, cancel Stripe, remove from Supabase.
+# Usage: make delete-user email=user@example.com
+email ?=
+delete-user:
+	@if [ -z "$(email)" ]; then echo "Usage: make delete-user email=user@example.com"; exit 1; fi; \
+	export $$(grep -v '^#' webapp/.env.local | grep -v '^$$' | xargs); \
+	echo "Looking up user: $(email)..."; \
+	USER_ID=$$(curl -s "$${SUPABASE_URL:-$$NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -c "import json,sys; users=json.load(sys.stdin).get('users',[]); matches=[u for u in users if u.get('email')=='$(email)']; print(matches[0]['id'] if matches else '')" 2>/dev/null); \
+	if [ -z "$$USER_ID" ]; then echo "Error: No user found with email $(email)"; exit 1; fi; \
+	echo "Found user: $$USER_ID"; \
+	echo ""; \
+	echo "This will PERMANENTLY delete this user:"; \
+	echo "  - Destroy Fly.io machine"; \
+	echo "  - Cancel Stripe subscription"; \
+	echo "  - Delete all usage events"; \
+	echo "  - Delete auth user (cascades to profiles, subscriptions, etc.)"; \
+	echo ""; \
+	read -p "Are you sure? [y/N] " CONFIRM; \
+	if [ "$$CONFIRM" != "y" ] && [ "$$CONFIRM" != "Y" ]; then echo "Aborted."; exit 0; fi; \
+	echo ""; \
+	SB_URL=$${SUPABASE_URL:-$$NEXT_PUBLIC_SUPABASE_URL}; \
+	echo "[1/4] Destroying Fly machine..."; \
+	GW_URL=$${GATEWAY_URL:-$$NEXT_PUBLIC_GATEWAY_URL}; \
+	DESTROY_RES=$$(curl -s -w "\n%{http_code}" -X POST "$$GW_URL/api/destroy" \
+		-H "Authorization: Bearer $$GATEWAY_API_KEY" \
+		-H "Content-Type: application/json" \
+		-d "{\"user_id\": \"$$USER_ID\"}"); \
+	HTTP_CODE=$$(echo "$$DESTROY_RES" | tail -1); \
+	if [ "$$HTTP_CODE" = "200" ]; then echo "  Machine destroyed."; \
+	elif [ "$$HTTP_CODE" = "404" ]; then echo "  No machine found (skipping)."; \
+	else echo "  Warning: destroy returned HTTP $$HTTP_CODE (continuing)."; fi; \
+	echo "[2/4] Cancelling Stripe subscription..."; \
+	SUB_ID=$$(curl -s "$$SB_URL/rest/v1/subscriptions?user_id=eq.$$USER_ID&status=eq.active&select=stripe_subscription_id" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -c "import json,sys; rows=json.load(sys.stdin); print(rows[0]['stripe_subscription_id'] if rows else '')" 2>/dev/null); \
+	if [ -n "$$SUB_ID" ]; then \
+		curl -s -X DELETE "https://api.stripe.com/v1/subscriptions/$$SUB_ID" \
+			-u "$$STRIPE_SECRET_KEY:" > /dev/null; \
+		echo "  Cancelled subscription $$SUB_ID."; \
+	else echo "  No active subscription (skipping)."; fi; \
+	echo "[3/4] Deleting usage events..."; \
+	curl -s -X DELETE "$$SB_URL/rest/v1/usage_events?user_id=eq.$$USER_ID" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" > /dev/null; \
+	echo "  Done."; \
+	echo "[4/4] Deleting auth user..."; \
+	DEL_RES=$$(curl -s -w "\n%{http_code}" -X DELETE "$$SB_URL/auth/v1/admin/users/$$USER_ID" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY"); \
+	DEL_CODE=$$(echo "$$DEL_RES" | tail -1); \
+	if [ "$$DEL_CODE" = "200" ]; then echo "  User deleted."; \
+	else echo "  Error: delete returned HTTP $$DEL_CODE"; echo "$$DEL_RES" | head -1; exit 1; fi; \
+	echo ""; \
+	echo "User $(email) fully deleted."

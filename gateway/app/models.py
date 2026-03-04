@@ -87,6 +87,17 @@ class SlackConnection(BaseModel):
     updated_at: datetime | None = None
 
 
+class UserApiKey(BaseModel):
+    id: str
+    user_id: str
+    provider: str  # openrouter, anthropic, openai, gemini
+    api_key: str
+    key_suffix: str = ""
+    status: str = "active"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class UsageEvent(BaseModel):
     user_id: str
     event_type: str  # 'llm_request', 'machine_minute', 'tool_execution'

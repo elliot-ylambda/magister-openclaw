@@ -20,6 +20,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { restartAgent } from '@/lib/gateway';
 import { ManageBillingButton } from '../dashboard/manage-billing-button';
+import { ByokKeys } from '@/components/settings/byok-keys';
 import { SlackConnection } from '@/components/settings/slack-connection';
 import { updateProfile, type ProfileUpdateState } from './actions';
 
@@ -288,6 +289,9 @@ export function SettingsClient({
           <p className="text-sm text-muted-foreground">No active subscription</p>
         )}
       </section>
+
+      {/* BYOK API Keys */}
+      <ByokKeys />
 
       {/* Slack Integration */}
       <SlackConnection />
