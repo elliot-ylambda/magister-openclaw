@@ -321,3 +321,87 @@ export function deleteFile(gatewayUrl: string, jwt: string, filePath: string) {
     `/files/delete?path=${encodeURIComponent(filePath)}`
   );
 }
+
+// ── Skills management ─────────────────────────────────────
+
+export type SkillEntry = {
+  name: string;
+  description: string;
+  enabled: boolean;
+  source: string;
+  emoji: string;
+  homepage: string;
+};
+
+export type SkillListResponse = { skills: SkillEntry[] };
+
+export type CatalogSkill = {
+  status: string;
+  query: string;
+  stdout: string;
+};
+
+async function skillRequest<T>(
+  gatewayUrl: string,
+  jwt: string,
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const opts: RequestInit = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${gatewayUrl}/api${path}`, opts);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `Skill operation failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export function listSkills(gatewayUrl: string, jwt: string) {
+  return skillRequest<SkillListResponse>(gatewayUrl, jwt, "GET", "/skills");
+}
+
+export function installSkill(gatewayUrl: string, jwt: string, slug: string) {
+  return skillRequest<{ status: string; slug: string; stdout: string }>(
+    gatewayUrl, jwt, "POST", "/skills/install",
+    { slug }
+  );
+}
+
+export function removeSkill(gatewayUrl: string, jwt: string, skillName: string) {
+  return skillRequest<{ status: string; skill: string }>(
+    gatewayUrl, jwt, "DELETE", `/skills/${encodeURIComponent(skillName)}`
+  );
+}
+
+export function toggleSkill(
+  gatewayUrl: string, jwt: string, skillName: string, enabled: boolean
+) {
+  return skillRequest<{ status: string; skill: string; enabled: boolean }>(
+    gatewayUrl, jwt, "PATCH", `/skills/${encodeURIComponent(skillName)}`,
+    { enabled }
+  );
+}
+
+export function createCustomSkill(
+  gatewayUrl: string, jwt: string, name: string, content: string
+) {
+  return skillRequest<{ status: string; skill: string }>(
+    gatewayUrl, jwt, "POST", "/skills/custom",
+    { name, content }
+  );
+}
+
+export function searchCatalog(gatewayUrl: string, jwt: string, query: string = "") {
+  return skillRequest<CatalogSkill>(
+    gatewayUrl, jwt, "GET",
+    `/skills/catalog?query=${encodeURIComponent(query)}`
+  );
+}
