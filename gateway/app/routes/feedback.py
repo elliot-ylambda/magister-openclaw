@@ -13,7 +13,7 @@ from app.services.supabase_client import SupabaseService
 
 logger = logging.getLogger("gateway.feedback")
 
-VALID_CATEGORIES = {"bug", "wrong_answer", "slow", "other"}
+VALID_CATEGORIES = {"bug", "wrong_answer", "slow", "other", "contact_support"}
 
 
 def create_feedback_router(
@@ -60,37 +60,48 @@ def create_feedback_router(
 
         # Build Slack Block Kit message
         category_label = body.category.replace("_", " ").title()
+        is_support = body.category == "contact_support"
+        header_text = "Support Request" if is_support else f"Feedback: {category_label}"
+
+        fields = [
+            {"type": "mrkdwn", "text": f"*User:*\n{email}"},
+        ]
+        if not is_support:
+            fields.append({"type": "mrkdwn", "text": f"*Category:*\n{category_label}"})
+        if body.session_id:
+            fields.append({"type": "mrkdwn", "text": f"*Session:*\n`{body.session_id[:8]}...`"})
+        if not is_support:
+            fields.append({"type": "mrkdwn", "text": f"*Model:*\n{model}"})
+
         blocks = [
             {
                 "type": "header",
-                "text": {"type": "plain_text", "text": f"Feedback: {category_label}"},
+                "text": {"type": "plain_text", "text": header_text},
             },
             {
                 "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*User:*\n{email}"},
-                    {"type": "mrkdwn", "text": f"*Category:*\n{category_label}"},
-                    {"type": "mrkdwn", "text": f"*Session:*\n`{body.session_id[:8]}...`"},
-                    {"type": "mrkdwn", "text": f"*Model:*\n{model}"},
-                ],
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*SSH:*\n`{ssh_cmd}`"},
+                "fields": fields,
             },
         ]
-
-        if body.description:
+        if not is_support:
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Description:*\n{body.description}"},
+                "text": {"type": "mrkdwn", "text": f"*SSH:*\n`{ssh_cmd}`"},
             })
 
-        blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Chat History (last {len(trimmed)}):*\n{history_text}"},
-        })
+        if body.description:
+            label = "Message" if is_support else "Description"
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*{label}:*\n{body.description}"},
+            })
+
+        if not is_support:
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Chat History (last {len(trimmed)}):*\n{history_text}"},
+            })
 
         # Post to Slack
         async with httpx.AsyncClient() as client:

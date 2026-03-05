@@ -278,6 +278,29 @@ export async function submitFeedback(
   return res.json();
 }
 
+export async function submitContactSupport(
+  gatewayUrl: string,
+  jwt: string,
+  message: string,
+): Promise<{ status: string }> {
+  const res = await fetch(`${gatewayUrl}/api/feedback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify({
+      category: "contact_support",
+      description: message,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to submit message");
+  }
+  return res.json();
+}
+
 // ── File operations ────────────────────────────────────────
 
 export type FileEntry = {
