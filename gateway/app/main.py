@@ -10,9 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.jobs.reconciliation import start_reconciliation
-from app.middleware.auth import create_api_key_dependency, create_jwt_dependency
+from app.middleware.auth import create_api_key_dependency, create_jwt_dependency, verify_machine_token
 from app.middleware.rate_limit import RateLimiter
 from app.routes.chat import create_chat_router
+from app.routes.email import create_email_router
+from app.routes.email_webhook import create_email_webhook_router
 from app.routes.destroy import create_destroy_router
 from app.routes.health import router as health_router
 from app.routes.llm_proxy import create_llm_proxy_router
@@ -24,6 +26,7 @@ from app.routes.model_selection import create_model_selection_router
 from app.routes.slack_oauth import create_slack_oauth_router
 from app.routes.slack_webhook import create_slack_webhook_router
 from app.routes.status import create_status_router
+from app.services.email import EmailService
 from app.services.fly import FlyClient
 from app.services.llm import LLMService
 from app.services.supabase_client import SupabaseService
@@ -48,6 +51,7 @@ async def lifespan(app: FastAPI):
         plan_budgets=settings.plan_budgets,
         plan_allowed_models=settings.plan_allowed_models,
     )
+    email_service = EmailService(settings)
     app.state.supabase = supabase
     app.state.fly = fly
     app.state.llm = llm
@@ -126,6 +130,14 @@ async def lifespan(app: FastAPI):
             supabase_url=settings.supabase_url,
         ),
         prefix="/api",
+    )
+
+    app.include_router(
+        create_email_router(supabase, email_service, verify_jwt, verify_machine_token),
+        prefix="/api",
+    )
+    app.include_router(
+        create_email_webhook_router(supabase, email_service, settings),
     )
 
     # ── Background jobs ───────────────────────────────────────
