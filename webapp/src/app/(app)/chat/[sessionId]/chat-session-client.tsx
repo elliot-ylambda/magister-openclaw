@@ -6,7 +6,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { streamChat, getAvailableModels, type Attachment } from "@/lib/gateway";
 import { ChatInput } from "@/components/chat/chat-input";
-import { ChatMessage, type Message, type MessageAttachment } from "@/components/chat/chat-message";
+import { ChatMessage, type Message, type MessageAttachment, type ToolUse } from "@/components/chat/chat-message";
 import { MODEL_DISPLAY_NAMES, MODEL_OUTPUT_PRICES } from "@/components/chat/model-picker";
 
 const SCROLL_THRESHOLD = 100;
@@ -337,6 +337,45 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
           switch (event.type) {
             case "session":
               break;
+            case "thinking":
+              // Gateway sends the full accumulated thinking text
+              // (not a delta), so we replace rather than append.
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessage.id
+                    ? { ...m, thinkingContent: event.content }
+                    : m
+                )
+              );
+              break;
+            case "tool_use": {
+              const toolEvent = event.data;
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (m.id !== assistantMessage.id) return m;
+                  const existing = m.toolUses ?? [];
+                  if (toolEvent.phase === "start") {
+                    const entry: ToolUse = {
+                      id: toolEvent.toolCallId,
+                      name: toolEvent.name,
+                      phase: "start",
+                      args: toolEvent.args,
+                    };
+                    return { ...m, toolUses: [...existing, entry] };
+                  }
+                  // result phase — update existing entry
+                  return {
+                    ...m,
+                    toolUses: existing.map((t) =>
+                      t.id === toolEvent.toolCallId
+                        ? { ...t, phase: "result" as const, isError: toolEvent.isError }
+                        : t
+                    ),
+                  };
+                })
+              );
+              break;
+            }
             case "chunk":
               gotContent = true;
               accumulatedContent += event.content;

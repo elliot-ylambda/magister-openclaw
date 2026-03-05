@@ -103,6 +103,18 @@ class UserApiKey(BaseModel):
     updated_at: datetime | None = None
 
 
+class FeedbackMessage(BaseModel):
+    role: str
+    content: str
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    category: str  # bug, wrong_answer, slow, other
+    description: str = ""
+    messages: list[FeedbackMessage] = []
+
+
 class UsageEvent(BaseModel):
     user_id: str
     event_type: str  # 'llm_request', 'machine_minute', 'tool_execution'

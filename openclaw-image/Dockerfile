@@ -14,7 +14,7 @@ WORKDIR /app
 
 # --- OpenClaw ---
 # Clone and build OpenClaw from our fork (pinned to a specific commit)
-ARG OPENCLAW_VERSION=19023eed8607746e2540ed1657f73358ec3c3a43
+ARG OPENCLAW_VERSION=b6e0e32114a6c3a216d1a02d19a5e561dc0842e8
 RUN git clone https://github.com/elliot-ylambda/magister-openclaw.git /app/openclaw \
     && cd /app/openclaw \
     && git checkout ${OPENCLAW_VERSION} \
