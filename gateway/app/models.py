@@ -33,6 +33,7 @@ class UserMachine(BaseModel):
     pending_image: str | None = None
     current_image: str | None = None
     preferred_model: str = "anthropic/claude-opus-4-6"
+    email_address: str | None = None
     provisioning_step: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None

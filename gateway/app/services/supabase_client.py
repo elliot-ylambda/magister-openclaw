@@ -343,6 +343,94 @@ class SupabaseService:
             .execute()
         )
 
+    # ── Agent Emails ─────────────────────────────────────────────
+
+    async def get_machine_by_email(self, email_address: str) -> dict | None:
+        """Look up a user machine by its assigned email address."""
+        result = (
+            await self._client.table("user_machines")
+            .select("*")
+            .eq("email_address", email_address)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data
+
+    async def create_agent_email(self, data: dict) -> dict:
+        """Insert a new email record."""
+        result = (
+            await self._client.table("agent_emails")
+            .insert(data)
+            .execute()
+        )
+        return result.data[0]
+
+    async def update_agent_email(self, email_id: str, **updates) -> dict:
+        """Update an email record."""
+        result = (
+            await self._client.table("agent_emails")
+            .update(updates)
+            .eq("id", email_id)
+            .execute()
+        )
+        return result.data[0]
+
+    async def get_agent_email(self, email_id: str) -> dict | None:
+        """Get a single email by ID."""
+        result = (
+            await self._client.table("agent_emails")
+            .select("*")
+            .eq("id", email_id)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data
+
+    async def get_agent_email_by_message_id(self, message_id: str) -> dict | None:
+        """Look up an email by its Message-ID header (for threading)."""
+        result = (
+            await self._client.table("agent_emails")
+            .select("*")
+            .eq("message_id", message_id)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data
+
+    async def get_machine_by_token_hash(self, token_hash: str) -> dict | None:
+        """Look up machine by gateway token hash."""
+        result = (
+            await self._client.table("user_machines")
+            .select("*")
+            .eq("gateway_token_hash", token_hash)
+            .neq("status", "destroyed")
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data
+
+    async def get_agent_emails(self, user_id: str, direction: str | None = None, status: str | None = None, limit: int = 50) -> list[dict]:
+        """List emails for a user, optionally filtered."""
+        query = self._client.table("agent_emails").select("*").eq("user_id", user_id)
+        if direction:
+            query = query.eq("direction", direction)
+        if status:
+            query = query.eq("status", status)
+        result = await query.order("created_at", desc=True).limit(limit).execute()
+        return result.data or []
+
+    async def get_pending_outbound_emails(self, user_id: str) -> list[dict]:
+        """Get emails awaiting user approval."""
+        return await self.get_agent_emails(user_id, direction="outbound", status="pending")
+
     # ── Usage Tracking ───────────────────────────────────────────
 
     async def insert_usage_event(self, event: UsageEvent) -> None:
