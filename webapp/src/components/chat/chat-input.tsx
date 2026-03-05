@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { ArrowUp, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
+import { ArrowUp, Plus, X, FileText, Image as ImageIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { ModelPicker } from "@/components/chat/model-picker";
 import type { Attachment } from "@/lib/gateway";
 
 const MAX_ROWS = 5;
@@ -55,9 +56,11 @@ function formatFileSize(bytes: number): string {
 export function ChatInput({
   onSend,
   isStreaming,
+  onModelChange,
 }: {
   onSend: (message: string, attachments?: Attachment[]) => void;
   isStreaming: boolean;
+  onModelChange?: (modelId: string, displayName: string) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -191,12 +194,10 @@ export function ChatInput({
   );
 
   return (
-    <div className="sticky bottom-0 border-t bg-background p-4">
+    <div className="sticky bottom-0 bg-background px-4 pb-4 pt-2">
       <div
-        className={`relative mx-auto max-w-3xl rounded-xl border transition-colors ${
-          isDragging
-            ? "border-primary bg-primary/5"
-            : "border-transparent"
+        className={`relative mx-auto max-w-3xl rounded-2xl border bg-muted/50 transition-colors ${
+          isDragging ? "border-primary bg-primary/5" : "border-border"
         }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -204,7 +205,7 @@ export function ChatInput({
       >
         {/* File error */}
         {fileError && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-red-300">
+          <div className="mx-3 mt-3 flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-red-300">
             <span className="flex-1">{fileError}</span>
             <button onClick={() => setFileError(null)} className="text-red-400 hover:text-red-200">
               <X className="h-3 w-3" />
@@ -214,11 +215,11 @@ export function ChatInput({
 
         {/* File preview strip */}
         {pendingFiles.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2 px-1">
+          <div className="mx-3 mt-3 flex flex-wrap gap-2">
             {pendingFiles.map((file) => (
               <div
                 key={file.id}
-                className="group relative flex items-center gap-2 rounded-lg border bg-muted/50 px-2.5 py-1.5"
+                className="group relative flex items-center gap-2 rounded-lg border bg-background/50 px-2.5 py-1.5"
               >
                 {file.previewUrl ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
@@ -249,41 +250,47 @@ export function ChatInput({
           </div>
         )}
 
-        {/* Input area */}
-        <div className="relative">
-          <Textarea
-            ref={textareaRef}
-            autoFocus
-            onInput={adjustHeight}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            disabled={isStreaming}
-            placeholder={
-              isStreaming ? "Agent is working..." : "Send a message..."
-            }
-            className="min-h-[48px] resize-none pl-11 pr-12 rounded-xl"
-            rows={1}
-          />
-          {/* Paperclip button */}
+        {/* Textarea */}
+        <Textarea
+          ref={textareaRef}
+          autoFocus
+          onInput={adjustHeight}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          disabled={isStreaming}
+          placeholder={
+            isStreaming ? "Agent is working..." : "How can I help you today?"
+          }
+          className="min-h-[48px] resize-none border-0 bg-transparent px-4 pt-3 pb-0 shadow-none focus-visible:ring-0"
+          rows={1}
+        />
+
+        {/* Bottom toolbar */}
+        <div className="flex items-center justify-between px-3 py-2">
+          {/* Left: attach button */}
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming}
-            className="absolute left-2 bottom-2 rounded-lg text-muted-foreground hover:text-foreground"
+            className="rounded-lg text-muted-foreground hover:text-foreground"
           >
-            <Paperclip className="h-4 w-4" />
+            <Plus className="h-4 w-4" />
           </Button>
-          {/* Send button */}
-          <Button
-            size="icon-sm"
-            onClick={handleSend}
-            disabled={isStreaming}
-            className="absolute right-2 bottom-2 rounded-lg"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </Button>
+
+          {/* Right: model picker + send */}
+          <div className="flex items-center gap-2">
+            <ModelPicker onModelChange={onModelChange} />
+            <Button
+              size="icon-sm"
+              onClick={handleSend}
+              disabled={isStreaming}
+              className="rounded-lg"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Hidden file input */}
@@ -301,7 +308,7 @@ export function ChatInput({
 
         {/* Drag overlay hint */}
         {isDragging && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10">
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10">
             <div className="flex items-center gap-2 text-sm font-medium text-primary">
               <ImageIcon className="h-5 w-5" />
               Drop files here

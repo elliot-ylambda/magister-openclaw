@@ -13,14 +13,18 @@ from app.services.supabase_client import SupabaseService
 
 
 # Cost per 1M tokens in cents (OpenRouter pricing includes ~5.5% platform fee)
-MODEL_COSTS: dict[str, dict[str, int]] = {
-    # Prefixed format (OpenRouter path)
-    "anthropic/claude-sonnet-4-6": {"input": 317, "output": 1583},
-    "anthropic/claude-haiku-4-5":  {"input": 106, "output": 528},
-    "anthropic/claude-opus-4-6":   {"input": 1583, "output": 7913},
-    "openai/gpt-4o":               {"input": 264, "output": 1055},
-    "google/gemini-2.5-flash":     {"input": 32, "output": 158},
-    "google/gemini-2.5-pro":       {"input": 132, "output": 528},
+MODEL_COSTS: dict[str, dict[str, float]] = {
+    # Prefixed format (OpenRouter path) — prices in cents per 1M tokens
+    "anthropic/claude-sonnet-4-6": {"input": 300, "output": 1500},
+    "anthropic/claude-haiku-4-5":  {"input": 100, "output": 500},
+    "anthropic/claude-opus-4-6":   {"input": 500, "output": 2500},
+    "openai/gpt-4o":               {"input": 250, "output": 1000},
+    "google/gemini-2.5-flash":     {"input": 30, "output": 250},
+    "google/gemini-2.5-pro":       {"input": 125, "output": 1000},
+    "google/gemini-3.1-pro-preview": {"input": 200, "output": 1200},
+    "openai/gpt-5.2":              {"input": 175, "output": 1400},
+    "minimax/minimax-m2.5":        {"input": 29.5, "output": 120},
+    "moonshotai/kimi-k2.5":        {"input": 45, "output": 220},
 }
 
 CACHE_TTL_SECONDS = 30
@@ -38,6 +42,44 @@ def _sanitize_kwargs(kwargs: dict) -> dict:
     for key in _BLOCKED_KWARGS:
         kwargs.pop(key, None)
     return kwargs
+
+
+# Model prefix → (byok_provider_key, litellm_prefix) mapping for direct BYOK keys.
+# Models arrive as "google/gemini-2.5-flash" but the BYOK key is stored under "gemini".
+_MODEL_PREFIX_MAP: dict[str, tuple[str, str]] = {
+    "anthropic": ("anthropic", "anthropic"),
+    "openai": ("openai", "openai"),
+    "google": ("gemini", "gemini"),
+}
+
+
+def resolve_byok_key(
+    model: str, byok_keys: dict[str, str]
+) -> tuple[str, str | None]:
+    """Resolve which API key and litellm model string to use for a request.
+
+    Returns (litellm_model, api_key_or_None). If api_key is None, the caller
+    should use the platform OpenRouter key.
+    """
+    if not byok_keys:
+        return f"openrouter/{model}", None
+
+    # Extract provider from model name (e.g. "google/gemini-2.5-flash" → "google")
+    model_prefix = model.split("/")[0] if "/" in model else ""
+
+    # Priority 1: direct provider key
+    if model_prefix in _MODEL_PREFIX_MAP:
+        byok_provider, litellm_prefix = _MODEL_PREFIX_MAP[model_prefix]
+        if byok_provider in byok_keys:
+            model_name = model.split("/", 1)[1]
+            return f"{litellm_prefix}/{model_name}", byok_keys[byok_provider]
+
+    # Priority 2: OpenRouter fallback
+    if "openrouter" in byok_keys:
+        return f"openrouter/{model}", byok_keys["openrouter"]
+
+    # No BYOK match — use platform key
+    return f"openrouter/{model}", None
 
 
 class LLMService:
@@ -109,6 +151,7 @@ class LLMService:
         messages: list[dict],
         user_id: str,
         stream: bool = False,
+        byok_keys: dict[str, str] | None = None,
         **kwargs,
     ):
         """Call litellm.acompletion, record usage, enforce budget.
@@ -116,18 +159,21 @@ class LLMService:
         Returns the litellm response (non-streaming) or an async generator
         (streaming).
         """
-        litellm_model = f"openrouter/{model}"
         _sanitize_kwargs(kwargs)
+        litellm_model, byok_key = resolve_byok_key(model, byok_keys or {})
+        is_byok = byok_key is not None
+        api_key = byok_key if is_byok else self._openrouter_key
 
         if stream:
             return self._stream_completion(
-                litellm_model, model, messages, user_id, **kwargs
+                litellm_model, model, messages, user_id,
+                api_key=api_key, is_byok=is_byok, **kwargs,
             )
 
         response = await litellm.acompletion(
             model=litellm_model,
             messages=messages,
-            api_key=self._openrouter_key,
+            api_key=api_key,
             **kwargs,
         )
 
@@ -138,7 +184,8 @@ class LLMService:
                 model, usage.prompt_tokens, usage.completion_tokens
             )
             await self._record_usage(
-                user_id, model, usage.prompt_tokens, usage.completion_tokens, cost
+                user_id, model, usage.prompt_tokens, usage.completion_tokens, cost,
+                is_byok=is_byok,
             )
 
         return response
@@ -149,13 +196,16 @@ class LLMService:
         model: str,
         messages: list[dict],
         user_id: str,
+        *,
+        api_key: str,
+        is_byok: bool = False,
         **kwargs,
     ) -> AsyncIterator:
         """Async generator that yields chunks and records usage from the final chunk."""
         response = await litellm.acompletion(
             model=litellm_model,
             messages=messages,
-            api_key=self._openrouter_key,
+            api_key=api_key,
             stream=True,
             stream_options={"include_usage": True},
             **kwargs,
@@ -175,7 +225,8 @@ class LLMService:
         if input_tokens or output_tokens:
             cost = self._calculate_cost(model, input_tokens, output_tokens)
             await self._record_usage(
-                user_id, model, input_tokens, output_tokens, cost
+                user_id, model, input_tokens, output_tokens, cost,
+                is_byok=is_byok,
             )
 
     async def _record_usage(
@@ -185,6 +236,8 @@ class LLMService:
         input_tokens: int,
         output_tokens: int,
         cost_cents: int,
+        *,
+        is_byok: bool = False,
     ) -> None:
         """Insert usage event and invalidate spend cache."""
         event = UsageEvent(
@@ -193,7 +246,9 @@ class LLMService:
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            cost_cents=cost_cents,
+            cost_cents=0 if is_byok else cost_cents,
+            metadata={"byok": True} if is_byok else None,
         )
         await self._supabase.insert_usage_event(event)
-        self._invalidate_cache(user_id)
+        if not is_byok:
+            self._invalidate_cache(user_id)

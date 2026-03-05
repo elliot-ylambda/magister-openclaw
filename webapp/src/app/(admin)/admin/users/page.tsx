@@ -15,7 +15,7 @@ export default async function AdminUsersPage() {
     supabase.from('subscriptions').select('user_id, plan, status').eq('status', 'active'),
     supabase
       .from('user_machines_safe')
-      .select('user_id, status, fly_region, fly_app_name, last_activity')
+      .select('user_id, status, fly_region, fly_app_name, last_activity, preferred_model')
       .not('status', 'in', '("destroyed")'),
     supabase
       .from('usage_events')
@@ -54,6 +54,7 @@ export default async function AdminUsersPage() {
       machineStatus: machine?.status ?? null,
       flyAppName: machine?.fly_app_name ?? null,
       flyRegion: machine?.fly_region ?? null,
+      preferredModel: machine?.preferred_model ?? null,
       llmSpendCents: spendByUser.get(p.id) ?? 0,
       budgetDollars: plan ? (PLAN_BUDGETS[plan] ?? 50) : 0,
       lastActivity: machine?.last_activity ?? null,

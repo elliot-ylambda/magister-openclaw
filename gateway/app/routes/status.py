@@ -46,6 +46,7 @@ def create_status_router(
             "plan": machine.plan,
             "llm_spend_cents": await supabase.get_monthly_llm_spend(user_id),
             "provisioning_step": machine.provisioning_step,
+            "preferred_model": machine.preferred_model,
         }
 
     return router

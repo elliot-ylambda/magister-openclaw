@@ -35,11 +35,17 @@ supabase-start-local:
 	supabase start
 
 supabase-migrate-local:
-	supabase unlink || true
 	supabase migration up --local
 
 supabase-reset-local:
 	supabase db reset --local
+
+SUPABASE_PROJECT_REF ?= $(shell grep NEXT_PUBLIC_SUPABASE_URL .env.production 2>/dev/null | sed -E 's|.*https://([^.]+)\.supabase\.co.*|\1|')
+
+supabase-push-prod:
+	@if [ -z "$(SUPABASE_PROJECT_REF)" ]; then echo "Error: Could not determine SUPABASE_PROJECT_REF from .env.local"; exit 1; fi
+	supabase link --project-ref $(SUPABASE_PROJECT_REF)
+	supabase db push
 
 # Connect to local database
 connect-local-db:

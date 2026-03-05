@@ -105,11 +105,17 @@ def create_provision_router(
                     fly_secrets["SLACK_SIGNING_SECRET"] = settings.slack_signing_secret
                     logger.info(f"[provision] including Slack secrets for {user_id}")
 
+                # Set default model from admin config
+                default_model = await supabase.get_app_setting("default_model")
+                default_model = default_model or "anthropic/claude-opus-4-6"
+                fly_secrets["DEFAULT_MODEL"] = default_model
+
                 await fly.set_secrets(machine.fly_app_name, fly_secrets)
                 await supabase.update_user_machine(
                     machine.id,
                     gateway_token=token,
                     gateway_token_hash=token_hash,
+                    preferred_model=default_model,
                     provisioning_step=2,
                 )
                 machine.provisioning_step = 2

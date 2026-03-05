@@ -27,6 +27,18 @@ export type AgentStatus = {
   plan: string;
   llm_spend_cents: number;
   provisioning_step?: number;
+  preferred_model?: string;
+};
+
+export type ModelInfo = {
+  id: string;
+  name: string;
+  allowed: boolean;
+};
+
+export type AvailableModelsResponse = {
+  models: ModelInfo[];
+  current: string;
 };
 
 const ERROR_MESSAGES: Record<number, string> = {
@@ -195,6 +207,43 @@ export function startAgent(gatewayUrl: string, jwt: string) {
 
 export function restartAgent(gatewayUrl: string, jwt: string) {
   return machineAction(gatewayUrl, jwt, "restart");
+}
+
+// ── Model selection ────────────────────────────────────────
+
+export async function getAvailableModels(
+  gatewayUrl: string,
+  jwt: string
+): Promise<AvailableModelsResponse | null> {
+  try {
+    const res = await fetch(`${gatewayUrl}/api/models`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AvailableModelsResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function setModel(
+  gatewayUrl: string,
+  jwt: string,
+  model: string
+): Promise<{ status: string; model: string }> {
+  const res = await fetch(`${gatewayUrl}/api/models`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify({ model }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? "Failed to set model");
+  }
+  return res.json();
 }
 
 // ── File operations ────────────────────────────────────────

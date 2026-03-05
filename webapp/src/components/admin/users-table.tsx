@@ -23,6 +23,7 @@ export type AdminUser = {
   machineStatus: string | null;
   flyAppName: string | null;
   flyRegion: string | null;
+  preferredModel: string | null;
   llmSpendCents: number;
   budgetDollars: number;
   lastActivity: string | null;
@@ -194,6 +195,7 @@ export function UsersTable({ users }: { users: AdminUser[] }) {
               >
                 Agent Status{sortIndicator('machineStatus')}
               </TableHead>
+              <TableHead>Model</TableHead>
               <TableHead
                 className="cursor-pointer select-none text-right"
                 onClick={() => toggleSort('llmSpendCents')}
@@ -213,7 +215,7 @@ export function UsersTable({ users }: { users: AdminUser[] }) {
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   No users found
                 </TableCell>
               </TableRow>
@@ -239,6 +241,9 @@ export function UsersTable({ users }: { users: AdminUser[] }) {
                     ) : (
                       <span className="text-xs text-muted-foreground">No agent</span>
                     )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {user.preferredModel ?? '—'}
                   </TableCell>
                   <TableCell className="text-right font-mono text-sm">
                     ${(user.llmSpendCents / 100).toFixed(2)}

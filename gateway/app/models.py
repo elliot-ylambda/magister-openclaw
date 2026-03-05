@@ -31,9 +31,14 @@ class UserMachine(BaseModel):
     gateway_token_hash: str | None = None
     pending_image: str | None = None
     current_image: str | None = None
+    preferred_model: str = "anthropic/claude-opus-4-6"
     provisioning_step: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class SetModelRequest(BaseModel):
+    model: str
 
 
 class ProvisionRequest(BaseModel):
@@ -82,6 +87,17 @@ class SlackConnection(BaseModel):
     app_id: str = ""
     bot_token: str = ""
     scope: str = ""
+    status: str = "active"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class UserApiKey(BaseModel):
+    id: str
+    user_id: str
+    provider: str  # openrouter, anthropic, openai, gemini
+    api_key: str
+    key_suffix: str = ""
     status: str = "active"
     created_at: datetime | None = None
     updated_at: datetime | None = None

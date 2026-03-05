@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from supabase import acreate_client, AsyncClient
 
-from app.models import SlackConnection, UserMachine, UsageEvent
+from app.models import SlackConnection, UserApiKey, UserMachine, UsageEvent
 
 
 class SupabaseService:
@@ -287,6 +287,61 @@ class SupabaseService:
             .execute()
         )
         return [UserMachine(**row) for row in (result.data or [])]
+
+    # ── BYOK API Keys ─────────────────────────────────────────────
+
+    async def get_user_api_keys(self, user_id: str) -> list[UserApiKey]:
+        """Get all active BYOK API keys for a user."""
+        result = (
+            await self._client.table("user_api_keys")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "active")
+            .execute()
+        )
+        return [UserApiKey(**row) for row in (result.data or [])]
+
+    async def upsert_user_api_key(self, data: dict) -> UserApiKey:
+        """Upsert a BYOK API key (on user_id + provider conflict)."""
+        result = (
+            await self._client.table("user_api_keys")
+            .upsert(data, on_conflict="user_id,provider")
+            .execute()
+        )
+        return UserApiKey(**result.data[0])
+
+    async def revoke_user_api_key(self, user_id: str, provider: str) -> None:
+        """Mark a BYOK API key as revoked."""
+        await (
+            self._client.table("user_api_keys")
+            .update({"status": "revoked"})
+            .eq("user_id", user_id)
+            .eq("provider", provider)
+            .execute()
+        )
+
+    # ── App Settings ──────────────────────────────────────────────
+
+    async def get_app_setting(self, key: str) -> str | None:
+        """Read a single value from app_settings."""
+        result = (
+            await self._client.table("app_settings")
+            .select("value")
+            .eq("key", key)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data["value"]
+
+    async def set_app_setting(self, key: str, value: str, description: str = "") -> None:
+        """Upsert a value into app_settings."""
+        await (
+            self._client.table("app_settings")
+            .upsert({"key": key, "value": value, "description": description})
+            .execute()
+        )
 
     # ── Usage Tracking ───────────────────────────────────────────
 

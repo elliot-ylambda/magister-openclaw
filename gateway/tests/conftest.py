@@ -29,16 +29,26 @@ def settings() -> Settings:
             "cmo": [
                 "anthropic/claude-sonnet-4-6",
                 "anthropic/claude-haiku-4-5",
+                "anthropic/claude-opus-4-6",
                 "openai/gpt-4o",
+                "openai/gpt-5.2",
+                "google/gemini-2.5-pro",
                 "google/gemini-2.5-flash",
+                "google/gemini-3.1-pro-preview",
+                "minimax/minimax-m2.5",
+                "moonshotai/kimi-k2.5",
             ],
             "cmo_plus": [
                 "anthropic/claude-sonnet-4-6",
                 "anthropic/claude-haiku-4-5",
                 "anthropic/claude-opus-4-6",
                 "openai/gpt-4o",
+                "openai/gpt-5.2",
                 "google/gemini-2.5-pro",
                 "google/gemini-2.5-flash",
+                "google/gemini-3.1-pro-preview",
+                "minimax/minimax-m2.5",
+                "moonshotai/kimi-k2.5",
             ],
         },
     )
@@ -58,6 +68,8 @@ def mock_supabase() -> AsyncMock:
     mock.claim_idle_machines.return_value = []
     mock.get_monthly_llm_spend.return_value = 0
     mock.insert_usage_event.return_value = None
+    mock.get_app_setting.return_value = None
+    mock.set_app_setting.return_value = None
     return mock
 
 
@@ -78,6 +90,7 @@ def mock_fly() -> AsyncMock:
     mock.delete_machine.return_value = None
     mock.wait_for_state.return_value = None
     mock.close.return_value = None
+    mock.update_machine_env.return_value = {"id": "mach_test123"}
     return mock
 
 

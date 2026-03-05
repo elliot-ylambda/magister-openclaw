@@ -50,17 +50,40 @@ class Settings(BaseSettings):
         "cmo": [
             "anthropic/claude-sonnet-4-6",
             "anthropic/claude-haiku-4-5",
+            "anthropic/claude-opus-4-6",
             "openai/gpt-4o",
+            "openai/gpt-5.2",
+            "google/gemini-2.5-pro",
             "google/gemini-2.5-flash",
+            "google/gemini-3.1-pro-preview",
+            "minimax/minimax-m2.5",
+            "moonshotai/kimi-k2.5",
         ],
         "cmo_plus": [
             "anthropic/claude-sonnet-4-6",
             "anthropic/claude-haiku-4-5",
             "anthropic/claude-opus-4-6",
             "openai/gpt-4o",
+            "openai/gpt-5.2",
             "google/gemini-2.5-pro",
             "google/gemini-2.5-flash",
+            "google/gemini-3.1-pro-preview",
+            "minimax/minimax-m2.5",
+            "moonshotai/kimi-k2.5",
         ],
     }
 
     model_config = {"env_prefix": "", "case_sensitive": False}
+
+
+# Models users can select as their agent's default model
+SWITCHABLE_MODELS = [
+    {"id": "minimax/minimax-m2.5", "name": "MiniMax M2.5"},
+    {"id": "moonshotai/kimi-k2.5", "name": "Kimi K2.5"},
+    {"id": "google/gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro"},
+    {"id": "openai/gpt-5.2", "name": "ChatGPT 5.2"},
+    {"id": "anthropic/claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+    {"id": "anthropic/claude-opus-4-6", "name": "Claude Opus 4.6"},
+]
+
+SWITCHABLE_MODEL_IDS = {m["id"] for m in SWITCHABLE_MODELS}

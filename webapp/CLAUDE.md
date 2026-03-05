@@ -30,16 +30,19 @@ This file covers webapp-specific development patterns.
 ## Route Groups
 
 - `(app)/` — authenticated app (chat, dashboard, settings, files) with sidebar layout
-- `(admin)/` — admin panel (machines, secrets, users)
+- `(admin)/` — admin panel (machines, secrets, users, settings incl. default model)
 - `(auth)/` — login, signup, reset-password
 - `/` root — public marketing landing page (~2000 lines, self-contained)
-- `api/` — API routes (Stripe, Slack, billing webhooks, admin, machine control)
+- `api/` — API routes (Stripe, Slack, billing webhooks, admin, machine control, BYOK key management, model selection)
 
 ## Key Patterns
 
 - **Supabase clients**: browser client (`lib/supabase/client.ts`), server client (`lib/supabase/server.ts`), middleware (`lib/supabase/middleware.ts`)
 - **Auth**: `src/lib/auth.ts` has `getUser` / `requireAuth` helpers; middleware in `src/middleware.ts` handles route protection
-- **Gateway communication**: `src/lib/gateway.ts` — SSE streaming, agent status/control
+- **Gateway communication**: `src/lib/gateway.ts` — SSE streaming, agent status/control, model selection API
+- **Model picker**: `src/components/chat/model-picker.tsx` — in-chat model switching dropdown
+- **BYOK keys**: `src/components/settings/byok-keys.tsx` — settings UI for managing user API keys; API routes in `api/byok/`
+- **Admin settings**: `src/components/admin/admin-settings.tsx` — admin default model config; API route in `api/admin/default-model/`
 - **Landing page**: single client component in `src/app/page.tsx` with inline section components, Framer Motion animations, and waitlist survey flow
 - **Styling**: dark theme only, mix of Tailwind classes and inline `style={{}}` with `rgba()` opacity values
 

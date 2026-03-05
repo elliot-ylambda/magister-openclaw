@@ -38,6 +38,12 @@ export default async function AdminLayout({
           >
             Secrets
           </Link>
+          <Link
+            href="/admin/settings"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Settings
+          </Link>
         </nav>
         <div className="flex-1" />
         <Link

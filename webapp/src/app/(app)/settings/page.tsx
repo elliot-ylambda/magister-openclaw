@@ -8,8 +8,8 @@ export default async function SettingsPage() {
   // Fetch machine status for Agent section
   const serviceClient = createServiceClient();
   const { data: machine } = await serviceClient
-    .from('user_machines')
-    .select('status, fly_region')
+    .from('user_machines_safe')
+    .select('status, fly_region, preferred_model')
     .eq('user_id', user.id)
     .neq('status', 'destroyed')
     .maybeSingle();
@@ -24,6 +24,7 @@ export default async function SettingsPage() {
       isAdmin={isAdmin}
       machineStatus={machine?.status ?? null}
       machineRegion={machine?.fly_region ?? null}
+      machineModel={machine?.preferred_model ?? null}
     />
   );
 }
