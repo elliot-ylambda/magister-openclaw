@@ -16,6 +16,8 @@ All commands run from the **repo root** via the top-level Makefile:
 
 | Task | Command |
 |------|---------|
+| **Pre-PR Check** | |
+| Build + lint all | `make check` (webapp build + webapp lint + gateway lint — **run before pushing to a PR**) |
 | **Webapp** | |
 | Install deps | `make webapp-install` (uses pnpm) |
 | Dev server | `make webapp-dev` (port 3020, also starts Stripe webhook listener) |
@@ -65,6 +67,13 @@ All commands run from the **repo root** via the top-level Makefile:
 | Machine status | `make status` |
 | Provision machine | `make provision` |
 | Slack challenge test | `make slack-challenge` |
+| **Admin** | |
+| Delete a user | `make delete-user email=user@example.com` (destroys machine, cancels Stripe, removes from Supabase) |
+| Make user admin | `make make-admin email=user@example.com` |
+
+## Pre-PR Workflow
+
+**Always run `make check` before pushing a branch or creating a PR.** This runs the webapp build, webapp lint, and gateway lint. All three must pass before code is pushed. Do not skip this step.
 
 ## Architecture
 
@@ -80,7 +89,7 @@ Browser → Next.js webapp (Vercel) → Gateway (Fly.io) → User Machine (Fly.i
 2. Webapp streams POST to `gateway/api/chat` with Supabase JWT
 3. Gateway looks up the user's Fly machine, starts it if suspended, proxies the request via SSE
 4. The user machine (OpenClaw) makes LLM calls back through the gateway's `/llm/v1` proxy endpoint
-5. Gateway enforces per-plan model allowlists and budget limits, then forwards to OpenRouter via litellm
+5. Gateway enforces per-plan model allowlists and budget limits, resolves BYOK keys if present, then forwards to OpenRouter (or directly to the provider for BYOK) via litellm
 
 ### Webapp (`webapp/`)
 
@@ -99,7 +108,7 @@ Route groups:
 - `(admin)/` — admin pages (machine management, secrets, user management)
 - `(auth)/` — login, signup, reset-password
 - `/` root — public marketing landing page (`page.tsx`, ~2000 lines, self-contained)
-- `api/` — Next.js API routes for Stripe, Slack, billing webhooks, admin, machine control
+- `api/` — Next.js API routes for Stripe, Slack, billing webhooks, admin, machine control, BYOK key management, model selection
 
 Supabase clients:
 - `src/lib/supabase/client.ts` — browser client (anon key, singleton)
@@ -107,7 +116,7 @@ Supabase clients:
 - `src/lib/supabase/middleware.ts` — session refresh in Next.js middleware
 
 Key libs:
-- `src/lib/gateway.ts` — SSE streaming client + agent status/control helpers
+- `src/lib/gateway.ts` — SSE streaming client + agent status/control helpers + model selection API
 - `src/lib/stripe.ts` — Stripe client and price/plan mapping
 - `src/lib/auth.ts` — auth utilities (getUser, requireAuth helpers)
 - `src/middleware.ts` — auth routing (public vs protected routes, redirects)
@@ -123,7 +132,7 @@ Key libs:
 - **pytest** + pytest-asyncio for tests
 
 Structure:
-- `app/routes/` — route modules (chat, provision, destroy, status, llm_proxy, machine_control, files, admin_secrets, slack_webhook, slack_oauth, health)
+- `app/routes/` — route modules (chat, provision, destroy, status, llm_proxy, model_selection, machine_control, files, admin_secrets, slack_webhook, slack_oauth, health)
 - `app/services/` — core services (fly.py for Fly.io API, llm.py for LLM proxy, supabase_client.py)
 - `app/middleware/` — JWT auth + API key auth + rate limiting
 - `app/jobs/` — background tasks (idle_sweep currently disabled, reconciliation syncs Fly state with DB)
@@ -152,13 +161,15 @@ Read the actual OpenClaw source and docs rather than guessing at behavior. The g
 
 Migrations in `webapp/supabase/migrations/`. Key tables:
 - `waitlist` — email signups + survey data
-- `user_machines` — per-user Fly machine state (status, plan, region, tokens, images)
+- `user_machines` — per-user Fly machine state (status, plan, region, tokens, images, preferred_model)
 - `profiles` — user profiles linked to auth.users
 - `subscriptions` — Stripe subscription state
-- `chat_sessions` / `chat_messages` — conversation persistence
+- `chat_sessions` / `chat_messages` — conversation persistence (messages track which model generated them via `model` column)
 - `slack_connections` — Slack OAuth tokens per user
 - `signup_allowlist` — invite-gated signups
 - `global_secrets` — admin-managed secrets pushed to user machines
+- `user_api_keys` — BYOK (Bring Your Own Key) API keys per user per provider (openrouter, anthropic, openai, gemini)
+- `app_settings` — admin-level app config (e.g. default model for new machines)
 
 Seed data in `webapp/supabase/seed.sql` (dev user, profile, machine) — only runs on `supabase db reset --local`.
 

@@ -7,7 +7,12 @@
 	deploy-gateway deploy-image deploy-machines deploy-all \
 	start-gateway start-machine start-machines \
 	stop-gateway stop-machine stop-machines \
-	delete-user make-admin
+	delete-user make-admin \
+	check
+
+# ─── Check (build + lint) ─────────────────────────────────────
+
+check: webapp-build webapp-lint gateway-lint
 
 # ─── Docker Compose ───────────────────────────────────────────
 
