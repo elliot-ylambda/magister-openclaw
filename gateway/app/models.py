@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -112,3 +113,23 @@ class UsageEvent(BaseModel):
     cost_cents: int | None = None
     duration_ms: int | None = None
     metadata: dict | None = None
+
+
+class EmailDraftRequest(BaseModel):
+    """Agent requests to send an email (requires user approval)."""
+    to: str
+    subject: str
+    body_html: str
+    body_text: str | None = None
+    cc: list[str] | None = None
+    bcc: list[str] | None = None
+    reply_to: str | None = None
+    in_reply_to: str | None = None
+    attachments: list[dict] | None = None
+
+
+class EmailApprovalRequest(BaseModel):
+    """User approves or rejects a pending outbound email."""
+    email_id: str
+    action: Literal["approve", "reject"]
+    rejection_reason: str | None = None
