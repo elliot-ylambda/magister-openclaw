@@ -5,6 +5,7 @@ import { ArrowUp, Plus, X, FileText, Image as ImageIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/chat/model-picker";
+import { ReportBugPopover } from "@/components/chat/report-bug-popover";
 import type { Attachment } from "@/lib/gateway";
 
 const MAX_ROWS = 5;
@@ -57,10 +58,14 @@ export function ChatInput({
   onSend,
   isStreaming,
   onModelChange,
+  sessionId,
+  messages,
 }: {
   onSend: (message: string, attachments?: Attachment[]) => void;
   isStreaming: boolean;
   onModelChange?: (modelId: string, displayName: string) => void;
+  sessionId?: string;
+  messages?: { role: string; content: string }[];
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -267,17 +272,26 @@ export function ChatInput({
 
         {/* Bottom toolbar */}
         <div className="flex items-center justify-between px-3 py-2">
-          {/* Left: attach button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming}
-            className="rounded-lg text-muted-foreground hover:text-foreground"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          {/* Left: attach + feedback */}
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming}
+              className="rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            {sessionId && (
+              <ReportBugPopover
+                sessionId={sessionId}
+                messages={messages ?? []}
+                disabled={isStreaming}
+              />
+            )}
+          </div>
 
           {/* Right: model picker + send */}
           <div className="flex items-center gap-2">

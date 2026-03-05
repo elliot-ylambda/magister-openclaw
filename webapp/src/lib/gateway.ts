@@ -246,6 +246,38 @@ export async function setModel(
   return res.json();
 }
 
+// ── Feedback ──────────────────────────────────────────────
+
+export async function submitFeedback(
+  gatewayUrl: string,
+  jwt: string,
+  data: {
+    sessionId: string;
+    category: string;
+    description?: string;
+    messages: { role: string; content: string }[];
+  }
+): Promise<{ status: string }> {
+  const res = await fetch(`${gatewayUrl}/api/feedback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify({
+      session_id: data.sessionId,
+      category: data.category,
+      description: data.description ?? "",
+      messages: data.messages,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to submit feedback");
+  }
+  return res.json();
+}
+
 // ── File operations ────────────────────────────────────────
 
 export type FileEntry = {
