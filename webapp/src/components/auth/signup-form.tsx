@@ -1,12 +1,15 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { signup, type SignupState } from '@/app/(auth)/signup/actions';
+import { GoogleOAuthButton } from '@/components/auth/google-oauth-button';
+import { OAuthDivider } from '@/components/auth/oauth-divider';
 
 const initialState: SignupState = {};
 
@@ -14,6 +17,8 @@ export function SignupForm() {
   const [state, formAction, pending] = useActionState(signup, initialState);
   const [errorCount, setErrorCount] = useState(0);
   const [prevState, setPrevState] = useState(state);
+  const searchParams = useSearchParams();
+  const oauthError = searchParams.get('error');
 
   // Derive animation trigger during render (React-recommended pattern)
   if (state !== prevState) {
@@ -30,6 +35,12 @@ export function SignupForm() {
         <p className="text-sm text-muted-foreground">Enter your email to get started</p>
       </div>
 
+      {oauthError === 'not_allowlisted' && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+          Your Google account is not on the invite list. Please join the waitlist to get early access.
+        </div>
+      )}
+
       <motion.div
         key={`pulse-${errorCount}`}
         animate={errorCount > 0 ? { scale: [1, 1.03, 1, 1.03, 1] } : {}}
@@ -45,6 +56,9 @@ export function SignupForm() {
         </Link>{' '}
         to get early access.
       </motion.div>
+
+      <GoogleOAuthButton label="Sign up with Google" />
+      <OAuthDivider />
 
       <form action={formAction} className="space-y-4">
 

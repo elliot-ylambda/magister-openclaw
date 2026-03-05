@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { login, type LoginState } from '@/app/(auth)/login/actions';
+import { GoogleOAuthButton } from '@/components/auth/google-oauth-button';
+import { OAuthDivider } from '@/components/auth/oauth-divider';
 
 const initialState: LoginState = {};
 
@@ -21,6 +23,9 @@ export function LoginForm() {
         <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
         <p className="text-sm text-muted-foreground">Sign in to your account</p>
       </div>
+
+      <GoogleOAuthButton next={redirectTo || undefined} />
+      <OAuthDivider />
 
       <form action={formAction} className="space-y-4">
         <input type="hidden" name="redirect" value={redirectTo} />
