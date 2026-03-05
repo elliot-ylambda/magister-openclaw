@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -138,14 +137,15 @@ export function SlackConnection() {
           </p>
           <button
             onClick={handleConnect}
-            className="opacity-90 hover:opacity-100 transition-opacity"
+            className="flex items-center gap-2 rounded border border-[#ddd] bg-white px-3 py-2 text-sm font-semibold text-[#333] shadow-sm hover:shadow transition-shadow"
           >
-            <Image
-              alt="Add to Slack"
-              height={40}
-              width={139}
-              src="https://platform.slack-edge.com/img/add_to_slack@2x.png"
-            />
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <path d="M6.527 14.514A1.636 1.636 0 1 1 4.89 12.88h1.636v1.635Zm.827 0a1.636 1.636 0 1 1 3.272 0v4.09a1.636 1.636 0 1 1-3.272 0v-4.09Z" fill="#2EB67D" />
+              <path d="M9.49 6.527A1.636 1.636 0 1 1 11.124 4.89V6.527H9.49Zm0 .827a1.636 1.636 0 1 1 0 3.272H5.4a1.636 1.636 0 1 1 0-3.272h4.09Z" fill="#ECB22E" />
+              <path d="M17.473 9.49a1.636 1.636 0 1 1 1.636 1.636h-1.636V9.49Zm-.827 0a1.636 1.636 0 1 1-3.272 0V5.4a1.636 1.636 0 1 1 3.272 0v4.09Z" fill="#E01E5A" />
+              <path d="M14.51 17.473a1.636 1.636 0 1 1-1.636 1.636v-1.636h1.635Zm0-.827a1.636 1.636 0 1 1 0-3.272h4.09a1.636 1.636 0 1 1 0 3.272h-4.09Z" fill="#36C5F0" />
+            </svg>
+            Connect to Slack
           </button>
         </div>
       )}

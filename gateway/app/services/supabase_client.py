@@ -343,6 +343,21 @@ class SupabaseService:
             .execute()
         )
 
+    # ── Profiles ──────────────────────────────────────────────────
+
+    async def get_user_profile(self, user_id: str) -> dict | None:
+        """Lookup a user's profile by user_id."""
+        result = (
+            await self._client.table("profiles")
+            .select("*")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if result is None or result.data is None:
+            return None
+        return result.data
+
     # ── Usage Tracking ───────────────────────────────────────────
 
     async def insert_usage_event(self, event: UsageEvent) -> None:

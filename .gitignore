@@ -46,9 +46,7 @@ supabase/.temp/
 
 # worktrees
 .worktrees/
-
-# worktrees
-.worktrees/
+.claude/worktrees/
 
 # vercel
 .vercel

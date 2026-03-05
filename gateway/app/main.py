@@ -14,6 +14,7 @@ from app.middleware.auth import create_api_key_dependency, create_jwt_dependency
 from app.middleware.rate_limit import RateLimiter
 from app.routes.chat import create_chat_router
 from app.routes.destroy import create_destroy_router
+from app.routes.feedback import create_feedback_router
 from app.routes.health import router as health_router
 from app.routes.llm_proxy import create_llm_proxy_router
 from app.routes.files import create_files_router
@@ -117,6 +118,10 @@ async def lifespan(app: FastAPI):
         create_admin_secrets_router(fly, supabase),
         prefix="/api",
         dependencies=[verify_api_key],
+    )
+    app.include_router(
+        create_feedback_router(supabase, settings, verify_jwt),
+        prefix="/api",
     )
     app.include_router(
         create_model_selection_router(
