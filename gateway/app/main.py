@@ -137,7 +137,7 @@ async def lifespan(app: FastAPI):
         prefix="/api",
     )
     app.include_router(
-        create_email_webhook_router(supabase, email_service, settings),
+        create_email_webhook_router(supabase, email_service, settings, fly),
     )
 
     # ── Background jobs ───────────────────────────────────────

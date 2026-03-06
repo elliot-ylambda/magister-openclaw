@@ -28,6 +28,9 @@ RUN git clone --depth 1 --branch ${MARKETINGSKILLS_VERSION} \
     https://github.com/coreyhaines31/marketingskills.git /app/skills \
     && rm -rf /app/skills/.git
 
+# --- Local Skills (override/extend marketingskills) ---
+COPY skills/ /app/skills/
+
 # --- Default Config ---
 COPY default-config/ /app/default-config/
 
