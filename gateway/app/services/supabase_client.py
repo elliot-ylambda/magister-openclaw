@@ -465,6 +465,64 @@ class SupabaseService:
         )
         return result.data or []
 
+    # ── Browser Control ─────────────────────────────────────
+
+    async def create_browser_token(self, user_id: str, token: str, expires_at) -> dict:
+        """Insert a browser connection token."""
+        result = await (
+            self._client.table("browser_connection_tokens")
+            .insert({
+                "user_id": user_id,
+                "token": token,
+                "expires_at": expires_at.isoformat(),
+            })
+            .execute()
+        )
+        return result.data[0]
+
+    async def get_browser_token(self, token: str) -> dict | None:
+        """Lookup a valid (unused, non-expired) browser connection token."""
+        result = await (
+            self._client.table("browser_connection_tokens")
+            .select("*")
+            .eq("token", token)
+            .eq("used", False)
+            .gt("expires_at", datetime.now(timezone.utc).isoformat())
+            .maybe_single()
+            .execute()
+        )
+        return result.data if result and result.data else None
+
+    async def mark_browser_token_used(self, token_id: str) -> None:
+        """Mark a browser connection token as used."""
+        await (
+            self._client.table("browser_connection_tokens")
+            .update({"used": True})
+            .eq("id", token_id)
+            .execute()
+        )
+
+    async def get_browser_policy(self, user_id: str) -> dict | None:
+        """Get browser control policy fields for a user's machine."""
+        result = await (
+            self._client.table("user_machines")
+            .select("browser_enabled, browser_allowed_urls, browser_read_only")
+            .eq("user_id", user_id)
+            .neq("status", "destroyed")
+            .maybe_single()
+            .execute()
+        )
+        return result.data if result and result.data else None
+
+    async def update_browser_policy(self, user_id: str, **fields) -> None:
+        """Update browser control policy fields on a user's machine."""
+        await (
+            self._client.table("user_machines")
+            .update(fields)
+            .eq("user_id", user_id)
+            .neq("status", "destroyed")
+            .execute()
+        )
 
     # ── Usage Tracking ───────────────────────────────────────────
 

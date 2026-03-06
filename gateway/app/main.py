@@ -27,6 +27,8 @@ from app.routes.admin_secrets import create_admin_secrets_router
 from app.routes.model_selection import create_model_selection_router
 from app.routes.slack_oauth import create_slack_oauth_router
 from app.routes.slack_webhook import create_slack_webhook_router
+from app.routes.browser_relay import create_browser_relay_router
+from app.routes.browser_token import create_browser_token_router
 from app.routes.status import create_status_router
 from app.services.email import EmailService
 from app.services.fly import FlyClient
@@ -153,6 +155,19 @@ async def lifespan(app: FastAPI):
     )
     app.include_router(
         create_email_webhook_router(supabase, email_service, settings, fly),
+    )
+    app.include_router(
+        create_browser_token_router(supabase, verify_jwt, settings.supabase_jwt_secret),
+        prefix="/api",
+    )
+    app.include_router(
+        create_browser_relay_router(
+            fly, supabase,
+            jwt_secret=settings.supabase_jwt_secret,
+            supabase_url=settings.supabase_url,
+            dev_machine_url=settings.dev_machine_url,
+        ),
+        prefix="/api",
     )
 
     # ── Background jobs ───────────────────────────────────────

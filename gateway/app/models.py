@@ -35,6 +35,9 @@ class UserMachine(BaseModel):
     preferred_model: str = "anthropic/claude-opus-4-6"
     email_address: str | None = None
     provisioning_step: int = 0
+    browser_enabled: bool = False
+    browser_allowed_urls: list[str] = []
+    browser_read_only: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   FolderOpen,
   Mail,
+  Monitor,
   Settings,
   MessageSquare,
   Zap,
@@ -211,6 +212,15 @@ export function AppSidebar({
                     {pendingCount}
                   </span>
                 )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => router.push("/settings")}
+                className="gap-2"
+              >
+                <Monitor className="h-4 w-4" />
+                Browser
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>

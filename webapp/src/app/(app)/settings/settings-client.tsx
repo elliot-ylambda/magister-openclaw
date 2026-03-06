@@ -29,6 +29,7 @@ import { restartAgent, getAvailableModels, setModel, type ModelInfo } from '@/li
 import { ManageBillingButton } from '../dashboard/manage-billing-button';
 import { ByokKeys } from '@/components/settings/byok-keys';
 import { SlackConnection } from '@/components/settings/slack-connection';
+import { BrowserControl } from '@/components/settings/browser-control';
 import { updateProfile, type ProfileUpdateState } from './actions';
 
 type SettingsClientProps = {
@@ -363,6 +364,9 @@ export function SettingsClient({
 
       {/* Slack Integration */}
       <SlackConnection />
+
+      {/* Browser Control */}
+      <BrowserControl />
 
       {/* Agent Section */}
       {machineStatus && (
