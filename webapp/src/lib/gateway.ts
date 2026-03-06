@@ -4,9 +4,19 @@ export type Attachment = {
   data: string; // base64-encoded content (no data URI prefix)
 };
 
+export type ToolUseEvent = {
+  phase: "start" | "result";
+  name: string;
+  toolCallId: string;
+  isError?: boolean;
+  args?: Record<string, unknown>;
+};
+
 export type ChatEvent =
   | { type: "session"; sessionId: string }
   | { type: "chunk"; content: string }
+  | { type: "thinking"; content: string }
+  | { type: "tool_use"; data: ToolUseEvent }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -49,6 +59,22 @@ const ERROR_MESSAGES: Record<number, string> = {
   423: "Your agent is stopped. Start it to resume.",
   503: "Your agent is waking up. Please try again in a moment.",
 };
+
+function dispatchSseEvent(event: string, data: string): ChatEvent | null {
+  if (event === "session") return { type: "session", sessionId: data };
+  if (event === "chunk") return { type: "chunk", content: data };
+  if (event === "done") return { type: "done" };
+  if (event === "error") return { type: "error", message: data };
+  if (event === "thinking") return { type: "thinking", content: data };
+  if (event === "tool_use") {
+    try {
+      return { type: "tool_use", data: JSON.parse(data) as ToolUseEvent };
+    } catch {
+      return null;
+    }
+  }
+  return null; // Unknown event types are silently ignored
+}
 
 /**
  * Stream chat messages from the gateway via SSE.
@@ -105,15 +131,8 @@ export async function* streamChat(
         if (dataBuffer.length > 0) {
           const data = dataBuffer.join("\n");
           const event = currentEvent || "chunk";
-          if (event === "session") {
-            yield { type: "session", sessionId: data };
-          } else if (event === "chunk") {
-            yield { type: "chunk", content: data };
-          } else if (event === "done") {
-            yield { type: "done" };
-          } else if (event === "error") {
-            yield { type: "error", message: data };
-          }
+          const parsed = dispatchSseEvent(event, data);
+          if (parsed) yield parsed;
         }
         break;
       }
@@ -130,15 +149,8 @@ export async function* streamChat(
           if (dataBuffer.length > 0) {
             const data = dataBuffer.join("\n");
             const event = currentEvent || "chunk";
-            if (event === "session") {
-              yield { type: "session", sessionId: data };
-            } else if (event === "chunk") {
-              yield { type: "chunk", content: data };
-            } else if (event === "done") {
-              yield { type: "done" };
-            } else if (event === "error") {
-              yield { type: "error", message: data };
-            }
+            const parsed = dispatchSseEvent(event, data);
+            if (parsed) yield parsed;
             dataBuffer = [];
             currentEvent = "";
           }

@@ -7,7 +7,7 @@
 	deploy-gateway deploy-image deploy-machines deploy-all \
 	start-gateway start-machine start-machines \
 	stop-gateway stop-machine stop-machines \
-	delete-user make-admin \
+	delete-user make-admin get-machine \
 	check
 
 # ─── Check (build + lint) ─────────────────────────────────────
@@ -471,3 +471,22 @@ make-admin:
 	HTTP_CODE=$$(echo "$$RESULT" | tail -1); \
 	if [ "$$HTTP_CODE" = "204" ]; then echo "User $(email) is now an admin."; \
 	else echo "Error: update returned HTTP $$HTTP_CODE"; echo "$$RESULT" | head -1; exit 1; fi
+
+# Look up a user's machine info by email.
+# Usage: make get-machine email=user@example.com
+get-machine:
+	@if [ -z "$(email)" ]; then echo "Usage: make get-machine email=user@example.com"; exit 1; fi; \
+	export $$(grep -v '^#' webapp/.env.local | grep -v '^$$' | xargs); \
+	SB_URL=$${SUPABASE_URL:-$$NEXT_PUBLIC_SUPABASE_URL}; \
+	echo "Looking up user: $(email)..."; \
+	USER_ID=$$(curl -s "$$SB_URL/auth/v1/admin/users" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -c "import json,sys; users=json.load(sys.stdin).get('users',[]); matches=[u for u in users if u.get('email')=='$(email)']; print(matches[0]['id'] if matches else '')" 2>/dev/null); \
+	if [ -z "$$USER_ID" ]; then echo "Error: No user found with email $(email)"; exit 1; fi; \
+	echo "User ID: $$USER_ID"; \
+	echo "---"; \
+	curl -s "$$SB_URL/rest/v1/user_machines?user_id=eq.$$USER_ID&select=fly_app_name,fly_machine_id,fly_region,status,plan,last_activity,created_at,updated_at" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -m json.tool

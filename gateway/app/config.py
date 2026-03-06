@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     openclaw_image: str = ""
 
     # Slack integration
+    slack_feedback_webhook_url: str = ""
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""
