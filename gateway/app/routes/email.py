@@ -81,7 +81,30 @@ def create_email_router(supabase, email_service, verify_jwt, verify_machine_toke
             logger.info("Email %s rejected by user %s", request.email_id, user_id)
             return {"status": "rejected", "email_id": request.email_id}
 
-        # Build threading headers
+        if request.action == "rewrite":
+            await supabase.update_agent_email(
+                request.email_id,
+                status="rewrite_requested",
+                rewrite_note=request.rewrite_note,
+            )
+            logger.info("Email %s rewrite requested by user %s", request.email_id, user_id)
+            return {"status": "rewrite_requested", "email_id": request.email_id}
+
+        # For "edit" action, apply user edits before sending
+        if request.action == "edit":
+            updates: dict = {}
+            if request.edited_subject is not None:
+                updates["subject"] = request.edited_subject
+            if request.edited_body_html is not None:
+                updates["body_html"] = request.edited_body_html
+            if request.edited_body_text is not None:
+                updates["body_text"] = request.edited_body_text
+            if updates:
+                await supabase.update_agent_email(request.email_id, **updates)
+                # Re-fetch email with updated content
+                email = await supabase.get_agent_email(request.email_id)
+
+        # Build threading headers (shared by approve + edit)
         headers = email_service.build_threading_headers(
             in_reply_to=email.get("in_reply_to"),
             references_chain=email.get("references_header"),

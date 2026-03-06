@@ -130,7 +130,11 @@ class EmailDraftRequest(BaseModel):
 
 
 class EmailApprovalRequest(BaseModel):
-    """User approves or rejects a pending outbound email."""
+    """User approves, rejects, edits, or requests rewrite of a pending outbound email."""
     email_id: str
-    action: Literal["approve", "reject"]
+    action: Literal["approve", "reject", "rewrite", "edit"]
     rejection_reason: str | None = None
+    rewrite_note: str | None = None
+    edited_subject: str | None = None
+    edited_body_html: str | None = None
+    edited_body_text: str | None = None

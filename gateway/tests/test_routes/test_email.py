@@ -112,3 +112,85 @@ def test_approve_already_sent(client, supabase):
         "action": "approve",
     })
     assert response.status_code == 400
+
+
+def test_rewrite_email_sets_status_and_note(client, supabase):
+    supabase.update_agent_email = AsyncMock(return_value={
+        "id": "email-1", "status": "rewrite_requested",
+    })
+    response = client.post("/api/email/approve", json={
+        "email_id": "email-1",
+        "action": "rewrite",
+        "rewrite_note": "Make it more formal",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "rewrite_requested"
+    assert data["email_id"] == "email-1"
+    supabase.update_agent_email.assert_called_once_with(
+        "email-1",
+        status="rewrite_requested",
+        rewrite_note="Make it more formal",
+    )
+
+
+def test_edit_email_updates_content_and_sends(client, supabase, email_service):
+    # After the edit updates, re-fetch returns updated content
+    supabase.get_agent_email = AsyncMock(side_effect=[
+        # First call: initial fetch (pending check)
+        {
+            "id": "email-1", "status": "pending", "direction": "outbound",
+            "user_id": "user-1", "machine_id": "machine-1",
+            "from_address": "agent-user1@agent.magistermarketing.com",
+            "to_address": "client@example.com",
+            "subject": "Updated Subject", "body_html": "<p>Updated body</p>",
+            "in_reply_to": None, "references_header": None,
+        },
+        # Second call: re-fetch after edit
+        {
+            "id": "email-1", "status": "pending", "direction": "outbound",
+            "user_id": "user-1", "machine_id": "machine-1",
+            "from_address": "agent-user1@agent.magistermarketing.com",
+            "to_address": "client@example.com",
+            "subject": "Updated Subject", "body_html": "<p>Updated body</p>",
+            "in_reply_to": None, "references_header": None,
+        },
+    ])
+    supabase.update_agent_email = AsyncMock(return_value={"id": "email-1", "status": "sent"})
+    email_service.send_email = AsyncMock(return_value="resend-edit-123")
+
+    response = client.post("/api/email/approve", json={
+        "email_id": "email-1",
+        "action": "edit",
+        "edited_subject": "Updated Subject",
+        "edited_body_html": "<p>Updated body</p>",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "sent"
+    assert data["resend_email_id"] == "resend-edit-123"
+
+    # Verify the content was updated before sending
+    update_calls = supabase.update_agent_email.call_args_list
+    # First call should update content fields
+    assert update_calls[0].kwargs["subject"] == "Updated Subject"
+    assert update_calls[0].kwargs["body_html"] == "<p>Updated body</p>"
+
+    # Verify send used updated content
+    email_service.send_email.assert_called_once()
+    send_kwargs = email_service.send_email.call_args
+    assert send_kwargs.kwargs["subject"] == "Updated Subject"
+    assert send_kwargs.kwargs["html"] == "<p>Updated body</p>"
+
+
+def test_rewrite_requires_pending_status(client, supabase):
+    supabase.get_agent_email = AsyncMock(return_value={
+        "id": "email-1", "status": "sent", "direction": "outbound",
+        "user_id": "user-1",
+    })
+    response = client.post("/api/email/approve", json={
+        "email_id": "email-1",
+        "action": "rewrite",
+        "rewrite_note": "Make it shorter",
+    })
+    assert response.status_code == 400
