@@ -59,7 +59,7 @@ def create_email_router(supabase, email_service, verify_jwt, verify_machine_toke
     @router.post("/email/approve")
     async def approve_or_reject_email(
         request: EmailApprovalRequest,
-        user_id: str = Depends(verify_jwt),
+        user_id: str = verify_jwt,
     ):
         """User approves or rejects a pending outbound email."""
         email = await supabase.get_agent_email(request.email_id)
@@ -148,17 +148,17 @@ def create_email_router(supabase, email_service, verify_jwt, verify_machine_toke
         return {"status": "sent", "email_id": request.email_id, "resend_email_id": resend_id}
 
     @router.get("/email/pending")
-    async def list_pending_emails(user_id: str = Depends(verify_jwt)):
+    async def list_pending_emails(user_id: str = verify_jwt):
         emails = await supabase.get_pending_outbound_emails(user_id)
         return {"emails": emails}
 
     @router.get("/email/inbox")
-    async def list_inbox(user_id: str = Depends(verify_jwt)):
+    async def list_inbox(user_id: str = verify_jwt):
         emails = await supabase.get_agent_emails(user_id, direction="inbound")
         return {"emails": emails}
 
     @router.get("/email/sent")
-    async def list_sent(user_id: str = Depends(verify_jwt)):
+    async def list_sent(user_id: str = verify_jwt):
         emails = await supabase.get_agent_emails(user_id, direction="outbound", status="sent")
         return {"emails": emails}
 

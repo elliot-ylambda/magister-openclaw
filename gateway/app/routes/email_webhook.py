@@ -1,6 +1,7 @@
 """Inbound email webhook route -- receives emails from Resend."""
 import logging
 from fastapi import APIRouter, Request, HTTPException
+from svix.webhooks import WebhookVerificationError
 
 logger = logging.getLogger(__name__)
 
@@ -12,21 +13,21 @@ def create_email_webhook_router(supabase, email_service, settings) -> APIRouter:
     async def receive_inbound_email(request: Request):
         """Handle Resend inbound email webhook."""
         body = await request.body()
-        payload = await request.json()
 
-        # Verify webhook signature
-        svix_id = request.headers.get("svix-id", "")
-        svix_timestamp = request.headers.get("svix-timestamp", "")
-        svix_signature = request.headers.get("svix-signature", "")
-
+        # Verify webhook signature using Svix
         if settings.resend_webhook_secret:
-            if not email_service.verify_webhook_signature(
-                payload=body,
-                signature=svix_signature,
-                timestamp=svix_timestamp,
-            ):
-                logger.warning("Invalid webhook signature for svix-id=%s", svix_id)
+            headers = {
+                "svix-id": request.headers.get("svix-id", ""),
+                "svix-timestamp": request.headers.get("svix-timestamp", ""),
+                "svix-signature": request.headers.get("svix-signature", ""),
+            }
+            try:
+                payload = email_service.verify_webhook(body, headers)
+            except WebhookVerificationError:
+                logger.warning("Invalid webhook signature for svix-id=%s", headers["svix-id"])
                 raise HTTPException(status_code=401, detail="Invalid webhook signature")
+        else:
+            payload = await request.json()
 
         # Only process email.received events
         event_type = payload.get("type")

@@ -1,11 +1,10 @@
 """Email service: Resend integration, content scanning, threading."""
-import hashlib
-import hmac
 import re
 import uuid
 from datetime import datetime, timezone
 
 import httpx
+from svix.webhooks import Webhook, WebhookVerificationError
 
 RESEND_API_URL = "https://api.resend.com"
 
@@ -134,18 +133,10 @@ class EmailService:
             "scanned_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def verify_webhook_signature(
-        self,
-        payload: bytes,
-        signature: str,
-        timestamp: str,
-    ) -> bool:
-        if not self.webhook_secret:
-            return False
-        expected = hmac.new(
-            self.webhook_secret.encode(),
-            f"{timestamp}.{payload.decode()}".encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        provided = signature.replace("v1=", "")
-        return hmac.compare_digest(expected, provided)
+    def verify_webhook(self, payload: bytes, headers: dict) -> dict:
+        """Verify a Svix webhook signature and return the parsed payload.
+
+        Raises WebhookVerificationError if invalid.
+        """
+        wh = Webhook(self.webhook_secret)
+        return wh.verify(payload, headers)
