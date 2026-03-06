@@ -69,7 +69,7 @@ def create_feedback_router(
         if not is_support:
             fields.append({"type": "mrkdwn", "text": f"*Category:*\n{category_label}"})
         if body.session_id:
-            fields.append({"type": "mrkdwn", "text": f"*Session:*\n`{body.session_id[:8]}...`"})
+            fields.append({"type": "mrkdwn", "text": f"*Session:*\n`{body.session_id}`"})
         if not is_support:
             fields.append({"type": "mrkdwn", "text": f"*Model:*\n{model}"})
 
