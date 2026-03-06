@@ -8,6 +8,7 @@ import {
   Trash2,
   LayoutDashboard,
   FolderOpen,
+  Mail,
   Settings,
   MessageSquare,
 } from "lucide-react";
@@ -63,6 +64,19 @@ export function AppSidebar({
   const supabase = createClient();
   const [sessions, setSessions] = useState(initialSessions);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    async function fetchPendingCount() {
+      const { count } = await supabase
+        .from("agent_emails")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending")
+        .eq("direction", "outbound");
+      setPendingCount(count ?? 0);
+    }
+    fetchPendingCount();
+  }, [supabase]);
 
   // Sync server-fetched sessions when layout re-renders (e.g. after router.refresh())
   useEffect(() => {
@@ -173,6 +187,20 @@ export function AppSidebar({
               >
                 <FolderOpen className="h-4 w-4" />
                 Files
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => router.push("/email")}
+                className="gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                Email
+                {pendingCount > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+                    {pendingCount}
+                  </span>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
