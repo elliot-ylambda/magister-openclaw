@@ -524,6 +524,17 @@ class SupabaseService:
             .execute()
         )
 
+    async def cleanup_expired_browser_tokens(self) -> int:
+        """Delete used or expired browser connection tokens. Returns count deleted."""
+        now = datetime.now(timezone.utc).isoformat()
+        result = await (
+            self._client.table("browser_connection_tokens")
+            .delete()
+            .or_(f"used.eq.true,expires_at.lt.{now}")
+            .execute()
+        )
+        return len(result.data) if result.data else 0
+
     # ── Usage Tracking ───────────────────────────────────────────
 
     async def insert_usage_event(self, event: UsageEvent) -> None:

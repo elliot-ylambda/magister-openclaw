@@ -132,6 +132,12 @@ async def _reconciliation_loop(
             await _cleanup_failed_machines(fly, supabase)
         except Exception:
             logger.exception("[reconciliation] Failed cleanup failed")
+        try:
+            deleted = await supabase.cleanup_expired_browser_tokens()
+            if deleted:
+                logger.info(f"[reconciliation] Cleaned up {deleted} expired browser tokens")
+        except Exception:
+            logger.exception("[reconciliation] Browser token cleanup failed")
         await asyncio.sleep(RECONCILIATION_INTERVAL_SECONDS)
 
 
