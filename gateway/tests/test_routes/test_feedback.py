@@ -68,7 +68,7 @@ def _make_settings(webhook_url: str = WEBHOOK_URL) -> Settings:
 
 def _make_app(mock_supabase, settings) -> TestClient:
     app = FastAPI()
-    verify_jwt = create_jwt_dependency(JWT_SECRET)
+    verify_jwt = create_jwt_dependency(JWT_SECRET, "http://localhost:54321")
     router = create_feedback_router(mock_supabase, settings, verify_jwt)
     app.include_router(router, prefix="/api")
     return TestClient(app)
@@ -194,7 +194,7 @@ class TestFeedbackSubmission:
         settings = _make_settings()
         client = _make_app(mock_supabase, settings)
 
-        for category in ["bug", "wrong_answer", "slow", "other"]:
+        for category in ["bug", "wrong_answer", "slow", "other", "contact_support"]:
             body = {**FEEDBACK_BODY, "category": category}
             resp = client.post(
                 "/api/feedback",

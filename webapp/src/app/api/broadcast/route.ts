@@ -6,10 +6,12 @@ import { buildUnsubscribeUrl } from "@/lib/unsubscribe";
 import { UpdateBroadcastEmail } from "@/emails/update-broadcast";
 import { BroadcastWaitlistUpdate1 } from "@/emails/broadcast-waitlist-update-1";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // Named broadcast templates — add new ones here
 const templates: Record<
@@ -139,7 +141,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Waitlist broadcast: all subscribed emails
-  const { data: subscribers, error } = await supabase
+  const { data: subscribers, error } = await getSupabase()
     .from("waitlist")
     .select("email")
     .eq("unsubscribed", false);

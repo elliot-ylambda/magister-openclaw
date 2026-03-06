@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from typing import AsyncIterator
@@ -34,6 +35,26 @@ IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 _active_requests: set[str] = set()
 
 ACTIVITY_DEBOUNCE_SECONDS = 30.0
+
+
+def _strip_reasoning_format(text: str) -> str:
+    """Strip OpenClaw's 'Reasoning:\\n_..._' markdown formatting.
+
+    OpenClaw wraps thinking text with a 'Reasoning:' prefix and italic
+    underscores per line.  The webapp has its own ThinkingBlock component,
+    so we forward the raw text only.
+    """
+    # Remove leading "Reasoning:\n" or "Reasoning: " prefix
+    text = re.sub(r"^Reasoning:\s*\n?", "", text, count=1)
+    # Remove per-line italic markers  _line_  →  line
+    lines = text.split("\n")
+    stripped = []
+    for line in lines:
+        if line.startswith("_") and line.endswith("_") and len(line) > 2:
+            stripped.append(line[1:-1])
+        else:
+            stripped.append(line)
+    return "\n".join(stripped).strip()
 
 
 def _machine_url(machine, dev_override: str) -> str:
@@ -295,23 +316,59 @@ def create_chat_router(
         user_id: str,
         supabase: SupabaseService,
     ) -> AsyncIterator[dict]:
-        """Parse OpenAI chat completions SSE format."""
+        """Parse OpenAI chat completions SSE format, including thinking/tool events."""
         last_activity_update = 0.0
+        current_event = ""
         async for line in resp.aiter_lines():
-            if not line or not line.startswith("data: "):
-                if line:
-                    logger.debug(f"[chat] non-data line from upstream: {line[:200]}")
+            if not line:
                 continue
-            payload = line[6:]
-            if payload == "[DONE]":
+
+            if line.startswith("event:"):
+                current_event = line[6:].strip()
+                continue
+
+            if not line.startswith("data:"):
+                continue
+
+            raw = line[5:].lstrip()
+            if raw == "[DONE]":
                 break
+
+            # Handle custom event types from OpenClaw
+            if current_event == "thinking":
+                try:
+                    data = json.loads(raw)
+                    # Use full accumulated text (not delta) because
+                    # formatReasoningMessage's italic wrapping breaks
+                    # delta prefix-matching.  Strip the "Reasoning:\n"
+                    # prefix and markdown italic markers added by OpenClaw.
+                    text = data.get("text", "") or data.get("delta", "")
+                    if text:
+                        text = _strip_reasoning_format(text)
+                        if text:
+                            yield {"event": "thinking", "data": text}
+                except (json.JSONDecodeError, KeyError):
+                    logger.warning(f"[chat] unparseable thinking chunk: {raw[:300]}")
+                current_event = ""
+                continue
+
+            if current_event == "tool":
+                try:
+                    yield {"event": "tool_use", "data": raw}
+                except Exception:
+                    logger.warning(f"[chat] unparseable tool chunk: {raw[:300]}")
+                current_event = ""
+                continue
+
+            # Default: OpenAI chat completion chunk
+            current_event = ""
             try:
-                chunk = json.loads(payload)
+                chunk = json.loads(raw)
                 content = chunk["choices"][0]["delta"].get("content", "")
                 if content:
                     yield {"event": "chunk", "data": content}
             except (json.JSONDecodeError, KeyError, IndexError):
-                logger.warning(f"[chat] unparseable upstream chunk: {payload[:300]}")
+                logger.warning(f"[chat] unparseable upstream chunk: {raw[:300]}")
                 continue
 
             now = time.monotonic()

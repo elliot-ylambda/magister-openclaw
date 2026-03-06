@@ -1,4 +1,1 @@
 app = "magister-user-machine"
-
-[build]
-  dockerfile = "Dockerfile"

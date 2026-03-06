@@ -13,26 +13,24 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 WORKDIR /app
 
 # --- OpenClaw ---
-# Clone and build OpenClaw from our fork (pinned to a specific commit)
-ARG OPENCLAW_VERSION=19023eed8607746e2540ed1657f73358ec3c3a43
-RUN git clone https://github.com/elliot-ylambda/magister-openclaw.git /app/openclaw \
-    && cd /app/openclaw \
-    && git checkout ${OPENCLAW_VERSION} \
+# Copy from the magister-openclaw submodule (pinned via git submodule)
+COPY magister-openclaw/ /app/openclaw/
+RUN cd /app/openclaw \
     && corepack enable \
     && pnpm install --frozen-lockfile \
     && pnpm build
 
-# --- Marketing Skills ---
-ARG MARKETINGSKILLS_VERSION=main
-RUN git clone --depth 1 --branch ${MARKETINGSKILLS_VERSION} \
-    https://github.com/coreyhaines31/marketingskills.git /app/skills \
-    && rm -rf /app/skills/.git
+# --- Marketing Skills (from forked submodule) ---
+COPY magister-marketingskills/skills/ /app/skills/
+
+# --- Custom Magister Skills (override/extend marketingskills) ---
+COPY skills/ /app/skills/
 
 # --- Default Config ---
-COPY default-config/ /app/default-config/
+COPY openclaw-image/default-config/ /app/default-config/
 
 # --- Entrypoint ---
-COPY entrypoint.sh /entrypoint.sh
+COPY openclaw-image/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 18789 18790

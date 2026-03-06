@@ -1,5 +1,5 @@
 .PHONY: up down logs seed reset \
-	image-build image-push openclaw-pin \
+	image-build image-push openclaw-pin openclaw-sync skills-pin skills-sync \
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build create-admin-coupon \
 	supabase-start supabase-migrate supabase-reset supabase-push-prod connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
@@ -7,7 +7,7 @@
 	deploy-gateway deploy-image deploy-machines deploy-all \
 	start-gateway start-machine start-machines \
 	stop-gateway stop-machine stop-machines \
-	delete-user make-admin \
+	delete-user make-admin get-machine \
 	check
 
 # ─── Check (build + lint) ─────────────────────────────────────
@@ -39,18 +39,51 @@ IMAGE_NAME ?= magister-openclaw
 IMAGE_TAG  ?= latest
 
 image-build:
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) ./openclaw-image
+	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) -f openclaw-image/Dockerfile .
 
 image-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
 
-# Pin OpenClaw to the current HEAD of ../magister-openclaw
-# Workflow: edit ../magister-openclaw → commit + push → make openclaw-pin → make deploy-image
+# Update the magister-openclaw submodule to its latest remote HEAD
+# Workflow: make openclaw-pin → make deploy-image
 openclaw-pin:
-	@HASH=$$(cd ../magister-openclaw && git rev-parse HEAD); \
-	echo "Pinning OpenClaw to $$HASH"; \
-	sed -i '' "s|^ARG OPENCLAW_VERSION=.*|ARG OPENCLAW_VERSION=$$HASH|" openclaw-image/Dockerfile; \
+	@cd magister-openclaw && git fetch origin && git checkout origin/main; \
+	cd .. && git add magister-openclaw; \
+	HASH=$$(cd magister-openclaw && git rev-parse HEAD); \
+	echo "Pinned OpenClaw submodule to $$HASH"; \
 	echo "Done. Run 'make deploy-image' to build with new version."
+
+# Pull upstream OpenClaw changes into our fork, push to origin, and pin
+# Workflow: make openclaw-sync → commit → make deploy-image
+openclaw-sync:
+	@cd magister-openclaw \
+	&& git fetch upstream \
+	&& git checkout main \
+	&& git merge upstream/main \
+	&& git push origin main; \
+	cd .. && git add magister-openclaw; \
+	HASH=$$(cd magister-openclaw && git rev-parse HEAD); \
+	echo "Synced OpenClaw to upstream and pinned to $$HASH"
+
+# Update the magister-marketingskills submodule to its latest remote HEAD
+skills-pin:
+	@cd magister-marketingskills && git fetch origin && git checkout origin/main; \
+	cd .. && git add magister-marketingskills; \
+	HASH=$$(cd magister-marketingskills && git rev-parse HEAD); \
+	echo "Pinned marketingskills submodule to $$HASH"; \
+	echo "Done. Run 'make deploy-image' to build with new version."
+
+# Pull upstream marketingskills changes into our fork, push to origin, and pin
+# Workflow: make skills-sync → commit → make deploy-image
+skills-sync:
+	@cd magister-marketingskills \
+	&& git fetch upstream \
+	&& git checkout main \
+	&& git merge upstream/main \
+	&& git push origin main; \
+	cd .. && git add magister-marketingskills; \
+	HASH=$$(cd magister-marketingskills && git rev-parse HEAD); \
+	echo "Synced marketingskills to upstream and pinned to $$HASH"
 
 # ─── Production Deploy ───────────────────────────────────────
 
@@ -64,7 +97,9 @@ deploy-gateway:
 
 # Build and push user machine image to Fly registry (builds on Fly's remote amd64 builders)
 deploy-image:
-	cd openclaw-image && flyctl deploy -a magister-user-machine \
+	flyctl deploy -a magister-user-machine \
+		--config openclaw-image/fly.toml \
+		--dockerfile openclaw-image/Dockerfile \
 		--remote-only --build-only --push \
 		--image-label $(FLY_IMAGE_TAG)
 
@@ -436,3 +471,22 @@ make-admin:
 	HTTP_CODE=$$(echo "$$RESULT" | tail -1); \
 	if [ "$$HTTP_CODE" = "204" ]; then echo "User $(email) is now an admin."; \
 	else echo "Error: update returned HTTP $$HTTP_CODE"; echo "$$RESULT" | head -1; exit 1; fi
+
+# Look up a user's machine info by email.
+# Usage: make get-machine email=user@example.com
+get-machine:
+	@if [ -z "$(email)" ]; then echo "Usage: make get-machine email=user@example.com"; exit 1; fi; \
+	export $$(grep -v '^#' webapp/.env.local | grep -v '^$$' | xargs); \
+	SB_URL=$${SUPABASE_URL:-$$NEXT_PUBLIC_SUPABASE_URL}; \
+	echo "Looking up user: $(email)..."; \
+	USER_ID=$$(curl -s "$$SB_URL/auth/v1/admin/users" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -c "import json,sys; users=json.load(sys.stdin).get('users',[]); matches=[u for u in users if u.get('email')=='$(email)']; print(matches[0]['id'] if matches else '')" 2>/dev/null); \
+	if [ -z "$$USER_ID" ]; then echo "Error: No user found with email $(email)"; exit 1; fi; \
+	echo "User ID: $$USER_ID"; \
+	echo "---"; \
+	curl -s "$$SB_URL/rest/v1/user_machines?user_id=eq.$$USER_ID&select=fly_app_name,fly_machine_id,fly_region,status,plan,last_activity,created_at,updated_at" \
+		-H "Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY" \
+		-H "apikey: $$SUPABASE_SERVICE_ROLE_KEY" \
+		| python3 -m json.tool

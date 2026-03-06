@@ -4,9 +4,19 @@ export type Attachment = {
   data: string; // base64-encoded content (no data URI prefix)
 };
 
+export type ToolUseEvent = {
+  phase: "start" | "result";
+  name: string;
+  toolCallId: string;
+  isError?: boolean;
+  args?: Record<string, unknown>;
+};
+
 export type ChatEvent =
   | { type: "session"; sessionId: string }
   | { type: "chunk"; content: string }
+  | { type: "thinking"; content: string }
+  | { type: "tool_use"; data: ToolUseEvent }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -49,6 +59,22 @@ const ERROR_MESSAGES: Record<number, string> = {
   423: "Your agent is stopped. Start it to resume.",
   503: "Your agent is waking up. Please try again in a moment.",
 };
+
+function dispatchSseEvent(event: string, data: string): ChatEvent | null {
+  if (event === "session") return { type: "session", sessionId: data };
+  if (event === "chunk") return { type: "chunk", content: data };
+  if (event === "done") return { type: "done" };
+  if (event === "error") return { type: "error", message: data };
+  if (event === "thinking") return { type: "thinking", content: data };
+  if (event === "tool_use") {
+    try {
+      return { type: "tool_use", data: JSON.parse(data) as ToolUseEvent };
+    } catch {
+      return null;
+    }
+  }
+  return null; // Unknown event types are silently ignored
+}
 
 /**
  * Stream chat messages from the gateway via SSE.
@@ -105,15 +131,8 @@ export async function* streamChat(
         if (dataBuffer.length > 0) {
           const data = dataBuffer.join("\n");
           const event = currentEvent || "chunk";
-          if (event === "session") {
-            yield { type: "session", sessionId: data };
-          } else if (event === "chunk") {
-            yield { type: "chunk", content: data };
-          } else if (event === "done") {
-            yield { type: "done" };
-          } else if (event === "error") {
-            yield { type: "error", message: data };
-          }
+          const parsed = dispatchSseEvent(event, data);
+          if (parsed) yield parsed;
         }
         break;
       }
@@ -130,15 +149,8 @@ export async function* streamChat(
           if (dataBuffer.length > 0) {
             const data = dataBuffer.join("\n");
             const event = currentEvent || "chunk";
-            if (event === "session") {
-              yield { type: "session", sessionId: data };
-            } else if (event === "chunk") {
-              yield { type: "chunk", content: data };
-            } else if (event === "done") {
-              yield { type: "done" };
-            } else if (event === "error") {
-              yield { type: "error", message: data };
-            }
+            const parsed = dispatchSseEvent(event, data);
+            if (parsed) yield parsed;
             dataBuffer = [];
             currentEvent = "";
           }
@@ -375,4 +387,102 @@ export function deleteFile(gatewayUrl: string, jwt: string, filePath: string) {
     gatewayUrl, jwt, "DELETE",
     `/files/delete?path=${encodeURIComponent(filePath)}`
   );
+}
+
+// ── Email operations ────────────────────────────────────────
+
+export type AgentEmail = {
+  id: string;
+  user_id: string;
+  machine_id: string;
+  direction: "inbound" | "outbound";
+  status: "pending" | "approved" | "sent" | "rejected" | "received" | "quarantined" | "failed" | "rewrite_requested";
+  from_address: string;
+  to_address: string;
+  cc: string[] | null;
+  bcc: string[] | null;
+  subject: string;
+  body_html: string | null;
+  body_text: string | null;
+  message_id: string | null;
+  in_reply_to: string | null;
+  thread_id: string | null;
+  attachments: Record<string, unknown>[] | null;
+  rewrite_note: string | null;
+  scan_result: Record<string, unknown> | null;
+  created_at: string;
+  sent_at: string | null;
+  received_at: string | null;
+};
+
+async function emailRequest<T>(
+  gatewayUrl: string,
+  jwt: string,
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const opts: RequestInit = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${gatewayUrl}/api${path}`, opts);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `Email operation failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export function getPendingEmails(gatewayUrl: string, jwt: string) {
+  return emailRequest<{ emails: AgentEmail[] }>(gatewayUrl, jwt, "GET", "/email/pending");
+}
+
+export function getEmailInbox(gatewayUrl: string, jwt: string) {
+  return emailRequest<{ emails: AgentEmail[] }>(gatewayUrl, jwt, "GET", "/email/inbox");
+}
+
+export function getSentEmails(gatewayUrl: string, jwt: string) {
+  return emailRequest<{ emails: AgentEmail[] }>(gatewayUrl, jwt, "GET", "/email/sent");
+}
+
+export function approveEmail(gatewayUrl: string, jwt: string, emailId: string) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "approve",
+  });
+}
+
+export function rejectEmail(gatewayUrl: string, jwt: string, emailId: string) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "reject",
+  });
+}
+
+export function rewriteEmail(gatewayUrl: string, jwt: string, emailId: string, note: string) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "rewrite",
+    rewrite_note: note,
+  });
+}
+
+export function editAndSendEmail(
+  gatewayUrl: string,
+  jwt: string,
+  emailId: string,
+  edits: { subject?: string; body_html?: string; body_text?: string }
+) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "edit",
+    edited_subject: edits.subject,
+    edited_body_html: edits.body_html,
+    edited_body_text: edits.body_text,
+  });
 }
