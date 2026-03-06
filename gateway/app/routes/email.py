@@ -162,4 +162,64 @@ def create_email_router(supabase, email_service, verify_jwt, verify_machine_toke
         emails = await supabase.get_agent_emails(user_id, direction="outbound", status="sent")
         return {"emails": emails}
 
+    # ── Agent-facing endpoints (machine-token auth) ──────────
+
+    @router.get("/email/agent/inbox")
+    async def agent_inbox(
+        since: str | None = None,
+        limit: int = 50,
+        token_hash: str = Depends(verify_machine_token),
+    ):
+        """Agent reads its inbound emails."""
+        machine = await supabase.get_machine_by_token_hash(token_hash)
+        if not machine:
+            raise HTTPException(status_code=401, detail="Invalid machine token")
+        emails = await supabase.get_agent_emails(
+            machine["user_id"], direction="inbound", since=since, limit=limit,
+        )
+        return {"emails": emails}
+
+    @router.get("/email/agent/sent")
+    async def agent_sent(
+        since: str | None = None,
+        limit: int = 50,
+        token_hash: str = Depends(verify_machine_token),
+    ):
+        """Agent reads its sent outbound emails."""
+        machine = await supabase.get_machine_by_token_hash(token_hash)
+        if not machine:
+            raise HTTPException(status_code=401, detail="Invalid machine token")
+        emails = await supabase.get_agent_emails(
+            machine["user_id"], direction="outbound", status="sent",
+            since=since, limit=limit,
+        )
+        return {"emails": emails}
+
+    @router.get("/email/agent/pending")
+    async def agent_pending(
+        token_hash: str = Depends(verify_machine_token),
+    ):
+        """Agent checks pending + rewrite_requested drafts."""
+        machine = await supabase.get_machine_by_token_hash(token_hash)
+        if not machine:
+            raise HTTPException(status_code=401, detail="Invalid machine token")
+        emails = await supabase.get_actionable_outbound_emails(machine["user_id"])
+        return {"emails": emails}
+
+    @router.get("/email/agent/{email_id}")
+    async def agent_get_email(
+        email_id: str,
+        token_hash: str = Depends(verify_machine_token),
+    ):
+        """Agent reads a specific email by ID."""
+        machine = await supabase.get_machine_by_token_hash(token_hash)
+        if not machine:
+            raise HTTPException(status_code=401, detail="Invalid machine token")
+        email = await supabase.get_agent_email(email_id)
+        if not email:
+            raise HTTPException(status_code=404, detail="Email not found")
+        if email["user_id"] != machine["user_id"]:
+            raise HTTPException(status_code=403, detail="Not your email")
+        return {"email": email}
+
     return router

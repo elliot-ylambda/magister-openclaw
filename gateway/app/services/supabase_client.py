@@ -417,19 +417,38 @@ class SupabaseService:
             return None
         return result.data
 
-    async def get_agent_emails(self, user_id: str, direction: str | None = None, status: str | None = None, limit: int = 50) -> list[dict]:
+    async def get_agent_emails(
+        self, user_id: str, direction: str | None = None,
+        status: str | None = None, since: str | None = None, limit: int = 50,
+    ) -> list[dict]:
         """List emails for a user, optionally filtered."""
         query = self._client.table("agent_emails").select("*").eq("user_id", user_id)
         if direction:
             query = query.eq("direction", direction)
         if status:
             query = query.eq("status", status)
+        if since:
+            query = query.gte("created_at", since)
         result = await query.order("created_at", desc=True).limit(limit).execute()
         return result.data or []
 
     async def get_pending_outbound_emails(self, user_id: str) -> list[dict]:
         """Get emails awaiting user approval."""
         return await self.get_agent_emails(user_id, direction="outbound", status="pending")
+
+    async def get_actionable_outbound_emails(self, user_id: str) -> list[dict]:
+        """Get emails the agent needs to act on: pending + rewrite_requested."""
+        result = (
+            await self._client.table("agent_emails")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("direction", "outbound")
+            .in_("status", ["pending", "rewrite_requested"])
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+        return result.data or []
 
     # ── Usage Tracking ───────────────────────────────────────────
 

@@ -29,6 +29,7 @@ def supabase():
     s.get_pending_outbound_emails = AsyncMock(return_value=[])
     s.get_agent_emails = AsyncMock(return_value=[])
     s.get_agent_email_by_message_id = AsyncMock(return_value=None)
+    s.get_actionable_outbound_emails = AsyncMock(return_value=[])
     return s
 
 
@@ -194,3 +195,63 @@ def test_rewrite_requires_pending_status(client, supabase):
         "rewrite_note": "Make it shorter",
     })
     assert response.status_code == 400
+
+
+# ── Agent-facing endpoint tests ──────────────────────────────
+
+
+def test_agent_inbox(client, supabase):
+    supabase.get_agent_emails = AsyncMock(return_value=[
+        {"id": "e1", "direction": "inbound", "from_address": "sender@example.com"},
+    ])
+    response = client.get("/api/email/agent/inbox")
+    assert response.status_code == 200
+    assert len(response.json()["emails"]) == 1
+    supabase.get_agent_emails.assert_called_once_with(
+        "user-1", direction="inbound", since=None, limit=50,
+    )
+
+
+def test_agent_inbox_with_since(client, supabase):
+    response = client.get("/api/email/agent/inbox?since=2026-03-01T00:00:00Z")
+    assert response.status_code == 200
+    supabase.get_agent_emails.assert_called_once_with(
+        "user-1", direction="inbound", since="2026-03-01T00:00:00Z", limit=50,
+    )
+
+
+def test_agent_sent(client, supabase):
+    response = client.get("/api/email/agent/sent")
+    assert response.status_code == 200
+    supabase.get_agent_emails.assert_called_once_with(
+        "user-1", direction="outbound", status="sent", since=None, limit=50,
+    )
+
+
+def test_agent_pending(client, supabase):
+    response = client.get("/api/email/agent/pending")
+    assert response.status_code == 200
+    supabase.get_actionable_outbound_emails.assert_called_once_with("user-1")
+
+
+def test_agent_get_email_by_id(client, supabase):
+    supabase.get_agent_email = AsyncMock(return_value={
+        "id": "email-1", "user_id": "user-1", "subject": "Test",
+    })
+    response = client.get("/api/email/agent/email-1")
+    assert response.status_code == 200
+    assert response.json()["email"]["subject"] == "Test"
+
+
+def test_agent_get_email_wrong_user(client, supabase):
+    supabase.get_agent_email = AsyncMock(return_value={
+        "id": "email-1", "user_id": "other-user",
+    })
+    response = client.get("/api/email/agent/email-1")
+    assert response.status_code == 403
+
+
+def test_agent_get_email_not_found(client, supabase):
+    supabase.get_agent_email = AsyncMock(return_value=None)
+    response = client.get("/api/email/agent/email-1")
+    assert response.status_code == 404
