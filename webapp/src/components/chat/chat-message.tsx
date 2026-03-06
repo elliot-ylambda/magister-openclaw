@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { Check, Copy, FileText } from "lucide-react";
+import { AlertCircle, Brain, Check, Copy, FileText, Loader2 } from "lucide-react";
 
 export interface MessageAttachment {
   name: string;
@@ -11,12 +11,22 @@ export interface MessageAttachment {
   url?: string; // Supabase signed URL or local data URL
 }
 
+export interface ToolUse {
+  id: string;
+  name: string;
+  phase: "start" | "result";
+  isError?: boolean;
+  args?: Record<string, unknown>;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: Date;
   attachments?: MessageAttachment[];
+  thinkingContent?: string;
+  toolUses?: ToolUse[];
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -87,6 +97,71 @@ function AttachmentDisplay({ attachments }: { attachments: MessageAttachment[] }
   );
 }
 
+function ThinkingBlock({
+  content,
+  isStreaming,
+}: {
+  content: string;
+  isStreaming?: boolean;
+}) {
+  return (
+    <details className="mb-2 group/thinking">
+      <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
+        <Brain className="h-3 w-3" />
+        <span>Thinking</span>
+      </summary>
+      <div className="mt-1 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
+        {content}
+        {isStreaming && (
+          <span className="inline-block h-3 w-1 animate-pulse bg-muted-foreground rounded-sm ml-0.5 align-text-bottom" />
+        )}
+      </div>
+    </details>
+  );
+}
+
+function toolDisplayLabel(tool: ToolUse): string {
+  const args = tool.args;
+  if (!args) return tool.name;
+
+  // Show a meaningful summary based on tool type
+  if (tool.name === "exec" || tool.name === "bash") {
+    const cmd = typeof args.command === "string" ? args.command : "";
+    if (cmd) return cmd.length > 60 ? cmd.slice(0, 57) + "…" : cmd;
+  }
+  if (tool.name === "read") {
+    const path = typeof args.path === "string" ? args.path : "";
+    if (path) return `read ${path}`;
+  }
+  if (tool.name === "write" || tool.name === "edit") {
+    const path = typeof args.path === "string" ? args.path : "";
+    if (path) return `${tool.name} ${path}`;
+  }
+  return tool.name;
+}
+
+function ToolUseBadges({ tools }: { tools: ToolUse[] }) {
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {tools.map((tool) => (
+        <span
+          key={tool.id}
+          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground font-mono"
+        >
+          {tool.phase === "start" ? (
+            <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+          ) : tool.isError ? (
+            <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />
+          ) : (
+            <Check className="h-3 w-3 text-green-400 shrink-0" />
+          )}
+          <span className="truncate max-w-[300px]">{toolDisplayLabel(tool)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function ChatMessage({
   message,
   isStreaming,
@@ -139,6 +214,15 @@ export function ChatMessage({
           </div>
         ) : (
           <div className="text-sm">
+            {message.thinkingContent && (
+              <ThinkingBlock
+                content={message.thinkingContent}
+                isStreaming={isStreaming && !message.content}
+              />
+            )}
+            {message.toolUses && message.toolUses.length > 0 && (
+              <ToolUseBadges tools={message.toolUses} />
+            )}
             {message.content ? (
               <MarkdownRenderer content={message.content} />
             ) : isStreaming ? (

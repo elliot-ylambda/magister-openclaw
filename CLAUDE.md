@@ -9,6 +9,9 @@ Magister Marketing is an autonomous AI marketing agent platform. The monorepo co
 - **webapp/** — Next.js frontend (marketing site + authenticated app with chat, dashboard, settings)
 - **gateway/** — Python FastAPI backend that proxies chat to per-user Fly.io machines, handles LLM routing, billing, and Slack integration
 - **openclaw-image/** — Docker image for user-provisioned AI agent machines running on Fly.io
+- **skills/** — Custom Magister skills for the agent (email, etc.) — overlaid on top of marketingskills
+- **magister-openclaw/** — Git submodule: our fork of OpenClaw (`elliot-ylambda/magister-openclaw`)
+- **magister-marketingskills/** — Git submodule: our fork of marketingskills (`elliot-ylambda/marketingskills`)
 
 ## Commands
 
@@ -46,7 +49,11 @@ All commands run from the **repo root** via the top-level Makefile:
 | **OpenClaw Image** | |
 | Build locally | `make image-build` |
 | Push to registry | `make image-push` |
-| Pin to current HEAD | `make openclaw-pin` (updates Dockerfile ARG) |
+| Pin to current HEAD | `make openclaw-pin` (updates submodule to latest origin/main) |
+| Sync upstream OpenClaw | `make openclaw-sync` (merge upstream → push fork → pin submodule) |
+| **Marketing Skills** | |
+| Pin skills to current HEAD | `make skills-pin` (updates submodule to latest origin/main) |
+| Sync upstream skills | `make skills-sync` (merge upstream → push fork → pin submodule) |
 | **Production Deploy (Fly.io)** | |
 | Deploy gateway | `make deploy-gateway` |
 | Deploy machine image | `make deploy-image` (remote build + push to Fly registry) |
@@ -149,13 +156,32 @@ Docker image deployed to per-user Fly.io apps. Each user gets an isolated Fly ap
 ### IMPORTANT: OpenClaw Reference
 **When you have questions about how OpenClaw works, need to understand its API, or are debugging integration issues — always consult these sources:**
 
-1. **Our fork (active development)**: `../magister-openclaw/` — this is where we make changes; the production Dockerfile clones from `github.com/elliot-ylambda/magister-openclaw`
+1. **Our fork (submodule)**: `magister-openclaw/` — git submodule pointing to `github.com/elliot-ylambda/magister-openclaw`; the Dockerfile COPYs from this directory
 2. **Upstream reference (read-only)**: `../openclaw/` — the original OpenClaw repo, useful for understanding internals and pulling updates
 3. **Documentation**: https://docs.openclaw.ai
 
-**Workflow for OpenClaw changes:** edit `../magister-openclaw/` → commit + push → `make openclaw-pin` → `make deploy-image`
+**Workflow for OpenClaw changes:**
+1. `cd magister-openclaw` — the submodule is its own git repo
+2. Make edits, then `git add && git commit && git push origin main` — pushes to `github.com/elliot-ylambda/magister-openclaw`
+3. Back in the parent repo (`cd ..`), run `make openclaw-pin` — fast-forwards submodule to latest `origin/main` and stages it
+4. `git commit` the updated submodule pointer in the parent repo
+5. `make deploy-image` — the Dockerfile COPYs whatever commit the submodule is checked out to
+
+**Syncing with upstream OpenClaw:**
+`make openclaw-sync` — fetches upstream, merges into fork, pushes to origin, pins submodule. Then commit and `make deploy-image`.
 
 Read the actual OpenClaw source and docs rather than guessing at behavior. The gateway's chat proxy, LLM proxy, and machine lifecycle all depend on OpenClaw's internal APIs and conventions.
+
+### Skills
+
+Agent skills are layered in the Docker image (later layers override earlier ones):
+1. **`magister-marketingskills/skills/`** — forked from `coreyhaines31/marketingskills`, upstream community marketing skills
+2. **`skills/`** — custom Magister skills (e.g. email) that override or extend the above
+
+**Workflow for custom skills:** Add/edit skills in `skills/` at the repo root → `make deploy-image`.
+
+**Syncing with upstream marketingskills:**
+`make skills-sync` — fetches upstream, merges into fork, pushes to origin, pins submodule. Then commit and `make deploy-image`.
 
 ### Database (Supabase)
 

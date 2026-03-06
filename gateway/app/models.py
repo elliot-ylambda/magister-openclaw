@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -32,6 +33,7 @@ class UserMachine(BaseModel):
     pending_image: str | None = None
     current_image: str | None = None
     preferred_model: str = "anthropic/claude-opus-4-6"
+    email_address: str | None = None
     provisioning_step: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -103,6 +105,18 @@ class UserApiKey(BaseModel):
     updated_at: datetime | None = None
 
 
+class FeedbackMessage(BaseModel):
+    role: str
+    content: str
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str | None = None
+    category: str  # bug, wrong_answer, slow, other, contact_support
+    description: str = ""
+    messages: list[FeedbackMessage] = []
+
+
 class UsageEvent(BaseModel):
     user_id: str
     event_type: str  # 'llm_request', 'machine_minute', 'tool_execution'
@@ -138,3 +152,27 @@ class CustomSkillRequest(BaseModel):
 
 class SkillToggleRequest(BaseModel):
     enabled: bool
+
+
+class EmailDraftRequest(BaseModel):
+    """Agent requests to send an email (requires user approval)."""
+    to: str
+    subject: str
+    body_html: str
+    body_text: str | None = None
+    cc: list[str] | None = None
+    bcc: list[str] | None = None
+    reply_to: str | None = None
+    in_reply_to: str | None = None
+    attachments: list[dict] | None = None
+
+
+class EmailApprovalRequest(BaseModel):
+    """User approves, rejects, edits, or requests rewrite of a pending outbound email."""
+    email_id: str
+    action: Literal["approve", "reject", "rewrite", "edit"]
+    rejection_reason: str | None = None
+    rewrite_note: str | None = None
+    edited_subject: str | None = None
+    edited_body_html: str | None = None
+    edited_body_text: str | None = None

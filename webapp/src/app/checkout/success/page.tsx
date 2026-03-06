@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { getAgentStatus } from '@/lib/gateway';
+import { ContactSupportPopover } from '@/components/shared/contact-support-popover';
 
 const SUBSCRIPTION_POLL_MS = 2_000;
 const STATUS_POLL_MS = 3_000;
@@ -273,6 +274,12 @@ export default function CheckoutSuccessPage() {
             </button>
           </div>
         )}
+
+        {/* Contact support */}
+        <div className="mt-6 flex items-center justify-center border-t border-border pt-4">
+          <span className="mr-1 text-xs text-muted-foreground">Need help?</span>
+          <ContactSupportPopover />
+        </div>
       </div>
     </div>
   );

@@ -34,7 +34,9 @@ yarn-error.log*
 !.env.gateway.docker.example
 
 # worktrees
+.claude/worktrees/
 .worktrees/
+.claude/worktrees/
 
 # python
 .venv/
@@ -43,12 +45,6 @@ __pycache__/
 
 # supabase
 supabase/.temp/
-
-# worktrees
-.worktrees/
-
-# worktrees
-.worktrees/
 
 # vercel
 .vercel

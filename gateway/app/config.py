@@ -24,12 +24,18 @@ class Settings(BaseSettings):
     openclaw_image: str = ""
 
     # Slack integration
+    slack_feedback_webhook_url: str = ""
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""
     slack_app_id: str = ""
     slack_redirect_uri: str = ""
     webapp_url: str = ""
+
+    # Email (Resend)
+    resend_api_key: str = ""
+    agent_email_domain: str = "agent.magistermarketing.com"
+    resend_webhook_secret: str = ""
 
     # Dev override: when set, all chat/health requests go to this URL
     # instead of Fly internal DNS.  Set via DEV_MACHINE_URL in .env.gateway.docker.
