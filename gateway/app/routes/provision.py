@@ -77,6 +77,27 @@ def create_provision_router(
                 }
             )
 
+        # Assign agent email address (after DB record exists, before secrets)
+        if not getattr(machine, "email_address", None):
+            email_prefix = f"agent-{user_id[:8]}"
+            email_address = f"{email_prefix}@{settings.agent_email_domain}"
+            try:
+                await supabase.update_user_machine(
+                    machine.id,
+                    email_address=email_address,
+                )
+            except Exception:
+                # Fallback to full user_id if short prefix collides
+                email_address = f"agent-{user_id}@{settings.agent_email_domain}"
+                await supabase.update_user_machine(
+                    machine.id,
+                    email_address=email_address,
+                )
+            machine.email_address = email_address
+            logger.info(
+                f"[provision] email assigned: {email_address} for {user_id}"
+            )
+
         try:
             # Step 1: Create Fly App
             if machine.provisioning_step < 1:
@@ -109,6 +130,9 @@ def create_provision_router(
                 default_model = await supabase.get_app_setting("default_model")
                 default_model = default_model or "anthropic/claude-opus-4-6"
                 fly_secrets["DEFAULT_MODEL"] = default_model
+
+                # Agent email address so the machine knows its own address
+                fly_secrets["AGENT_EMAIL_ADDRESS"] = machine.email_address
 
                 await fly.set_secrets(machine.fly_app_name, fly_secrets)
                 await supabase.update_user_machine(

@@ -333,3 +333,101 @@ export function deleteFile(gatewayUrl: string, jwt: string, filePath: string) {
     `/files/delete?path=${encodeURIComponent(filePath)}`
   );
 }
+
+// ── Email operations ────────────────────────────────────────
+
+export type AgentEmail = {
+  id: string;
+  user_id: string;
+  machine_id: string;
+  direction: "inbound" | "outbound";
+  status: "pending" | "approved" | "sent" | "rejected" | "received" | "quarantined" | "failed" | "rewrite_requested";
+  from_address: string;
+  to_address: string;
+  cc: string[] | null;
+  bcc: string[] | null;
+  subject: string;
+  body_html: string | null;
+  body_text: string | null;
+  message_id: string | null;
+  in_reply_to: string | null;
+  thread_id: string | null;
+  attachments: Record<string, unknown>[] | null;
+  rewrite_note: string | null;
+  scan_result: Record<string, unknown> | null;
+  created_at: string;
+  sent_at: string | null;
+  received_at: string | null;
+};
+
+async function emailRequest<T>(
+  gatewayUrl: string,
+  jwt: string,
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const opts: RequestInit = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${gatewayUrl}/api${path}`, opts);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `Email operation failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export function getPendingEmails(gatewayUrl: string, jwt: string) {
+  return emailRequest<{ emails: AgentEmail[] }>(gatewayUrl, jwt, "GET", "/email/pending");
+}
+
+export function getEmailInbox(gatewayUrl: string, jwt: string) {
+  return emailRequest<{ emails: AgentEmail[] }>(gatewayUrl, jwt, "GET", "/email/inbox");
+}
+
+export function getSentEmails(gatewayUrl: string, jwt: string) {
+  return emailRequest<{ emails: AgentEmail[] }>(gatewayUrl, jwt, "GET", "/email/sent");
+}
+
+export function approveEmail(gatewayUrl: string, jwt: string, emailId: string) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "approve",
+  });
+}
+
+export function rejectEmail(gatewayUrl: string, jwt: string, emailId: string) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "reject",
+  });
+}
+
+export function rewriteEmail(gatewayUrl: string, jwt: string, emailId: string, note: string) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "rewrite",
+    rewrite_note: note,
+  });
+}
+
+export function editAndSendEmail(
+  gatewayUrl: string,
+  jwt: string,
+  emailId: string,
+  edits: { subject?: string; body_html?: string; body_text?: string }
+) {
+  return emailRequest<{ status: string }>(gatewayUrl, jwt, "POST", "/email/approve", {
+    email_id: emailId,
+    action: "edit",
+    edited_subject: edits.subject,
+    edited_body_html: edits.body_html,
+    edited_body_text: edits.body_text,
+  });
+}

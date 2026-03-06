@@ -7,6 +7,7 @@ supabase>=2.12.0
 litellm>=1.60.0,<2.0.0
 pydantic-settings>=2.7.0
 sse-starlette>=2.2.0
+svix>=1.21.0
 
 # Test dependencies
 pytest>=8.0.0
