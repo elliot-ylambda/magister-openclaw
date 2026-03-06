@@ -465,6 +465,7 @@ class SupabaseService:
         )
         return result.data or []
 
+
     # ── Usage Tracking ───────────────────────────────────────────
 
     async def insert_usage_event(self, event: UsageEvent) -> None:

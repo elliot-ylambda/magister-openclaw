@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/shared/app-sidebar";
 import { AgentStatusBadge } from "@/components/chat/agent-status-badge";
 import { UserNav } from "@/components/shared/user-nav";
 import { SlackHeaderButton } from "@/components/shared/slack-header-button";
+import { ContactSupportPopover } from "@/components/shared/contact-support-popover";
 import { Separator } from "@/components/ui/separator";
 
 export default async function AppLayout({
@@ -51,6 +52,7 @@ export default async function AppLayout({
               Admin
             </Link>
           )}
+          <ContactSupportPopover />
           <SlackHeaderButton />
           <AgentStatusBadge />
           <UserNav email={user.email ?? null} displayName={displayName} />

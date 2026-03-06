@@ -111,8 +111,8 @@ class FeedbackMessage(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
-    session_id: str
-    category: str  # bug, wrong_answer, slow, other
+    session_id: str | None = None
+    category: str  # bug, wrong_answer, slow, other, contact_support
     description: str = ""
     messages: list[FeedbackMessage] = []
 

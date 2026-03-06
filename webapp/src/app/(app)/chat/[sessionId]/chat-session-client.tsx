@@ -547,7 +547,13 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <ChatInput onSend={handleSend} isStreaming={isStreaming || isWaking} onModelChange={handleModelChange} />
+      <ChatInput
+        onSend={handleSend}
+        isStreaming={isStreaming || isWaking}
+        onModelChange={handleModelChange}
+        sessionId={sessionId}
+        messages={messages}
+      />
     </div>
   );
 }

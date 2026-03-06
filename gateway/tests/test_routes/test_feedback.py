@@ -75,7 +75,7 @@ def _make_app(mock_supabase, settings) -> TestClient:
 
 
 FEEDBACK_BODY = {
-    "session_id": "sess-123",
+    "session_id": "sess-123-abcd-efgh",
     "category": "bug",
     "description": "The agent gave a wrong answer",
     "messages": [
@@ -194,7 +194,7 @@ class TestFeedbackSubmission:
         settings = _make_settings()
         client = _make_app(mock_supabase, settings)
 
-        for category in ["bug", "wrong_answer", "slow", "other"]:
+        for category in ["bug", "wrong_answer", "slow", "other", "contact_support"]:
             body = {**FEEDBACK_BODY, "category": category}
             resp = client.post(
                 "/api/feedback",
