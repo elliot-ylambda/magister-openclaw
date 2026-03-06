@@ -1,0 +1,3 @@
+[submodule "magister-openclaw"]
+	path = magister-openclaw
+	url = https://github.com/elliot-ylambda/magister-openclaw.git

@@ -46,7 +46,7 @@ All commands run from the **repo root** via the top-level Makefile:
 | **OpenClaw Image** | |
 | Build locally | `make image-build` |
 | Push to registry | `make image-push` |
-| Pin to current HEAD | `make openclaw-pin` (updates Dockerfile ARG) |
+| Pin to current HEAD | `make openclaw-pin` (updates submodule to latest origin/main) |
 | **Production Deploy (Fly.io)** | |
 | Deploy gateway | `make deploy-gateway` |
 | Deploy machine image | `make deploy-image` (remote build + push to Fly registry) |
@@ -149,11 +149,13 @@ Docker image deployed to per-user Fly.io apps. Each user gets an isolated Fly ap
 ### IMPORTANT: OpenClaw Reference
 **When you have questions about how OpenClaw works, need to understand its API, or are debugging integration issues — always consult these sources:**
 
-1. **Our fork (active development)**: `../magister-openclaw/` — this is where we make changes; the production Dockerfile clones from `github.com/elliot-ylambda/magister-openclaw`
+1. **Our fork (submodule)**: `magister-openclaw/` — git submodule pointing to `github.com/elliot-ylambda/magister-openclaw`; the Dockerfile COPYs from this directory
 2. **Upstream reference (read-only)**: `../openclaw/` — the original OpenClaw repo, useful for understanding internals and pulling updates
 3. **Documentation**: https://docs.openclaw.ai
 
-**Workflow for OpenClaw changes:** edit `../magister-openclaw/` → commit + push → `make openclaw-pin` → `make deploy-image`
+**Workflow for OpenClaw changes:** edit `magister-openclaw/` → commit + push in submodule → `make openclaw-pin` → commit updated submodule pointer → `make deploy-image`
+
+**Syncing with upstream OpenClaw:** `cd magister-openclaw && git fetch upstream && git merge upstream/main` → resolve conflicts → push to origin
 
 Read the actual OpenClaw source and docs rather than guessing at behavior. The gateway's chat proxy, LLM proxy, and machine lifecycle all depend on OpenClaw's internal APIs and conventions.
 

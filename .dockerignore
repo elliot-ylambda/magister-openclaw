@@ -1,0 +1,11 @@
+# Docker build context: repo root (for openclaw-image builds).
+# Exclude everything, then whitelist only what the Dockerfile needs.
+*
+
+# OpenClaw submodule
+!magister-openclaw/
+
+# Build assets from openclaw-image/
+!openclaw-image/skills/
+!openclaw-image/default-config/
+!openclaw-image/entrypoint.sh

@@ -39,17 +39,18 @@ IMAGE_NAME ?= magister-openclaw
 IMAGE_TAG  ?= latest
 
 image-build:
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) ./openclaw-image
+	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) -f openclaw-image/Dockerfile .
 
 image-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
 
-# Pin OpenClaw to the current HEAD of ../magister-openclaw
-# Workflow: edit ../magister-openclaw → commit + push → make openclaw-pin → make deploy-image
+# Update the magister-openclaw submodule to its latest remote HEAD
+# Workflow: make openclaw-pin → make deploy-image
 openclaw-pin:
-	@HASH=$$(cd ../magister-openclaw && git rev-parse HEAD); \
-	echo "Pinning OpenClaw to $$HASH"; \
-	sed -i '' "s|^ARG OPENCLAW_VERSION=.*|ARG OPENCLAW_VERSION=$$HASH|" openclaw-image/Dockerfile; \
+	@cd magister-openclaw && git fetch origin && git checkout origin/main; \
+	cd .. && git add magister-openclaw; \
+	HASH=$$(cd magister-openclaw && git rev-parse HEAD); \
+	echo "Pinned OpenClaw submodule to $$HASH"; \
 	echo "Done. Run 'make deploy-image' to build with new version."
 
 # ─── Production Deploy ───────────────────────────────────────
@@ -64,7 +65,9 @@ deploy-gateway:
 
 # Build and push user machine image to Fly registry (builds on Fly's remote amd64 builders)
 deploy-image:
-	cd openclaw-image && flyctl deploy -a magister-user-machine \
+	flyctl deploy -a magister-user-machine \
+		--config openclaw-image/fly.toml \
+		--dockerfile openclaw-image/Dockerfile \
 		--remote-only --build-only --push \
 		--image-label $(FLY_IMAGE_TAG)
 
