@@ -1,5 +1,5 @@
 .PHONY: up down logs seed reset \
-	image-build image-push openclaw-pin \
+	image-build image-push openclaw-pin openclaw-sync skills-pin skills-sync \
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build create-admin-coupon \
 	supabase-start supabase-migrate supabase-reset supabase-push-prod connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
@@ -52,6 +52,38 @@ openclaw-pin:
 	HASH=$$(cd magister-openclaw && git rev-parse HEAD); \
 	echo "Pinned OpenClaw submodule to $$HASH"; \
 	echo "Done. Run 'make deploy-image' to build with new version."
+
+# Pull upstream OpenClaw changes into our fork, push to origin, and pin
+# Workflow: make openclaw-sync → commit → make deploy-image
+openclaw-sync:
+	@cd magister-openclaw \
+	&& git fetch upstream \
+	&& git checkout main \
+	&& git merge upstream/main \
+	&& git push origin main; \
+	cd .. && git add magister-openclaw; \
+	HASH=$$(cd magister-openclaw && git rev-parse HEAD); \
+	echo "Synced OpenClaw to upstream and pinned to $$HASH"
+
+# Update the magister-marketingskills submodule to its latest remote HEAD
+skills-pin:
+	@cd magister-marketingskills && git fetch origin && git checkout origin/main; \
+	cd .. && git add magister-marketingskills; \
+	HASH=$$(cd magister-marketingskills && git rev-parse HEAD); \
+	echo "Pinned marketingskills submodule to $$HASH"; \
+	echo "Done. Run 'make deploy-image' to build with new version."
+
+# Pull upstream marketingskills changes into our fork, push to origin, and pin
+# Workflow: make skills-sync → commit → make deploy-image
+skills-sync:
+	@cd magister-marketingskills \
+	&& git fetch upstream \
+	&& git checkout main \
+	&& git merge upstream/main \
+	&& git push origin main; \
+	cd .. && git add magister-marketingskills; \
+	HASH=$$(cd magister-marketingskills && git rev-parse HEAD); \
+	echo "Synced marketingskills to upstream and pinned to $$HASH"
 
 # ─── Production Deploy ───────────────────────────────────────
 

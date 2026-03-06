@@ -20,14 +20,11 @@ RUN cd /app/openclaw \
     && pnpm install --frozen-lockfile \
     && pnpm build
 
-# --- Marketing Skills ---
-ARG MARKETINGSKILLS_VERSION=main
-RUN git clone --depth 1 --branch ${MARKETINGSKILLS_VERSION} \
-    https://github.com/coreyhaines31/marketingskills.git /app/skills \
-    && rm -rf /app/skills/.git
+# --- Marketing Skills (from forked submodule) ---
+COPY magister-marketingskills/skills/ /app/skills/
 
-# --- Local Skills (override/extend marketingskills) ---
-COPY openclaw-image/skills/ /app/skills/
+# --- Custom Magister Skills (override/extend marketingskills) ---
+COPY skills/ /app/skills/
 
 # --- Default Config ---
 COPY openclaw-image/default-config/ /app/default-config/

@@ -5,7 +5,12 @@
 # OpenClaw submodule
 !magister-openclaw/
 
+# Marketing skills submodule
+!magister-marketingskills/skills/
+
+# Custom Magister skills (repo root)
+!skills/
+
 # Build assets from openclaw-image/
-!openclaw-image/skills/
 !openclaw-image/default-config/
 !openclaw-image/entrypoint.sh

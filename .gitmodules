@@ -1,3 +1,6 @@
 [submodule "magister-openclaw"]
 	path = magister-openclaw
 	url = https://github.com/elliot-ylambda/magister-openclaw.git
+[submodule "magister-marketingskills"]
+	path = magister-marketingskills
+	url = https://github.com/elliot-ylambda/marketingskills.git
