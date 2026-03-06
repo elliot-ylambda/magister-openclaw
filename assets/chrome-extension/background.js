@@ -1,4 +1,4 @@
-import { buildRelayWsUrl, isRetryableReconnectError, reconnectDelayMs } from './background-utils.js'
+import { buildRelayWsUrl, buildGatewayWsUrl, getConnectionMode, isRetryableReconnectError, reconnectDelayMs } from './background-utils.js'
 
 const DEFAULT_PORT = 18792
 
@@ -127,21 +127,37 @@ async function rehydrateState() {
   }
 }
 
+/** @type {'local'|'gateway'} */
+let connectionMode = 'local'
+
 async function ensureRelayConnection() {
   if (relayWs && relayWs.readyState === WebSocket.OPEN) return
   if (relayConnectPromise) return await relayConnectPromise
 
   relayConnectPromise = (async () => {
-    const port = await getRelayPort()
-    const gatewayToken = await getGatewayToken()
-    const httpBase = `http://127.0.0.1:${port}`
-    const wsUrl = await buildRelayWsUrl(port, gatewayToken)
+    const mode = await getConnectionMode()
+    connectionMode = mode.mode
 
-    // Fast preflight: is the relay server up?
-    try {
-      await fetch(`${httpBase}/`, { method: 'HEAD', signal: AbortSignal.timeout(2000) })
-    } catch (err) {
-      throw new Error(`Relay server not reachable at ${httpBase} (${String(err)})`)
+    let wsUrl
+    let gatewayToken = ''
+
+    if (mode.mode === 'gateway') {
+      // Gateway mode: connect through Magister gateway
+      wsUrl = buildGatewayWsUrl(mode.url, mode.jwt)
+    } else {
+      // Local mode: connect directly to local relay
+      const port = await getRelayPort()
+      gatewayToken = await getGatewayToken()
+      const httpBase = `http://127.0.0.1:${port}`
+
+      // Fast preflight: is the relay server up?
+      try {
+        await fetch(`${httpBase}/`, { method: 'HEAD', signal: AbortSignal.timeout(2000) })
+      } catch (err) {
+        throw new Error(`Relay server not reachable at ${httpBase} (${String(err)})`)
+      }
+
+      wsUrl = await buildRelayWsUrl(port, gatewayToken)
     }
 
     const ws = new WebSocket(wsUrl)
@@ -209,7 +225,7 @@ function onRelayClosed(reason) {
       setBadge(tabId, 'connecting')
       void chrome.action.setTitle({
         tabId,
-        title: 'OpenClaw Browser Relay: relay reconnecting…',
+        title: 'Magister Browser Control: relay reconnecting…',
       })
     }
   }
@@ -271,7 +287,7 @@ async function reannounceAttachedTabs() {
       setBadge(tabId, 'off')
       void chrome.action.setTitle({
         tabId,
-        title: 'OpenClaw Browser Relay (click to attach/detach)',
+        title: 'Magister Browser Control (click to attach/detach)',
       })
       continue
     }
@@ -310,7 +326,7 @@ async function reannounceAttachedTabs() {
       setBadge(tabId, 'on')
       void chrome.action.setTitle({
         tabId,
-        title: 'OpenClaw Browser Relay: attached (click to detach)',
+        title: 'Magister Browser Control: attached (click to detach)',
       })
     } catch {
       // Relay send failed (e.g. WS closed in the gap between ensureRelayConnection
@@ -320,7 +336,7 @@ async function reannounceAttachedTabs() {
       setBadge(tabId, 'connecting')
       void chrome.action.setTitle({
         tabId,
-        title: 'OpenClaw Browser Relay: relay reconnecting…',
+        title: 'Magister Browser Control: relay reconnecting…',
       })
     }
   }
@@ -405,6 +421,8 @@ async function onRelayMessage(text) {
   }
 
   if (msg && msg.type === 'event' && msg.event === 'connect.challenge') {
+    // In gateway mode, the gateway handles the handshake with the relay
+    if (connectionMode === 'gateway') return
     try {
       ensureGatewayHandshakeStarted(msg.payload)
     } catch (err) {
@@ -494,7 +512,7 @@ async function attachTab(tabId, opts = {}) {
   tabBySession.set(sessionId, tabId)
   void chrome.action.setTitle({
     tabId,
-    title: 'OpenClaw Browser Relay: attached (click to detach)',
+    title: 'Magister Browser Control: attached (click to detach)',
   })
 
   if (!opts.skipAttachedEvent) {
@@ -565,7 +583,7 @@ async function detachTab(tabId, reason) {
   setBadge(tabId, 'off')
   void chrome.action.setTitle({
     tabId,
-    title: 'OpenClaw Browser Relay (click to attach/detach)',
+    title: 'Magister Browser Control (click to attach/detach)',
   })
 
   await persistState()
@@ -586,7 +604,7 @@ async function connectOrToggleForActiveTab() {
       setBadge(tabId, 'off')
       void chrome.action.setTitle({
         tabId,
-        title: 'OpenClaw Browser Relay (click to attach/detach)',
+        title: 'Magister Browser Control (click to attach/detach)',
       })
       return
     }
@@ -604,7 +622,7 @@ async function connectOrToggleForActiveTab() {
     setBadge(tabId, 'connecting')
     void chrome.action.setTitle({
       tabId,
-      title: 'OpenClaw Browser Relay: connecting to local relay…',
+      title: 'Magister Browser Control: connecting to local relay…',
     })
 
     try {
@@ -615,7 +633,7 @@ async function connectOrToggleForActiveTab() {
       setBadge(tabId, 'error')
       void chrome.action.setTitle({
         tabId,
-        title: 'OpenClaw Browser Relay: relay not running (open options for setup)',
+        title: 'Magister Browser Control: relay not running (open options for setup)',
       })
       void maybeOpenHelpOnce()
       const message = err instanceof Error ? err.message : String(err)
@@ -786,7 +804,7 @@ async function onDebuggerDetach(source, reason) {
   setBadge(tabId, 'connecting')
   void chrome.action.setTitle({
     tabId,
-    title: 'OpenClaw Browser Relay: re-attaching after navigation…',
+    title: 'Magister Browser Control: re-attaching after navigation…',
   })
 
   // Extend re-attach window from 2.5 s to ~7.7 s (5 attempts).
@@ -819,7 +837,7 @@ async function onDebuggerDetach(source, reason) {
         setBadge(tabId, 'connecting')
         void chrome.action.setTitle({
           tabId,
-          title: 'OpenClaw Browser Relay: attached, waiting for relay reconnect…',
+          title: 'Magister Browser Control: attached, waiting for relay reconnect…',
         })
       }
       return
@@ -832,7 +850,7 @@ async function onDebuggerDetach(source, reason) {
   setBadge(tabId, 'off')
   void chrome.action.setTitle({
     tabId,
-    title: 'OpenClaw Browser Relay: re-attach failed (click to retry)',
+    title: 'Magister Browser Control: re-attach failed (click to retry)',
   })
 }
 

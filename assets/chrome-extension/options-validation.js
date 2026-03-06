@@ -41,6 +41,24 @@ export function classifyRelayCheckResponse(res, port) {
   return { action: 'status', kind: 'ok', message: `Relay reachable and authenticated at http://127.0.0.1:${port}/` }
 }
 
+export function classifyGatewayCheckResponse(res) {
+  if (!res) {
+    return { kind: 'error', message: 'No response from gateway' }
+  }
+  if (res.status === 401) {
+    return { kind: 'error', message: 'Gateway JWT expired. Please reconnect.' }
+  }
+  if (!res.ok) {
+    return { kind: 'error', message: `Gateway returned HTTP ${res.status}` }
+  }
+  return { kind: 'ok', message: 'Gateway reachable' }
+}
+
+export function classifyGatewayCheckException(err) {
+  const message = err instanceof Error ? err.message : String(err || '')
+  return { kind: 'error', message: `Gateway not reachable: ${message}` }
+}
+
 export function classifyRelayCheckException(err, port) {
   const message = String(err || '').toLowerCase()
   if (message.includes('json') || message.includes('syntax')) {

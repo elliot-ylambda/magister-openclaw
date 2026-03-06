@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OpenClaw Browser Relay</title>
+    <title>Magister Browser Control</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -96,13 +96,15 @@
         margin-bottom: 6px;
       }
       input {
-        width: 160px;
+        width: 100%;
+        max-width: 520px;
         padding: 10px 12px;
         border-radius: 12px;
         border: 1px solid var(--border);
         background: color-mix(in oklab, canvas 92%, canvasText 8%);
         color: canvasText;
         outline: none;
+        box-sizing: border-box;
       }
       input:focus {
         border-color: color-mix(in oklab, var(--accent) 70%, transparent);
@@ -124,6 +126,10 @@
       }
       button:active {
         transform: translateY(1px);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
       .hint {
         margin-top: 10px;
@@ -149,6 +155,53 @@
       .status[data-kind='error'] {
         color: color-mix(in oklab, #ef4444 75%, canvasText 25%);
       }
+      details {
+        margin-top: 4px;
+      }
+      details summary {
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--muted);
+        user-select: none;
+      }
+      details summary:hover {
+        color: canvasText;
+      }
+      details[open] summary {
+        margin-bottom: 12px;
+      }
+      .connected-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .connected-badge.ok {
+        background: color-mix(in oklab, #16a34a 15%, transparent);
+        color: color-mix(in oklab, #16a34a 80%, canvasText 20%);
+      }
+      .connected-badge.off {
+        background: color-mix(in oklab, canvasText 10%, transparent);
+        color: var(--muted);
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .dot.green { background: #16a34a; }
+      .dot.gray { background: var(--muted); }
+      .btn-outline {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: canvasText;
+      }
+      .btn-outline:hover {
+        background: color-mix(in oklab, canvasText 6%, transparent);
+      }
     </style>
   </head>
   <body>
@@ -158,39 +211,56 @@
           <img src="icons/icon128.png" alt="" />
         </div>
         <div>
-          <h1>OpenClaw Browser Relay</h1>
+          <h1>Magister Browser Control</h1>
           <p class="subtitle">Click the toolbar button on a tab to attach / detach.</p>
         </div>
       </header>
 
       <div class="grid">
+        <!-- Connection Card (primary flow) -->
         <div class="card">
-          <h2>Getting started</h2>
+          <h2>Connect to Magister</h2>
           <p>
-            If you see a red <code>!</code> badge on the extension icon, the relay server is not reachable.
-            Start OpenClaw’s browser relay on this machine (Gateway or node host), then click the toolbar button again.
+            Paste the connection token from your
+            <a href="https://app.magistermarketing.com/settings" target="_blank" rel="noreferrer">Magister Settings</a>
+            page to connect your browser to your AI agent.
           </p>
-          <p>
-            Full guide (install, remote Gateway, security): <a href="https://docs.openclaw.ai/tools/chrome-extension" target="_blank" rel="noreferrer">docs.openclaw.ai/tools/chrome-extension</a>
-          </p>
+          <div id="gateway-status" style="margin-top: 10px;"></div>
+          <div id="connect-section" style="margin-top: 12px;">
+            <label for="connection-token">Connection token</label>
+            <div class="row">
+              <input id="connection-token" type="text" placeholder="Paste token from Settings..." autocomplete="off" />
+              <button id="connect-btn" type="button">Connect</button>
+            </div>
+          </div>
+          <div id="connected-section" style="margin-top: 12px; display: none;">
+            <button id="disconnect-btn" type="button" class="btn-outline">Disconnect</button>
+          </div>
+          <div class="status" id="gateway-connect-status"></div>
         </div>
 
+        <!-- Advanced: Local Mode -->
         <div class="card">
-          <h2>Relay connection</h2>
-          <label for="port">Port</label>
-          <div class="row">
-            <input id="port" inputmode="numeric" pattern="[0-9]*" />
-          </div>
-          <label for="token" style="margin-top: 10px">Gateway token</label>
-          <div class="row">
-            <input id="token" type="password" autocomplete="off" style="width: min(520px, 100%)" />
-            <button id="save" type="button">Save</button>
-          </div>
-          <div class="hint">
-            Default port: <code>18792</code>. Extension connects to: <code id="relay-url">http://127.0.0.1:&lt;port&gt;/</code>.
-            Gateway token must match <code>gateway.auth.token</code> (or <code>OPENCLAW_GATEWAY_TOKEN</code>).
-          </div>
-          <div class="status" id="status"></div>
+          <details>
+            <summary>Advanced: Local Mode</summary>
+            <p style="margin-top: 0;">
+              Connect directly to a local OpenClaw relay server for development.
+            </p>
+            <label for="port">Port</label>
+            <div class="row">
+              <input id="port" inputmode="numeric" pattern="[0-9]*" style="width: 160px; max-width: 160px;" />
+            </div>
+            <label for="token" style="margin-top: 10px">Gateway token</label>
+            <div class="row">
+              <input id="token" type="password" autocomplete="off" />
+              <button id="save" type="button">Save</button>
+            </div>
+            <div class="hint">
+              Default port: <code>18792</code>. Extension connects to: <code id="relay-url">http://127.0.0.1:&lt;port&gt;/</code>.
+              Gateway token must match <code>gateway.auth.token</code> (or <code>OPENCLAW_GATEWAY_TOKEN</code>).
+            </div>
+            <div class="status" id="status"></div>
+          </details>
         </div>
       </div>
 

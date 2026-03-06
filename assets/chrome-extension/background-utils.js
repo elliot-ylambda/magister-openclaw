@@ -39,6 +39,19 @@ export async function buildRelayWsUrl(port, gatewayToken) {
   return `ws://127.0.0.1:${port}/extension?token=${encodeURIComponent(relayToken)}`;
 }
 
+export function buildGatewayWsUrl(gatewayUrl, jwt) {
+  const base = gatewayUrl.replace(/^http/, 'ws').replace(/\/$/, '')
+  return `${base}/api/browser/relay?token=${encodeURIComponent(jwt)}`
+}
+
+export async function getConnectionMode() {
+  const stored = await chrome.storage.local.get(['gatewayJwt', 'gatewayUrl'])
+  if (stored.gatewayJwt && stored.gatewayUrl) {
+    return { mode: 'gateway', jwt: stored.gatewayJwt, url: stored.gatewayUrl }
+  }
+  return { mode: 'local' }
+}
+
 export function isRetryableReconnectError(err) {
   const message = err instanceof Error ? err.message : String(err || "");
   if (message.includes("Missing gatewayToken")) {
