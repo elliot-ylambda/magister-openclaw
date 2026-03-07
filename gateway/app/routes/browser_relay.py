@@ -118,6 +118,7 @@ def create_browser_relay_router(
     supabase: SupabaseService,
     *,
     jwt_secret: str,
+    api_key: str = "",
     supabase_url: str = "",
     dev_machine_url: str = "",
 ) -> APIRouter:
@@ -226,10 +227,31 @@ def create_browser_relay_router(
         logger.info(f"[browser_relay] Connected for user {user_id}")
 
         async def ext_to_upstream():
-            """Forward extension → upstream (no policy check needed on this direction)."""
+            """Forward extension → upstream with policy enforcement.
+
+            CDP commands originate from the extension, so policy checks
+            (read-only mode, URL allowlist) are applied here before the
+            command reaches the agent machine.
+            """
             try:
                 while True:
                     data = await ws.receive_text()
+                    try:
+                        msg = json.loads(data)
+                    except (json.JSONDecodeError, TypeError):
+                        await upstream.send(data)
+                        continue
+
+                    allowed, reason = check_policy(
+                        msg, read_only=read_only, allowed_urls=allowed_urls
+                    )
+                    if not allowed:
+                        # Send error response back to the extension
+                        error_resp = {"id": msg.get("id"), "error": reason}
+                        await ws.send_text(json.dumps(error_resp))
+                        logger.info(f"[browser_relay] Policy blocked: {reason}")
+                        continue
+
                     await upstream.send(data)
             except WebSocketDisconnect:
                 pass
@@ -237,26 +259,9 @@ def create_browser_relay_router(
                 pass
 
         async def upstream_to_ext():
-            """Forward upstream → extension with policy enforcement."""
+            """Forward upstream → extension (responses/events, no policy check needed)."""
             try:
                 async for raw in upstream:
-                    # Policy check on forwardCDPCommand frames
-                    try:
-                        msg = json.loads(raw)
-                    except (json.JSONDecodeError, TypeError):
-                        await ws.send_text(raw if isinstance(raw, str) else raw.decode())
-                        continue
-
-                    allowed, reason = check_policy(
-                        msg, read_only=read_only, allowed_urls=allowed_urls
-                    )
-                    if not allowed:
-                        # Send error response back to upstream
-                        error_resp = {"id": msg.get("id"), "error": reason}
-                        await upstream.send(json.dumps(error_resp))
-                        logger.info(f"[browser_relay] Policy blocked: {reason}")
-                        continue
-
                     await ws.send_text(raw if isinstance(raw, str) else raw.decode())
             except websockets.exceptions.ConnectionClosed:
                 pass
@@ -276,6 +281,9 @@ def create_browser_relay_router(
     @router.get("/browser/status")
     async def browser_status(request: Request, user_id: str = Query(...)):
         """Check if a user's extension is currently connected. Protected by API key."""
+        auth = request.headers.get("authorization", "")
+        if not auth.startswith("Bearer ") or auth[7:] != api_key:
+            raise HTTPException(status_code=401, detail="Invalid API key")
         return {"connected": user_id in _connections}
 
     return router

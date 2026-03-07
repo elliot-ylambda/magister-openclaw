@@ -164,6 +164,7 @@ async def lifespan(app: FastAPI):
         create_browser_relay_router(
             fly, supabase,
             jwt_secret=settings.supabase_jwt_secret,
+            api_key=settings.gateway_api_key,
             supabase_url=settings.supabase_url,
             dev_machine_url=settings.dev_machine_url,
         ),

@@ -1,5 +1,5 @@
 .PHONY: up down logs seed reset \
-	image-build image-push openclaw-pin openclaw-sync skills-pin skills-sync \
+	image-build image-push openclaw-push openclaw-pin openclaw-sync skills-pin skills-sync \
 	webapp-clean webapp-install webapp-dev webapp-lint webapp-build create-admin-coupon \
 	supabase-start supabase-migrate supabase-reset supabase-push-prod connect-local-db \
 	gateway-install gateway-dev gateway-test gateway-lint \
@@ -43,6 +43,35 @@ image-build:
 
 image-push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)
+
+# Push uncommitted submodule changes to the fork, then pin the submodule pointer.
+# Use this when you've made changes inside magister-openclaw/ during a feature branch.
+# Workflow: make openclaw-push → git commit (in parent) → PR
+openclaw-push:
+	@echo "=== Pushing magister-openclaw changes to fork ==="; \
+	cd magister-openclaw; \
+	if [ -z "$$(git status --porcelain)" ] && [ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main 2>/dev/null)" ]; then \
+		echo "Nothing to push — submodule is clean and up to date with origin/main."; \
+		exit 0; \
+	fi; \
+	BRANCH=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null); \
+	if [ "$$BRANCH" = "HEAD" ]; then \
+		echo "Submodule is in detached HEAD. Creating branch 'main'..."; \
+		git checkout -B main; \
+	fi; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: submodule has uncommitted changes. Commit them first:"; \
+		echo "  cd magister-openclaw && git add -A && git commit -m 'your message'"; \
+		exit 1; \
+	fi; \
+	echo "Pushing to origin/main..."; \
+	git push origin main; \
+	cd ..; \
+	git add magister-openclaw; \
+	HASH=$$(cd magister-openclaw && git rev-parse HEAD); \
+	echo ""; \
+	echo "Pushed and pinned OpenClaw submodule to $$HASH"; \
+	echo "Now commit the updated pointer: git commit -m 'chore: pin openclaw submodule'"
 
 # Update the magister-openclaw submodule to its latest remote HEAD
 # Workflow: make openclaw-pin → make deploy-image
