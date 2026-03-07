@@ -128,6 +128,32 @@ class UsageEvent(BaseModel):
     metadata: dict | None = None
 
 
+class SkillEntry(BaseModel):
+    name: str
+    description: str = ""
+    enabled: bool = True
+    source: str = ""
+    emoji: str = ""
+    homepage: str = ""
+
+
+class SkillListResponse(BaseModel):
+    skills: list[SkillEntry]
+
+
+class SkillInstallRequest(BaseModel):
+    slug: str
+
+
+class CustomSkillRequest(BaseModel):
+    name: str
+    content: str
+
+
+class SkillToggleRequest(BaseModel):
+    enabled: bool
+
+
 class EmailDraftRequest(BaseModel):
     """Agent requests to send an email (requires user approval)."""
     to: str

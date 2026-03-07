@@ -1,5 +1,5 @@
 ---
-name: email
+name: magister-email
 description: Send and receive emails through the Magister gateway. Draft outbound emails for user approval, read inbox, check sent/pending status, and handle rewrite requests.
 metadata: { "openclaw": { "always": true } }
 ---

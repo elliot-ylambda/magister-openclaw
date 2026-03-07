@@ -11,6 +11,7 @@ import {
   Mail,
   Settings,
   MessageSquare,
+  Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -187,6 +188,15 @@ export function AppSidebar({
               >
                 <FolderOpen className="h-4 w-4" />
                 Files
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => router.push("/skills")}
+                className="gap-2"
+              >
+                <Zap className="h-4 w-4" />
+                Skills
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>

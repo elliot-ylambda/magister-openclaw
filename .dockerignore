@@ -11,6 +11,9 @@
 # Custom Magister skills (repo root)
 !skills/
 
+# Catalog skills (staged, installed by users from UI)
+!catalog-skills/
+
 # Build assets from openclaw-image/
 !openclaw-image/default-config/
 !openclaw-image/entrypoint.sh

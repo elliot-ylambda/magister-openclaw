@@ -20,6 +20,7 @@ from app.routes.feedback import create_feedback_router
 from app.routes.health import router as health_router
 from app.routes.llm_proxy import create_llm_proxy_router
 from app.routes.files import create_files_router
+from app.routes.skills import create_skills_router
 from app.routes.machine_control import create_machine_control_router
 from app.routes.provision import create_provision_router
 from app.routes.admin_secrets import create_admin_secrets_router
@@ -103,6 +104,15 @@ async def lifespan(app: FastAPI):
     )
     app.include_router(
         create_files_router(
+            fly, supabase,
+            jwt_secret=settings.supabase_jwt_secret,
+            api_key=settings.gateway_api_key,
+            supabase_url=settings.supabase_url,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        create_skills_router(
             fly, supabase,
             jwt_secret=settings.supabase_jwt_secret,
             api_key=settings.gateway_api_key,
