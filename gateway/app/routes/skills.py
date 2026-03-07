@@ -1,4 +1,4 @@
-"""Skills management endpoints: list, install, remove, toggle, custom, catalog.
+"""Skills management endpoints: list, install, remove, toggle, custom.
 
 Executes commands on user Fly machines via the Machines exec API.
 JWT auth only (user-facing).
@@ -28,9 +28,11 @@ from app.services.supabase_client import SupabaseService
 
 logger = logging.getLogger("gateway.skills")
 
-SKILLS_DIR = "/data/.openclaw/skills/"
-MANAGED_SKILLS_DIR = "/root/.openclaw/skills/"
-CONFIG_PATH = "/root/.openclaw/openclaw.json"
+OPENCLAW_HOME = "/data/.openclaw"
+CONFIG_PATH = f"{OPENCLAW_HOME}/openclaw.json"
+MANAGED_SKILLS_DIR = f"{OPENCLAW_HOME}/skills/"
+WORKSPACE_SKILLS_DIR = f"{OPENCLAW_HOME}/workspace/skills/"
+CATALOG_SKILLS_DIR = "/app/catalog-skills/"
 
 SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
 
@@ -69,11 +71,23 @@ async def _exec_on_machine(
     *, timeout: int = 30,
 ) -> dict:
     """Run exec and map common errors to HTTP codes."""
-    result = await fly.exec_command(app, machine_id, cmd, timeout=timeout)
+    try:
+        result = await fly.exec_command(app, machine_id, cmd, timeout=timeout)
+    except Exception as exc:
+        logger.error(f"[skills] Fly exec failed for app={app} machine={machine_id}: {exc}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to execute command on machine: {exc}",
+        )
+
+    stdout = result.get("stdout", "")
     stderr = result.get("stderr", "")
     exit_code = result.get("exit_code", 0)
 
+    logger.debug(f"[skills] exec exit_code={exit_code} stdout={stdout[:200]} stderr={stderr[:200]}")
+
     if exit_code != 0:
+        logger.warning(f"[skills] Command failed on app={app}: exit_code={exit_code} stderr={stderr[:500]}")
         if "No such file or directory" in stderr:
             raise HTTPException(status_code=404, detail="File or directory not found")
         if "Permission denied" in stderr:
@@ -155,72 +169,61 @@ def create_skills_router(
         app_name = machine.fly_app_name
         machine_id = machine.fly_machine_id
 
-        # Read openclaw.json config for enabled/disabled state
-        config: dict = {}
-        try:
-            cfg_result = await _exec_on_machine(
-                fly, app_name, machine_id,
-                ["cat", CONFIG_PATH],
-            )
-            config = json.loads(cfg_result.get("stdout", "{}"))
-        except (HTTPException, json.JSONDecodeError):
-            pass
+        # Single exec call: read config + all SKILL.md headers as JSON
+        # Uses node (not python3) since the image is node:22-bookworm
+        script = r"""
+const fs = require('fs');
+const path = require('path');
 
-        skill_entries = config.get("skills", {}).get("entries", {})
+let config = {};
+try { config = JSON.parse(fs.readFileSync('""" + CONFIG_PATH + r"""', 'utf8')); } catch {}
+
+const entries = (config.skills || {}).entries || {};
+const seen = new Map();
+
+const dirs = [
+  ['""" + MANAGED_SKILLS_DIR + r"""', 'managed'],
+  ['""" + WORKSPACE_SKILLS_DIR + r"""', 'workspace'],
+];
+
+for (const [skillsDir, source] of dirs) {
+  let names;
+  try { names = fs.readdirSync(skillsDir).sort(); } catch { continue; }
+  for (const name of names) {
+    const skillPath = path.join(skillsDir, name, 'SKILL.md');
+    let header = '';
+    try {
+      const content = fs.readFileSync(skillPath, 'utf8');
+      header = content.split('\n').slice(0, 30).join('\n');
+    } catch {}
+    const cfg = entries[name] || {};
+    seen.set(name, { name, header, source, enabled: cfg.enabled !== false });
+  }
+}
+
+console.log(JSON.stringify([...seen.values()]));
+"""
+        result = await _exec_on_machine(
+            fly, app_name, machine_id,
+            ["node", "-e", script],
+        )
 
         skills: list[SkillEntry] = []
+        try:
+            raw_skills = json.loads(result.get("stdout", "[]"))
+        except json.JSONDecodeError:
+            raw_skills = []
 
-        # Scan both skill directories
-        for skills_dir, source in [
-            (SKILLS_DIR, "workspace"),
-            (MANAGED_SKILLS_DIR, "managed"),
-        ]:
-            try:
-                ls_result = await _exec_on_machine(
-                    fly, app_name, machine_id,
-                    ["bash", "-c", f"ls -1 {shlex.quote(skills_dir)} 2>/dev/null || true"],
-                )
-            except HTTPException:
-                continue
-
-            stdout = ls_result.get("stdout", "").strip()
-            if not stdout:
-                continue
-
-            for name in stdout.split("\n"):
-                name = name.strip()
-                if not name:
-                    continue
-
-                # Read SKILL.md for metadata
-                skill_md_path = f"{skills_dir}{name}/SKILL.md"
-                description = ""
-                emoji = ""
-                homepage = ""
-                try:
-                    md_result = await _exec_on_machine(
-                        fly, app_name, machine_id,
-                        ["head", "-30", skill_md_path],
-                    )
-                    md_content = md_result.get("stdout", "")
-                    description = _extract_description(md_content)
-                    emoji = _extract_field(md_content, "emoji")
-                    homepage = _extract_field(md_content, "homepage")
-                except HTTPException:
-                    pass
-
-                # Check config for enabled state
-                cfg = skill_entries.get(name, {})
-                enabled = cfg.get("enabled", True)
-
-                skills.append(SkillEntry(
-                    name=name,
-                    description=description,
-                    enabled=enabled,
-                    source=source,
-                    emoji=emoji,
-                    homepage=homepage,
-                ))
+        for entry in raw_skills:
+            header = entry.get("header", "")
+            skills.append(SkillEntry(
+                name=entry["name"],
+                description=_extract_description(header),
+                enabled=entry.get("enabled", True),
+                source=entry.get("source", ""),
+                emoji=_extract_field(header, "emoji"),
+                homepage=_extract_field(header, "homepage"),
+            ))
 
         return SkillListResponse(skills=skills)
 
@@ -229,18 +232,26 @@ def create_skills_router(
         user_id = await _resolve_user(request)
         machine = await _get_running_machine(user_id)
 
-        result = await _exec_on_machine(
-            fly, machine.fly_app_name, machine.fly_machine_id,
-            ["bash", "-c", f"cd /data/.openclaw && npx -y clawhub install {shlex.quote(body.slug)} --yes"],
-            timeout=60,
+        # Skill name is the directory name in catalog-skills/
+        skill_name = body.slug.split("/")[-1] if "/" in body.slug else body.slug
+        safe_name = shlex.quote(skill_name)
+
+        logger.info(f"[skills] User {user_id} installing catalog skill {skill_name} on app={machine.fly_app_name}")
+
+        # Copy from bundled staging dir to workspace skills dir
+        cmd = (
+            f"test -d {CATALOG_SKILLS_DIR}{safe_name} && "
+            f"mkdir -p {WORKSPACE_SKILLS_DIR} && "
+            f"cp -r {CATALOG_SKILLS_DIR}{safe_name} {WORKSPACE_SKILLS_DIR}{safe_name}"
         )
 
-        logger.info(f"[skills] User {user_id} installed skill {body.slug}")
-        return {
-            "status": "ok",
-            "slug": body.slug,
-            "stdout": result.get("stdout", ""),
-        }
+        await _exec_on_machine(
+            fly, machine.fly_app_name, machine.fly_machine_id,
+            ["bash", "-c", cmd],
+        )
+
+        logger.info(f"[skills] User {user_id} installed catalog skill {skill_name}")
+        return {"status": "ok", "slug": skill_name}
 
     @router.delete("/skills/{skill_name}")
     async def remove_skill(request: Request, skill_name: str):
@@ -249,10 +260,10 @@ def create_skills_router(
 
         safe_name = shlex.quote(skill_name)
 
-        # Remove from user skills directory
+        # Remove from both workspace and managed skill directories
         await _exec_on_machine(
             fly, machine.fly_app_name, machine.fly_machine_id,
-            ["bash", "-c", f"rm -rf {SKILLS_DIR}{safe_name}"],
+            ["bash", "-c", f"rm -rf {WORKSPACE_SKILLS_DIR}{safe_name} {MANAGED_SKILLS_DIR}{safe_name}"],
         )
 
         logger.info(f"[skills] User {user_id} removed skill {skill_name}")
@@ -313,7 +324,7 @@ def create_skills_router(
                 detail="Skill name must contain only lowercase letters, numbers, and hyphens",
             )
 
-        skill_dir = f"{SKILLS_DIR}{body.name}"
+        skill_dir = f"{WORKSPACE_SKILLS_DIR}{body.name}"
         skill_md = f"{skill_dir}/SKILL.md"
         safe_dir = shlex.quote(skill_dir)
         safe_md = shlex.quote(skill_md)
@@ -327,26 +338,5 @@ def create_skills_router(
 
         logger.info(f"[skills] User {user_id} created custom skill {body.name}")
         return {"status": "ok", "skill": body.name}
-
-    @router.get("/skills/catalog")
-    async def search_catalog(request: Request, query: str = ""):
-        user_id = await _resolve_user(request)
-        machine = await _get_running_machine(user_id)
-
-        search_cmd = "npx -y clawhub search"
-        if query:
-            search_cmd += f" {shlex.quote(query)}"
-
-        result = await _exec_on_machine(
-            fly, machine.fly_app_name, machine.fly_machine_id,
-            ["bash", "-c", search_cmd],
-            timeout=30,
-        )
-
-        return {
-            "status": "ok",
-            "query": query,
-            "stdout": result.get("stdout", ""),
-        }
 
     return router

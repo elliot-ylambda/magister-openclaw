@@ -402,12 +402,6 @@ export type SkillEntry = {
 
 export type SkillListResponse = { skills: SkillEntry[] };
 
-export type CatalogSkill = {
-  status: string;
-  query: string;
-  stdout: string;
-};
-
 async function skillRequest<T>(
   gatewayUrl: string,
   jwt: string,
@@ -436,7 +430,7 @@ export function listSkills(gatewayUrl: string, jwt: string) {
 }
 
 export function installSkill(gatewayUrl: string, jwt: string, slug: string) {
-  return skillRequest<{ status: string; slug: string; stdout: string }>(
+  return skillRequest<{ status: string; slug: string }>(
     gatewayUrl, jwt, "POST", "/skills/install",
     { slug }
   );
@@ -463,13 +457,6 @@ export function createCustomSkill(
   return skillRequest<{ status: string; skill: string }>(
     gatewayUrl, jwt, "POST", "/skills/custom",
     { name, content }
-  );
-}
-
-export function searchCatalog(gatewayUrl: string, jwt: string, query: string = "") {
-  return skillRequest<CatalogSkill>(
-    gatewayUrl, jwt, "GET",
-    `/skills/catalog?query=${encodeURIComponent(query)}`
   );
 }
 

@@ -26,6 +26,9 @@ COPY magister-marketingskills/skills/ /app/skills/
 # --- Custom Magister Skills (override/extend marketingskills) ---
 COPY skills/ /app/skills/
 
+# --- Catalog Skills (staged, not active — users install from UI) ---
+COPY catalog-skills/ /app/catalog-skills/
+
 # --- Default Config ---
 COPY openclaw-image/default-config/ /app/default-config/
 

@@ -39,76 +39,76 @@ const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL!;
 
 const CATALOG_SKILLS = [
   {
-    slug: "halthelobster/proactive-agent",
+    slug: "proactive-agent",
     name: "Proactive Agent",
     description:
       "Transform agents from task-followers into proactive partners that anticipate needs and continuously improve.",
   },
   {
-    slug: "pskoett/self-improving-agent",
+    slug: "self-improving-agent",
     name: "Self-Improving Agent",
     description:
       "Enable your agent to learn from interactions and improve its own performance over time.",
   },
   {
-    slug: "arun-8687/tavily-search",
+    slug: "tavily-search",
     name: "Tavily Search",
     description:
       "Web search capability powered by Tavily API for real-time information retrieval.",
   },
   {
-    slug: "steipete/gog",
+    slug: "gog",
     name: "GoG",
     description:
       "A versatile general-purpose skill by steipete for enhanced agent workflows.",
   },
   {
-    slug: "TheSethRose/agent-browser",
+    slug: "agent-browser",
     name: "Agent Browser",
     description:
       "Give your agent the ability to browse the web, interact with pages, and extract information.",
   },
   {
-    slug: "steipete/brave-search",
+    slug: "brave-search",
     name: "Brave Search",
     description:
       "Web search using the Brave Search API for privacy-focused information retrieval.",
   },
   {
-    slug: "chindden/skill-creator",
+    slug: "skill-creator",
     name: "Skill Creator",
     description:
       "Meta-skill that helps your agent create new skills on the fly.",
   },
   {
-    slug: "steipete/frontend-design",
+    slug: "frontend-design",
     name: "Frontend Design",
     description:
       "Create distinctive, production-grade frontend interfaces with high design quality.",
   },
   {
-    slug: "steipete/slack",
+    slug: "slack",
     name: "Slack",
     description:
       "Slack integration for reading and sending messages, managing channels, and more.",
   },
   {
-    slug: "JK-0001/automation-workflows",
+    slug: "automation-workflows",
     name: "Automation Workflows",
     description: "Build and run automated workflows and task sequences.",
   },
   {
-    slug: "steipete/nano-pdf",
+    slug: "nano-pdf",
     name: "Nano PDF",
     description: "Read, parse, and extract content from PDF documents.",
   },
   {
-    slug: "steipete/nano-banana-pro",
+    slug: "nano-banana-pro",
     name: "Nano Banana Pro",
     description: "Advanced image generation and processing capabilities.",
   },
   {
-    slug: "NextFrontierBuilds/elite-longterm-memory",
+    slug: "elite-longterm-memory",
     name: "Elite Long-Term Memory",
     description:
       "Persistent memory system for agents to remember context across sessions.",
@@ -252,9 +252,8 @@ export function SkillsClient({
   // Check if a catalog skill is already installed
   const isInstalled = useCallback(
     (slug: string) => {
-      const skillName = slug.split("/")[1];
       return skills.some(
-        (s) => s.name.toLowerCase() === skillName?.toLowerCase()
+        (s) => s.name.toLowerCase() === slug.toLowerCase()
       );
     },
     [skills]
@@ -392,7 +391,7 @@ export function SkillsClient({
         <section className="space-y-4">
           <h2 className="text-lg font-medium">Skill Catalog</h2>
           <p className="text-sm text-muted-foreground">
-            Curated skills from ClawHub. Install with one click.
+            Curated skills for your agent. Install with one click.
           </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CATALOG_SKILLS.map((cs) => {

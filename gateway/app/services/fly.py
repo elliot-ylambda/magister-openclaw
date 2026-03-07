@@ -29,13 +29,17 @@ class FlyClient:
     # ── Internal helpers ─────────────────────────────────────────
 
     async def _request(
-        self, method: str, path: str, *, json: dict | None = None
+        self, method: str, path: str, *, json: dict | None = None,
+        timeout: float | None = None,
     ) -> dict:
         """HTTP request with retry logic for 5xx and timeouts."""
         last_exc: Exception | None = None
         for attempt in range(MAX_RETRIES):
             try:
-                resp = await self._http.request(method, path, json=json)
+                resp = await self._http.request(
+                    method, path, json=json,
+                    **({} if timeout is None else {"timeout": timeout}),
+                )
                 if resp.status_code >= 500:
                     last_exc = Exception(
                         f"Fly API {resp.status_code}: {resp.text}"
@@ -174,10 +178,14 @@ class FlyClient:
 
         Returns dict with: stdout, stderr, exit_code, exit_signal.
         """
+        exec_timeout = min(timeout, 60)
         return await self._request(
             "POST",
             f"/apps/{app}/machines/{machine_id}/exec",
-            json={"command": cmd, "timeout": min(timeout, 60)},
+            json={"command": cmd, "timeout": exec_timeout},
+            # httpx timeout must exceed exec timeout so the connection
+            # stays open while the command runs on the machine.
+            timeout=float(exec_timeout + 10),
         )
 
     # ── Lifecycle helper ─────────────────────────────────────────
