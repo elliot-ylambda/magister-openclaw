@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { ArrowUp, Plus, X, FileText, Image as ImageIcon } from "lucide-react";
+import { ArrowUp, Plus, Square, X, FileText, Image as ImageIcon } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ModelPicker } from "@/components/chat/model-picker";
@@ -56,12 +56,14 @@ function formatFileSize(bytes: number): string {
 
 export function ChatInput({
   onSend,
+  onStop,
   isStreaming,
   onModelChange,
   sessionId,
   messages,
 }: {
   onSend: (message: string, attachments?: Attachment[]) => void;
+  onStop?: () => void;
   isStreaming: boolean;
   onModelChange?: (modelId: string, displayName: string) => void;
   sessionId?: string;
@@ -296,14 +298,24 @@ export function ChatInput({
           {/* Right: model picker + send */}
           <div className="flex items-center gap-2">
             <ModelPicker onModelChange={onModelChange} />
-            <Button
-              size="icon-sm"
-              onClick={handleSend}
-              disabled={isStreaming}
-              className="rounded-lg"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
+            {isStreaming ? (
+              <Button
+                size="icon-sm"
+                variant="destructive"
+                onClick={onStop}
+                className="rounded-lg"
+              >
+                <Square className="h-3 w-3" />
+              </Button>
+            ) : (
+              <Button
+                size="icon-sm"
+                onClick={handleSend}
+                className="rounded-lg"
+              >
+                <ArrowUp className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
 

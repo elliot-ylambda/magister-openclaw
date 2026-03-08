@@ -6,7 +6,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { streamChat, getAvailableModels, type Attachment } from "@/lib/gateway";
 import { ChatInput } from "@/components/chat/chat-input";
-import { ChatMessage, type Message, type MessageAttachment, type ToolUse } from "@/components/chat/chat-message";
+import { ChatMessage, type Message, type MessageAttachment, type ToolUse, type ContentBlock } from "@/components/chat/chat-message";
 import { MODEL_DISPLAY_NAMES, MODEL_OUTPUT_PRICES } from "@/components/chat/model-picker";
 
 const SCROLL_THRESHOLD = 100;
@@ -26,6 +26,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   const userIdRef = useRef<string | null>(null);
   const isFirstMessageRef = useRef(true);
   const retryCountRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -81,6 +82,17 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Abort any in-flight stream when navigating away or unmounting
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const handleStop = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   // Load chat history from Supabase when sessionId changes
   useEffect(() => {
@@ -325,6 +337,13 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
 
       let gotContent = false;
       let accumulatedContent = "";
+      let thinkingStartedAt: number | null = null;
+      const toolStartTimes = new Map<string, number>();
+      const blocks: ContentBlock[] = [];
+
+      // Create a new AbortController for this stream
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
       try {
         for await (const event of streamChat(
@@ -332,7 +351,8 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
           session.access_token,
           content,
           sessionId,
-          attachments
+          attachments,
+          abortController.signal
         )) {
           switch (event.type) {
             case "session":
@@ -340,16 +360,72 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
             case "thinking":
               // Gateway sends the full accumulated thinking text
               // (not a delta), so we replace rather than append.
+              if (thinkingStartedAt === null) {
+                thinkingStartedAt = Date.now();
+                blocks.push({ type: "thinking", content: event.content });
+              } else {
+                // Update existing thinking block
+                const thinkIdx = blocks.findIndex((b) => b.type === "thinking");
+                if (thinkIdx !== -1) {
+                  blocks[thinkIdx] = { type: "thinking", content: event.content };
+                }
+              }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantMessage.id
-                    ? { ...m, thinkingContent: event.content }
+                    ? { ...m, thinkingContent: event.content, contentBlocks: [...blocks] }
                     : m
                 )
               );
               break;
             case "tool_use": {
+              // Finalize thinking duration on first tool_use event
+              if (thinkingStartedAt !== null) {
+                const thinkingDuration = Date.now() - thinkingStartedAt;
+                thinkingStartedAt = null;
+                const thinkIdx = blocks.findIndex((b) => b.type === "thinking");
+                if (thinkIdx !== -1) {
+                  blocks[thinkIdx] = { ...blocks[thinkIdx], durationMs: thinkingDuration } as ContentBlock;
+                }
+              }
               const toolEvent = event.data;
+              if (toolEvent.phase === "start") {
+                toolStartTimes.set(toolEvent.toolCallId, Date.now());
+                const entry: ToolUse = {
+                  id: toolEvent.toolCallId,
+                  name: toolEvent.name,
+                  phase: "start",
+                  args: toolEvent.args,
+                  startedAt: Date.now(),
+                };
+                blocks.push({ type: "tool_use", tool: entry });
+              } else {
+                // result phase — update existing tool block
+                const startTime = toolStartTimes.get(toolEvent.toolCallId);
+                const durationMs = startTime != null ? Date.now() - startTime : undefined;
+                toolStartTimes.delete(toolEvent.toolCallId);
+                const blockIdx = blocks.findIndex(
+                  (b) => b.type === "tool_use" && b.tool.id === toolEvent.toolCallId
+                );
+                if (blockIdx !== -1) {
+                  const toolBlock = blocks[blockIdx] as Extract<ContentBlock, { type: "tool_use" }>;
+                  blocks[blockIdx] = {
+                    type: "tool_use",
+                    tool: {
+                      ...toolBlock.tool,
+                      phase: "result",
+                      isError: toolEvent.isError,
+                      errorContent: toolEvent.isError && toolEvent.result
+                        ? typeof toolEvent.result === "string"
+                          ? toolEvent.result
+                          : JSON.stringify(toolEvent.result)
+                        : undefined,
+                      durationMs,
+                    },
+                  };
+                }
+              }
+              // Also maintain legacy toolUses for compatibility
               setMessages((prev) =>
                 prev.map((m) => {
                   if (m.id !== assistantMessage.id) return m;
@@ -360,33 +436,63 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
                       name: toolEvent.name,
                       phase: "start",
                       args: toolEvent.args,
+                      startedAt: Date.now(),
                     };
-                    return { ...m, toolUses: [...existing, entry] };
+                    return { ...m, toolUses: [...existing, entry], contentBlocks: [...blocks] };
                   }
-                  // result phase — update existing entry
+                  const startTime2 = toolStartTimes.get(toolEvent.toolCallId);
+                  const durationMs2 = startTime2 != null ? Date.now() - startTime2 : undefined;
                   return {
                     ...m,
                     toolUses: existing.map((t) =>
                       t.id === toolEvent.toolCallId
-                        ? { ...t, phase: "result" as const, isError: toolEvent.isError }
+                        ? {
+                            ...t,
+                            phase: "result" as const,
+                            isError: toolEvent.isError,
+                            errorContent: toolEvent.isError && toolEvent.result
+                              ? typeof toolEvent.result === "string"
+                                ? toolEvent.result
+                                : JSON.stringify(toolEvent.result)
+                              : undefined,
+                            durationMs: durationMs2,
+                          }
                         : t
                     ),
+                    contentBlocks: [...blocks],
                   };
                 })
               );
               break;
             }
-            case "chunk":
+            case "chunk": {
+              // Finalize thinking duration on first content chunk
+              if (thinkingStartedAt !== null) {
+                const thinkingDuration = Date.now() - thinkingStartedAt;
+                thinkingStartedAt = null;
+                const thinkIdx = blocks.findIndex((b) => b.type === "thinking");
+                if (thinkIdx !== -1) {
+                  blocks[thinkIdx] = { ...blocks[thinkIdx], durationMs: thinkingDuration } as ContentBlock;
+                }
+              }
               gotContent = true;
               accumulatedContent += event.content;
+              // Append to existing text block or create a new one
+              const lastBlock = blocks[blocks.length - 1];
+              if (lastBlock && lastBlock.type === "text") {
+                lastBlock.content += event.content;
+              } else {
+                blocks.push({ type: "text", content: event.content });
+              }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantMessage.id
-                    ? { ...m, content: m.content + event.content }
+                    ? { ...m, content: m.content + event.content, contentBlocks: [...blocks] }
                     : m
                 )
               );
               break;
+            }
             case "done":
               break;
             case "error":
@@ -434,14 +540,25 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
               break;
           }
         }
-      } catch {
-        if (!gotContent) {
-          setMessages((prev) =>
-            prev.filter((m) => m.id !== assistantMessage.id)
-          );
+      } catch (err) {
+        // Don't show error when user intentionally cancelled
+        if (err instanceof DOMException && err.name === "AbortError") {
+          // Keep any partial content that was already streamed
+          if (!gotContent) {
+            setMessages((prev) =>
+              prev.filter((m) => m.id !== assistantMessage.id)
+            );
+          }
+        } else {
+          if (!gotContent) {
+            setMessages((prev) =>
+              prev.filter((m) => m.id !== assistantMessage.id)
+            );
+          }
+          setError("Connection lost. Please try again.");
         }
-        setError("Connection lost. Please try again.");
       } finally {
+        abortControllerRef.current = null;
         setIsStreaming(false);
       }
 
@@ -549,6 +666,7 @@ export function ChatSessionClient({ sessionId }: { sessionId: string }) {
 
       <ChatInput
         onSend={handleSend}
+        onStop={handleStop}
         isStreaming={isStreaming || isWaking}
         onModelChange={handleModelChange}
         sessionId={sessionId}

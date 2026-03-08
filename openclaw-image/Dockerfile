@@ -36,6 +36,6 @@ COPY openclaw-image/default-config/ /app/default-config/
 COPY openclaw-image/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 18789 18790
+EXPOSE 18789 18790 18794
 
 ENTRYPOINT ["/entrypoint.sh"]

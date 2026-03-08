@@ -13,8 +13,8 @@ if [ ! -f "$OPENCLAW_HOME/openclaw.json" ]; then
     cp -r /app/default-config/* "$OPENCLAW_HOME/"
 fi
 
-# Revert bind to "lan" if a previous image set it to an invalid value
-# and ensure OpenResponses endpoint is enabled for image/file uploads
+# Revert bind to "lan" if a previous image set it to an invalid value,
+# ensure OpenResponses endpoint is enabled, and enable browser control.
 node -e "
 const fs = require('fs');
 const p = '${OPENCLAW_HOME}/openclaw.json';
@@ -29,6 +29,10 @@ if (!c.gateway.http) c.gateway.http = {};
 if (!c.gateway.http.endpoints) c.gateway.http.endpoints = {};
 if (!c.gateway.http.endpoints.responses || !c.gateway.http.endpoints.responses.enabled) {
   c.gateway.http.endpoints.responses = { enabled: true };
+  changed = true;
+}
+if (!c.browser || !c.browser.enabled) {
+  c.browser = { enabled: true };
   changed = true;
 }
 if (changed) fs.writeFileSync(p, JSON.stringify(c, null, 2));
@@ -121,6 +125,11 @@ export OPENCLAW_CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
 # OpenClaw binds 0.0.0.0:18789 (IPv4 only). Fly internal DNS resolves to
 # IPv6 (6PN). socat on port 18790 accepts IPv6 and forwards to localhost:18789.
 socat TCP6-LISTEN:18790,fork,reuseaddr,bind=[::] TCP4:127.0.0.1:18789 &
+
+# Bridge for extension relay: IPv6 on 18794 → relay on 127.0.0.1:18792.
+# Uses a separate bridge port (18794) to avoid dual-stack conflicts with the
+# relay which binds 127.0.0.1:18792. Same pattern as 18790→18789 for the gateway.
+socat TCP6-LISTEN:18794,fork,reuseaddr,bind=[::] TCP4:127.0.0.1:18792 &
 
 echo "[entrypoint] Starting OpenClaw gateway on 0.0.0.0:18789 (IPv6 bridge on :18790)"
 exec node /app/openclaw/dist/index.js gateway

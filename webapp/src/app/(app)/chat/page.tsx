@@ -10,9 +10,11 @@ export default async function ChatPage() {
 
   if (!user) redirect("/login");
 
-  // Reuse the most recent empty session (still has default title, no messages sent)
-  // to prevent duplicate sessions from cross-layout redirects (e.g. checkout → chat)
-  const { data: emptySession } = await supabase
+  // Reuse the most recent empty session to prevent duplicate sessions from
+  // cross-layout redirects (e.g. checkout → chat). We check for zero messages
+  // rather than relying on the title, since the title update is deferred until
+  // after streaming completes and could race with a "New Chat" click.
+  const { data: candidates } = await supabase
     .from("chat_sessions")
     .select("id")
     .eq("user_id", user.id)
@@ -21,8 +23,15 @@ export default async function ChatPage() {
     .limit(1)
     .maybeSingle();
 
-  if (emptySession) {
-    redirect(`/chat/${emptySession.id}`);
+  if (candidates) {
+    const { count } = await supabase
+      .from("chat_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", candidates.id);
+
+    if (count === 0) {
+      redirect(`/chat/${candidates.id}`);
+    }
   }
 
   const { data: session } = await supabase

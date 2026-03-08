@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Magister Browser Control</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #000000;
+      color: #fafafa;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 48px 24px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 672px;
+    }
+
+    /* Header */
+    .header {
+      padding-bottom: 24px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .header-brand-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: #6b7280;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #fafafa;
+      margin-top: 8px;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+
+    /* Cards / Sections */
+    .card {
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    .card + .card {
+      margin-top: 16px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fafafa;
+      margin-bottom: 4px;
+    }
+
+    .card-description {
+      font-size: 13px;
+      color: #6b7280;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+
+    /* Connection Badge */
+    .connected-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .connected-badge.ok {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+    }
+
+    .connected-badge.off {
+      background: rgba(255, 255, 255, 0.05);
+      color: #6b7280;
+    }
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot.green {
+      background: #10b981;
+    }
+
+    .dot.gray {
+      background: #6b7280;
+    }
+
+    #gateway-status {
+      margin-bottom: 16px;
+    }
+
+    /* Inputs */
+    input[type="text"],
+    input[type="password"],
+    input:not([type]) {
+      height: 36px;
+      padding: 0 12px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fafafa;
+      font-family: inherit;
+      font-size: 14px;
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    input:not([type]):focus {
+      border-color: rgba(255, 255, 255, 0.3);
+      outline: none;
+    }
+
+    input::placeholder {
+      color: #6b7280;
+    }
+
+    /* Buttons */
+    .btn-primary {
+      height: 36px;
+      padding: 0 16px;
+      background: #ffffff;
+      color: #000000;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .btn-primary:hover {
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-outline {
+      height: 36px;
+      padding: 0 16px;
+      background: transparent;
+      color: #fafafa;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-outline:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .btn-destructive {
+      height: 36px;
+      padding: 0 16px;
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-destructive:hover {
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    /* Form rows */
+    .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .input-row input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Labels */
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #fafafa;
+      margin-bottom: 6px;
+    }
+
+    .field-group {
+      margin-bottom: 16px;
+    }
+
+    .field-group:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Hint / Description text */
+    .hint {
+      font-size: 13px;
+      color: #6b7280;
+      line-height: 1.5;
+      margin-top: 8px;
+    }
+
+    /* Code elements */
+    code {
+      font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fafafa;
+    }
+
+    /* Status messages */
+    .status-message {
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 0;
+      transition: all 0.15s;
+    }
+
+    .status-message:empty {
+      display: none;
+    }
+
+    .status-message[data-kind="ok"] {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+
+    .status-message[data-kind="error"] {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+
+    .status-message[data-kind=""] {
+      color: #6b7280;
+      margin-top: 12px;
+    }
+
+    /* Links */
+    a {
+      color: #fafafa;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    a:hover {
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    /* Details / Summary (collapsible) */
+    details {
+      border: none;
+    }
+
+    details summary {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #6b7280;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.15s;
+    }
+
+    details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details summary::before {
+      content: "";
+      display: inline-block;
+      width: 0;
+      height: 0;
+      border-left: 5px solid currentColor;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      transition: transform 0.15s;
+      flex-shrink: 0;
+    }
+
+    details[open] summary::before {
+      transform: rotate(90deg);
+    }
+
+    details summary:hover {
+      color: #fafafa;
+    }
+
+    details .details-content {
+      margin-top: 16px;
+    }
+
+    /* Separator inside card */
+    .separator {
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      margin: 16px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-brand">
+        <svg fill="none" height="28" viewBox="0 0 44 48" width="26" xmlns="http://www.w3.org/2000/svg"><g fill="#FFFFFF"><path d="m30.8 10.7998h-30.8l4.4 8.7999h26.4c4.8601 0 8.8 3.9399 8.8 8.8s-3.9399 8.7999-8.8 8.7999c7.2902 0 13.2-5.9098 13.2-13.1999s-5.9098-13.1999-13.2-13.1999z"/><path d="m20.7835 34.7676c-1.4628-2.9255.6646-6.3677 3.9354-6.3677h6.0807c2.4301 0 4.4 1.9699 4.4 4.4 0 2.43-1.9699 4.3999-4.4 4.3999h-6.0807c-1.6665 0-3.1901-.9416-3.9354-2.4322z" opacity=".3"/><path d="m30.8008 19.6001h-22.00002l4.40002 8.7999h17.6c2.43 0 4.4 1.97 4.4 4.4 0 2.4301-1.97 4.4-4.4 4.4 4.8601 0 8.8-3.9399 8.8-8.8 0-4.86-3.9399-8.7999-8.8-8.7999z" opacity=".6"/></g></svg>
+        <span class="header-brand-text">Magister</span>
+      </div>
+      <h1>Browser Control</h1>
+      <p>Connect your browser to Magister so your agent can browse the web on your behalf.</p>
+    </div>
+
+    <!-- Section: Connect to Magister -->
+    <div class="card">
+      <div class="card-title">Connect to Magister</div>
+      <p class="card-description">Paste the connection token from your Magister dashboard to link this browser to your agent.</p>
+
+      <div id="gateway-status"></div>
+
+      <!-- Shown when disconnected -->
+      <div id="connect-section">
+        <div class="input-row">
+          <input type="text" id="connection-token" placeholder="Paste your connection token here" autocomplete="off">
+          <button class="btn-primary" id="connect-btn">Connect</button>
+        </div>
+      </div>
+
+      <!-- Shown when connected -->
+      <div id="connected-section" style="display: none;">
+        <button class="btn-outline" id="disconnect-btn">Disconnect</button>
+      </div>
+
+      <div id="gateway-connect-status" class="status-message" data-kind=""></div>
+    </div>
+
+    <!-- Section: Advanced Local Mode -->
+    <div class="card">
+      <details>
+        <summary>Advanced: Local Mode</summary>
+        <div class="details-content">
+          <p class="card-description">Connect directly to a local relay server instead of the Magister cloud gateway. This is for development and self-hosted setups.</p>
+
+          <div class="field-group">
+            <label for="port">Relay port</label>
+            <input id="port" inputmode="numeric" pattern="[0-9]*" placeholder="18792" style="max-width: 200px;">
+            <p class="hint">The relay listens at <code id="relay-url">http://127.0.0.1:18792/</code></p>
+          </div>
+
+          <div class="field-group">
+            <label for="token">Gateway token</label>
+            <div class="input-row">
+              <input type="password" id="token" placeholder="Gateway token" autocomplete="off">
+              <button class="btn-primary" id="save">Save</button>
+            </div>
+            <p class="hint">The <code>GATEWAY_TOKEN</code> value from your gateway configuration.</p>
+          </div>
+
+          <div id="status" class="status-message" data-kind=""></div>
+        </div>
+      </details>
+    </div>
+
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

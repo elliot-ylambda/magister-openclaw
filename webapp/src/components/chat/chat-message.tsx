@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { AlertCircle, Brain, Check, Copy, FileText, Loader2 } from "lucide-react";
+import { AlertCircle, Brain, Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
 
 export interface MessageAttachment {
   name: string;
@@ -16,8 +16,16 @@ export interface ToolUse {
   name: string;
   phase: "start" | "result";
   isError?: boolean;
+  errorContent?: string;
   args?: Record<string, unknown>;
+  startedAt?: number;
+  durationMs?: number;
 }
+
+export type ContentBlock =
+  | { type: "thinking"; content: string; durationMs?: number }
+  | { type: "text"; content: string }
+  | { type: "tool_use"; tool: ToolUse };
 
 export interface Message {
   id: string;
@@ -26,7 +34,9 @@ export interface Message {
   createdAt: Date;
   attachments?: MessageAttachment[];
   thinkingContent?: string;
+  thinkingDurationMs?: number;
   toolUses?: ToolUse[];
+  contentBlocks?: ContentBlock[];
 }
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -97,18 +107,32 @@ function AttachmentDisplay({ attachments }: { attachments: MessageAttachment[] }
   );
 }
 
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
 function ThinkingBlock({
   content,
   isStreaming,
+  durationMs,
 }: {
   content: string;
   isStreaming?: boolean;
+  durationMs?: number;
 }) {
   return (
     <details className="mb-2 group/thinking">
       <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
         <Brain className="h-3 w-3" />
         <span>Thinking</span>
+        {durationMs != null && (
+          <span className="text-muted-foreground/60">{formatDuration(durationMs)}</span>
+        )}
+        <ChevronDown className="h-3 w-3 transition-transform group-open/thinking:rotate-180" />
       </summary>
       <div className="mt-1 rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
         {content}
@@ -140,24 +164,146 @@ function toolDisplayLabel(tool: ToolUse): string {
   return tool.name;
 }
 
-function ToolUseBadges({ tools }: { tools: ToolUse[] }) {
+function toolFullDetail(tool: ToolUse): string | null {
+  const args = tool.args;
+  if (!args || Object.keys(args).length === 0) return null;
+
+  if (tool.name === "exec" || tool.name === "bash") {
+    const cmd = typeof args.command === "string" ? args.command : "";
+    return cmd || null;
+  }
+
+  // For other tools, show all args as key: value pairs
+  return Object.entries(args)
+    .map(([key, value]) => {
+      const val = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+      return `${key}: ${val}`;
+    })
+    .join("\n");
+}
+
+function ToolUseBadge({ tool, isExpanded, onToggle }: { tool: ToolUse; isExpanded: boolean; onToggle: () => void }) {
+  const detail = toolFullDetail(tool);
   return (
-    <div className="mb-2 flex flex-wrap gap-1.5">
+    <div className="w-fit">
+      <button
+        type="button"
+        onClick={detail ? onToggle : undefined}
+        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground font-mono ${detail ? "cursor-pointer hover:bg-muted/40" : "cursor-default"}`}
+      >
+        {tool.phase === "start" ? (
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+        ) : tool.isError ? (
+          <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />
+        ) : (
+          <Check className="h-3 w-3 text-green-400 shrink-0" />
+        )}
+        <span className="truncate max-w-[300px]">{toolDisplayLabel(tool)}</span>
+        {tool.durationMs != null && (
+          <span className="text-muted-foreground/60 ml-1">{formatDuration(tool.durationMs)}</span>
+        )}
+        {detail && (
+          <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+        )}
+      </button>
+      {isExpanded && detail && (
+        <pre className="mt-1 ml-2 rounded-md bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
+          {detail}
+        </pre>
+      )}
+      {tool.isError && tool.errorContent && (
+        <div className="mt-1 ml-2 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-[11px] text-red-400 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
+          {tool.errorContent}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolUseBadges({ tools }: { tools: ToolUse[] }) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="mb-2 flex flex-col gap-1">
       {tools.map((tool) => (
-        <span
+        <ToolUseBadge
           key={tool.id}
-          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground font-mono"
-        >
-          {tool.phase === "start" ? (
-            <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-          ) : tool.isError ? (
-            <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />
-          ) : (
-            <Check className="h-3 w-3 text-green-400 shrink-0" />
-          )}
-          <span className="truncate max-w-[300px]">{toolDisplayLabel(tool)}</span>
-        </span>
+          tool={tool}
+          isExpanded={expandedIds.has(tool.id)}
+          onToggle={() => toggleExpand(tool.id)}
+        />
       ))}
+    </div>
+  );
+}
+
+function ChronologicalBlocks({
+  blocks,
+  isStreaming,
+}: {
+  blocks: ContentBlock[];
+  isStreaming?: boolean;
+}) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const lastBlock = blocks[blocks.length - 1];
+  const hasContent = blocks.some((b) => b.type === "text" && b.content);
+
+  return (
+    <div className="text-sm">
+      {blocks.map((block, i) => {
+        const isLast = i === blocks.length - 1;
+        switch (block.type) {
+          case "thinking":
+            return (
+              <ThinkingBlock
+                key={`thinking-${i}`}
+                content={block.content}
+                isStreaming={isStreaming && isLast && !hasContent}
+                durationMs={block.durationMs}
+              />
+            );
+          case "tool_use":
+            return (
+              <div key={block.tool.id} className="my-1 flex flex-col gap-1">
+                <ToolUseBadge
+                  tool={block.tool}
+                  isExpanded={expandedIds.has(block.tool.id)}
+                  onToggle={() => toggleExpand(block.tool.id)}
+                />
+              </div>
+            );
+          case "text":
+            return block.content ? (
+              <div key={`text-${i}`}>
+                <MarkdownRenderer content={block.content} />
+                {isStreaming && isLast && (
+                  <span className="inline-block h-4 w-1.5 animate-pulse bg-foreground rounded-sm ml-0.5 align-text-bottom" />
+                )}
+              </div>
+            ) : null;
+        }
+      })}
+      {isStreaming && !hasContent && lastBlock?.type !== "thinking" && (
+        <span className="inline-block h-4 w-1.5 animate-pulse bg-foreground rounded-sm" />
+      )}
     </div>
   );
 }
@@ -199,7 +345,7 @@ export function ChatMessage({
       <div
         className={`max-w-[85%] sm:max-w-[75%] ${
           isUser
-            ? "rounded-2xl rounded-br-md bg-muted px-4 py-2.5"
+            ? "group relative rounded-2xl rounded-br-md bg-muted px-4 py-2.5"
             : "group relative prose-sm"
         }`}
       >
@@ -212,12 +358,18 @@ export function ChatMessage({
               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
             )}
           </div>
+        ) : message.contentBlocks && message.contentBlocks.length > 0 ? (
+          <ChronologicalBlocks
+            blocks={message.contentBlocks}
+            isStreaming={isStreaming}
+          />
         ) : (
           <div className="text-sm">
             {message.thinkingContent && (
               <ThinkingBlock
                 content={message.thinkingContent}
                 isStreaming={isStreaming && !message.content}
+                durationMs={message.thinkingDurationMs}
               />
             )}
             {message.toolUses && message.toolUses.length > 0 && (
@@ -233,10 +385,12 @@ export function ChatMessage({
             )}
           </div>
         )}
-        {!isUser && !isStreaming && message.content && (
+        {!isStreaming && message.content && (
           <button
             onClick={handleCopy}
-            className="absolute right-0 top-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100"
+            className={`absolute rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100 ${
+              isUser ? "left-0 top-0 -translate-x-full -ml-1" : "right-0 top-0"
+            }`}
           >
             {copied ? (
               <Check className="h-3.5 w-3.5" />

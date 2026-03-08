@@ -10,6 +10,7 @@ export type ToolUseEvent = {
   toolCallId: string;
   isError?: boolean;
   args?: Record<string, unknown>;
+  result?: unknown;
 };
 
 export type ChatEvent =
@@ -90,7 +91,8 @@ export async function* streamChat(
   jwt: string,
   message: string,
   sessionId?: string,
-  attachments?: Attachment[]
+  attachments?: Attachment[],
+  signal?: AbortSignal
 ): AsyncGenerator<ChatEvent> {
   const body: Record<string, unknown> = { message, stream: true };
   if (sessionId) body.session_id = sessionId;
@@ -103,6 +105,7 @@ export async function* streamChat(
       Authorization: `Bearer ${jwt}`,
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok) {

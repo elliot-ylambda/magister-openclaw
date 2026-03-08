@@ -23,7 +23,11 @@ from app.services.supabase_client import SupabaseService
 
 logger = logging.getLogger("gateway.browser_relay")
 
-RELAY_PORT = 18792
+# The relay server binds on 127.0.0.1:18792 inside the agent machine.
+# The IPv6 socat bridge listens on [::]:18794 and forwards to 127.0.0.1:18792.
+# We connect to the bridge port but derive auth tokens using the relay's real port.
+RELAY_BIND_PORT = 18792   # used for HMAC token derivation (must match relay's bind port)
+RELAY_BRIDGE_PORT = 18794  # used for connecting via Fly internal DNS (IPv6 bridge)
 
 # In-memory tracking of connected extensions: user_id -> True
 _connections: dict[str, bool] = {}
@@ -159,17 +163,16 @@ def create_browser_relay_router(
     def _build_upstream_url(machine) -> str:
         """Build the WebSocket URL to the agent machine's relay server."""
         if dev_machine_url:
-            # Local dev: replace http(s) with ws and point to relay port
+            # Local dev: connect directly to the relay (no socat bridge needed)
             base = dev_machine_url.replace("https://", "ws://").replace("http://", "ws://")
-            # Strip any existing port and path
             parsed = urlparse(base)
             host = parsed.hostname or "localhost"
-            return f"ws://{host}:{RELAY_PORT}/extension"
+            return f"ws://{host}:{RELAY_BIND_PORT}/extension"
 
-        # Production: Fly internal DNS
+        # Production: Fly internal DNS → socat IPv6 bridge port
         return (
             f"ws://{machine.fly_machine_id}.vm.{machine.fly_app_name}.internal"
-            f":{RELAY_PORT}/extension"
+            f":{RELAY_BRIDGE_PORT}/extension"
         )
 
     @router.websocket("/browser/relay")
@@ -205,7 +208,7 @@ def create_browser_relay_router(
 
         # Build upstream URL with relay token
         upstream_url = _build_upstream_url(machine)
-        relay_token = derive_relay_token(machine.gateway_token or "", RELAY_PORT)
+        relay_token = derive_relay_token(machine.gateway_token or "", RELAY_BIND_PORT)
         upstream_ws_url = f"{upstream_url}?token={relay_token}"
 
         # Accept the extension's WebSocket
