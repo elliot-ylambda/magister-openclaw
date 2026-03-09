@@ -1,4 +1,10 @@
-import { buildRelayWsUrl, buildGatewayWsUrl, getConnectionMode, isRetryableReconnectError, reconnectDelayMs } from './background-utils.js'
+import {
+  buildRelayWsUrl,
+  isLastRemainingTab,
+  isMissingTabError,
+  isRetryableReconnectError,
+  reconnectDelayMs,
+} from './background-utils.js'
 
 const DEFAULT_PORT = 18792
 
@@ -41,12 +47,46 @@ const reattachPending = new Set()
 let reconnectAttempt = 0
 let reconnectTimer = null
 
+const TAB_VALIDATION_ATTEMPTS = 2
+const TAB_VALIDATION_RETRY_DELAY_MS = 1000
+
 function nowStack() {
   try {
     return new Error().stack || ''
   } catch {
     return ''
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function validateAttachedTab(tabId) {
+  try {
+    await chrome.tabs.get(tabId)
+  } catch {
+    return false
+  }
+
+  for (let attempt = 0; attempt < TAB_VALIDATION_ATTEMPTS; attempt++) {
+    try {
+      await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
+        expression: '1',
+        returnByValue: true,
+      })
+      return true
+    } catch (err) {
+      if (isMissingTabError(err)) {
+        return false
+      }
+      if (attempt < TAB_VALIDATION_ATTEMPTS - 1) {
+        await sleep(TAB_VALIDATION_RETRY_DELAY_MS)
+      }
+    }
+  }
+
+  return false
 }
 
 async function getRelayPort() {
@@ -108,15 +148,11 @@ async function rehydrateState() {
       tabBySession.set(entry.sessionId, entry.tabId)
       setBadge(entry.tabId, 'on')
     }
-    // Phase 2: validate asynchronously, remove dead tabs.
+    // Retry once so transient busy/navigation states do not permanently drop
+    // a still-attached tab after a service worker restart.
     for (const entry of entries) {
-      try {
-        await chrome.tabs.get(entry.tabId)
-        await chrome.debugger.sendCommand({ tabId: entry.tabId }, 'Runtime.evaluate', {
-          expression: '1',
-          returnByValue: true,
-        })
-      } catch {
+      const valid = await validateAttachedTab(entry.tabId)
+      if (!valid) {
         tabs.delete(entry.tabId)
         tabBySession.delete(entry.sessionId)
         setBadge(entry.tabId, 'off')
@@ -127,37 +163,21 @@ async function rehydrateState() {
   }
 }
 
-/** @type {'local'|'gateway'} */
-let connectionMode = 'local'
-
 async function ensureRelayConnection() {
   if (relayWs && relayWs.readyState === WebSocket.OPEN) return
   if (relayConnectPromise) return await relayConnectPromise
 
   relayConnectPromise = (async () => {
-    const mode = await getConnectionMode()
-    connectionMode = mode.mode
+    const port = await getRelayPort()
+    const gatewayToken = await getGatewayToken()
+    const httpBase = `http://127.0.0.1:${port}`
+    const wsUrl = await buildRelayWsUrl(port, gatewayToken)
 
-    let wsUrl
-    let gatewayToken = ''
-
-    if (mode.mode === 'gateway') {
-      // Gateway mode: connect through Magister gateway
-      wsUrl = buildGatewayWsUrl(mode.url, mode.jwt)
-    } else {
-      // Local mode: connect directly to local relay
-      const port = await getRelayPort()
-      gatewayToken = await getGatewayToken()
-      const httpBase = `http://127.0.0.1:${port}`
-
-      // Fast preflight: is the relay server up?
-      try {
-        await fetch(`${httpBase}/`, { method: 'HEAD', signal: AbortSignal.timeout(2000) })
-      } catch (err) {
-        throw new Error(`Relay server not reachable at ${httpBase} (${String(err)})`)
-      }
-
-      wsUrl = await buildRelayWsUrl(port, gatewayToken)
+    // Fast preflight: is the relay server up?
+    try {
+      await fetch(`${httpBase}/`, { method: 'HEAD', signal: AbortSignal.timeout(2000) })
+    } catch (err) {
+      throw new Error(`Relay server not reachable at ${httpBase} (${String(err)})`)
     }
 
     const ws = new WebSocket(wsUrl)
@@ -225,7 +245,7 @@ function onRelayClosed(reason) {
       setBadge(tabId, 'connecting')
       void chrome.action.setTitle({
         tabId,
-        title: 'Magister Browser Control: relay reconnecting…',
+        title: 'OpenClaw Browser Relay: relay reconnecting…',
       })
     }
   }
@@ -275,19 +295,16 @@ async function reannounceAttachedTabs() {
   for (const [tabId, tab] of tabs.entries()) {
     if (tab.state !== 'connected' || !tab.sessionId || !tab.targetId) continue
 
-    // Verify debugger is still attached.
-    try {
-      await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
-        expression: '1',
-        returnByValue: true,
-      })
-    } catch {
+    // Retry once here as well; reconnect races can briefly make an otherwise
+    // healthy tab look unavailable.
+    const valid = await validateAttachedTab(tabId)
+    if (!valid) {
       tabs.delete(tabId)
       if (tab.sessionId) tabBySession.delete(tab.sessionId)
       setBadge(tabId, 'off')
       void chrome.action.setTitle({
         tabId,
-        title: 'Magister Browser Control (click to attach/detach)',
+        title: 'OpenClaw Browser Relay (click to attach/detach)',
       })
       continue
     }
@@ -326,7 +343,7 @@ async function reannounceAttachedTabs() {
       setBadge(tabId, 'on')
       void chrome.action.setTitle({
         tabId,
-        title: 'Magister Browser Control: attached (click to detach)',
+        title: 'OpenClaw Browser Relay: attached (click to detach)',
       })
     } catch {
       // Relay send failed (e.g. WS closed in the gap between ensureRelayConnection
@@ -336,7 +353,7 @@ async function reannounceAttachedTabs() {
       setBadge(tabId, 'connecting')
       void chrome.action.setTitle({
         tabId,
-        title: 'Magister Browser Control: relay reconnecting…',
+        title: 'OpenClaw Browser Relay: relay reconnecting…',
       })
     }
   }
@@ -421,8 +438,6 @@ async function onRelayMessage(text) {
   }
 
   if (msg && msg.type === 'event' && msg.event === 'connect.challenge') {
-    // In gateway mode, the gateway handles the handshake with the relay
-    if (connectionMode === 'gateway') return
     try {
       ensureGatewayHandshakeStarted(msg.payload)
     } catch (err) {
@@ -512,7 +527,7 @@ async function attachTab(tabId, opts = {}) {
   tabBySession.set(sessionId, tabId)
   void chrome.action.setTitle({
     tabId,
-    title: 'Magister Browser Control: attached (click to detach)',
+    title: 'OpenClaw Browser Relay: attached (click to detach)',
   })
 
   if (!opts.skipAttachedEvent) {
@@ -583,7 +598,7 @@ async function detachTab(tabId, reason) {
   setBadge(tabId, 'off')
   void chrome.action.setTitle({
     tabId,
-    title: 'Magister Browser Control (click to attach/detach)',
+    title: 'OpenClaw Browser Relay (click to attach/detach)',
   })
 
   await persistState()
@@ -604,7 +619,7 @@ async function connectOrToggleForActiveTab() {
       setBadge(tabId, 'off')
       void chrome.action.setTitle({
         tabId,
-        title: 'Magister Browser Control (click to attach/detach)',
+        title: 'OpenClaw Browser Relay (click to attach/detach)',
       })
       return
     }
@@ -622,7 +637,7 @@ async function connectOrToggleForActiveTab() {
     setBadge(tabId, 'connecting')
     void chrome.action.setTitle({
       tabId,
-      title: 'Magister Browser Control: connecting to local relay…',
+      title: 'OpenClaw Browser Relay: connecting to local relay…',
     })
 
     try {
@@ -633,7 +648,7 @@ async function connectOrToggleForActiveTab() {
       setBadge(tabId, 'error')
       void chrome.action.setTitle({
         tabId,
-        title: 'Magister Browser Control: relay not running (open options for setup)',
+        title: 'OpenClaw Browser Relay: relay not running (open options for setup)',
       })
       void maybeOpenHelpOnce()
       const message = err instanceof Error ? err.message : String(err)
@@ -690,6 +705,11 @@ async function handleForwardCdpCommand(msg) {
     const toClose = target ? getTabByTargetId(target) : tabId
     if (!toClose) return { success: false }
     try {
+      const allTabs = await chrome.tabs.query({})
+      if (isLastRemainingTab(allTabs, toClose)) {
+        console.warn('Refusing to close the last tab: this would kill the browser process')
+        return { success: false, error: 'Cannot close the last tab' }
+      }
       await chrome.tabs.remove(toClose)
     } catch {
       return { success: false }
@@ -804,7 +824,7 @@ async function onDebuggerDetach(source, reason) {
   setBadge(tabId, 'connecting')
   void chrome.action.setTitle({
     tabId,
-    title: 'Magister Browser Control: re-attaching after navigation…',
+    title: 'OpenClaw Browser Relay: re-attaching after navigation…',
   })
 
   // Extend re-attach window from 2.5 s to ~7.7 s (5 attempts).
@@ -837,7 +857,7 @@ async function onDebuggerDetach(source, reason) {
         setBadge(tabId, 'connecting')
         void chrome.action.setTitle({
           tabId,
-          title: 'Magister Browser Control: attached, waiting for relay reconnect…',
+          title: 'OpenClaw Browser Relay: attached, waiting for relay reconnect…',
         })
       }
       return
@@ -850,7 +870,7 @@ async function onDebuggerDetach(source, reason) {
   setBadge(tabId, 'off')
   void chrome.action.setTitle({
     tabId,
-    title: 'Magister Browser Control: re-attach failed (click to retry)',
+    title: 'OpenClaw Browser Relay: re-attach failed (click to retry)',
   })
 }
 
