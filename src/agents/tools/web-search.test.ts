@@ -23,6 +23,8 @@ const {
   resolveKimiBaseUrl,
   extractKimiCitations,
   resolveBraveMode,
+  resolveBraveBaseUrl,
+  DEFAULT_BRAVE_BASE_URL,
 } = __testing;
 
 const kimiApiKeyEnv = ["KIMI_API", "KEY"].join("_");
@@ -391,5 +393,24 @@ describe("resolveBraveMode", () => {
 
   it("falls back to 'web' for unrecognized mode values", () => {
     expect(resolveBraveMode({ mode: "invalid" })).toBe("web");
+  });
+});
+
+describe("Brave baseUrl resolution", () => {
+  it("returns DEFAULT_BRAVE_BASE_URL when no baseUrl is configured", () => {
+    expect(resolveBraveBaseUrl({})).toBe(DEFAULT_BRAVE_BASE_URL);
+    expect(DEFAULT_BRAVE_BASE_URL).toBe("https://api.search.brave.com");
+  });
+
+  it("returns a custom baseUrl override when provided", () => {
+    expect(resolveBraveBaseUrl({ baseUrl: "http://localhost:8081/api/search" })).toBe(
+      "http://localhost:8081/api/search",
+    );
+  });
+
+  it("strips trailing slash from baseUrl", () => {
+    expect(resolveBraveBaseUrl({ baseUrl: "http://gateway.internal:8081/" })).toBe(
+      "http://gateway.internal:8081",
+    );
   });
 });
