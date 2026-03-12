@@ -455,6 +455,8 @@ export type ToolsConfig = {
       brave?: {
         /** Brave Search mode: "web" (standard results) or "llm-context" (pre-extracted page content). Default: "web". */
         mode?: "web" | "llm-context";
+        /** Base URL for Brave API requests. Defaults to "https://api.search.brave.com". When set, both web and llm-context endpoints are derived from this base. */
+        baseUrl?: string;
       };
       /** Gemini-specific configuration (used when provider="gemini"). */
       gemini?: {
