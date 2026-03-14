@@ -9,8 +9,12 @@ export type SlackProbe = BaseProbeResult & {
   team?: { id?: string; name?: string };
 };
 
-export async function probeSlack(token: string, timeoutMs = 2500): Promise<SlackProbe> {
-  const client = createSlackWebClient(token);
+export async function probeSlack(
+  token: string,
+  timeoutMs = 2500,
+  slackApiUrl?: string,
+): Promise<SlackProbe> {
+  const client = createSlackWebClient(token, { slackApiUrl });
   const start = Date.now();
   try {
     const result = await withTimeout(client.auth.test(), timeoutMs);

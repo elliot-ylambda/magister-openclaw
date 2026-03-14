@@ -93,6 +93,8 @@ export type SlackAccountConfig = {
   signingSecret?: string;
   /** Slack Events API webhook path (default: /slack/events). */
   webhookPath?: string;
+  /** Custom Slack API base URL (for gateway proxy). Overrides default https://slack.com/api. */
+  slackApiUrl?: string;
   /** Optional provider capability tags used for agent/runtime guidance. */
   capabilities?: SlackCapabilitiesConfig;
   /** Markdown formatting overrides (tables). */

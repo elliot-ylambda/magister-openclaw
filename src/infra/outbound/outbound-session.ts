@@ -175,7 +175,7 @@ async function resolveSlackChannelType(params: {
   }
 
   try {
-    const client = createSlackWebClient(token);
+    const client = createSlackWebClient(token, { slackApiUrl: account.slackApiUrl });
     const info = await client.conversations.info({ channel: channelId });
     const channel = info.channel as { is_im?: boolean; is_mpim?: boolean } | undefined;
     const type = channel?.is_im ? "dm" : channel?.is_mpim ? "group" : "channel";

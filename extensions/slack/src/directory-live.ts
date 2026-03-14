@@ -34,9 +34,12 @@ type SlackListChannelsResponse = {
   response_metadata?: { next_cursor?: string };
 };
 
-function resolveReadToken(params: DirectoryConfigParams): string | undefined {
+function resolveReadTokenAndApiUrl(params: DirectoryConfigParams): {
+  token?: string;
+  slackApiUrl?: string;
+} {
   const account = resolveSlackAccount({ cfg: params.cfg, accountId: params.accountId });
-  return account.userToken ?? account.botToken?.trim();
+  return { token: account.userToken ?? account.botToken?.trim(), slackApiUrl: account.slackApiUrl };
 }
 
 function normalizeQuery(value?: string | null): string {
@@ -61,11 +64,11 @@ function buildChannelRank(channel: SlackChannel): number {
 export async function listSlackDirectoryPeersLive(
   params: DirectoryConfigParams,
 ): Promise<ChannelDirectoryEntry[]> {
-  const token = resolveReadToken(params);
+  const { token, slackApiUrl } = resolveReadTokenAndApiUrl(params);
   if (!token) {
     return [];
   }
-  const client = createSlackWebClient(token);
+  const client = createSlackWebClient(token, { slackApiUrl });
   const query = normalizeQuery(params.query);
   const members: SlackUser[] = [];
   let cursor: string | undefined;
@@ -127,11 +130,11 @@ export async function listSlackDirectoryPeersLive(
 export async function listSlackDirectoryGroupsLive(
   params: DirectoryConfigParams,
 ): Promise<ChannelDirectoryEntry[]> {
-  const token = resolveReadToken(params);
+  const { token, slackApiUrl } = resolveReadTokenAndApiUrl(params);
   if (!token) {
     return [];
   }
-  const client = createSlackWebClient(token);
+  const client = createSlackWebClient(token, { slackApiUrl });
   const query = normalizeQuery(params.query);
   const channels: SlackChannel[] = [];
   let cursor: string | undefined;

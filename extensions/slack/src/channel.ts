@@ -435,7 +435,11 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
       if (!token) {
         return { ok: false, error: "missing token" };
       }
-      return await getSlackRuntime().channel.slack.probeSlack(token, timeoutMs);
+      return await getSlackRuntime().channel.slack.probeSlack(
+        token,
+        timeoutMs,
+        account.slackApiUrl,
+      );
     },
     buildAccountSnapshot: ({ account, runtime, probe }) => {
       const mode = account.config.mode ?? "socket";

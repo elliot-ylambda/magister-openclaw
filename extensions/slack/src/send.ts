@@ -274,7 +274,7 @@ export async function sendMessageSlack(
     fallbackToken: account.botToken,
     fallbackSource: account.botTokenSource,
   });
-  const client = opts.client ?? createSlackWebClient(token);
+  const client = opts.client ?? createSlackWebClient(token, { slackApiUrl: account.slackApiUrl });
   const recipient = parseRecipient(to);
   const { channelId } = await resolveChannelId(client, recipient);
   if (blocks) {

@@ -43,4 +43,18 @@ describe("slack web client config", () => {
       }),
     );
   });
+
+  it("passes slackApiUrl to WebClient when provided", () => {
+    createSlackWebClient("xoxb-test", {
+      slackApiUrl: "http://gateway.internal:8081/proxy/slack",
+    });
+
+    expect(WebClient).toHaveBeenCalledWith(
+      "xoxb-test",
+      expect.objectContaining({
+        slackApiUrl: "http://gateway.internal:8081/proxy/slack",
+        retryConfig: SLACK_DEFAULT_RETRY_OPTIONS,
+      }),
+    );
+  });
 });

@@ -192,7 +192,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
           endpoints: slackWebhookPath,
         })
       : null;
-  const clientOptions = resolveSlackWebClientOptions();
+  const clientOptions = resolveSlackWebClientOptions({ slackApiUrl: slackCfg.slackApiUrl });
   const app = new App(
     slackMode === "socket"
       ? {
@@ -320,6 +320,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
             const resolved = await resolveSlackChannelAllowlist({
               token: resolveToken,
               entries,
+              slackApiUrl: slackCfg.slackApiUrl,
             });
             const nextChannels = { ...channelsConfig };
             const mapping: string[] = [];
@@ -352,6 +353,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
           const resolvedUsers = await resolveSlackUserAllowlist({
             token: resolveToken,
             entries: allowEntries,
+            slackApiUrl: slackCfg.slackApiUrl,
           });
           const { mapping, unresolved, additions } = buildAllowlistResolutionSummary(
             resolvedUsers,
@@ -383,6 +385,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
             const resolvedUsers = await resolveSlackUserAllowlist({
               token: resolveToken,
               entries: Array.from(userEntries),
+              slackApiUrl: slackCfg.slackApiUrl,
             });
             const { resolvedMap, mapping, unresolved } =
               buildAllowlistResolutionSummary(resolvedUsers);

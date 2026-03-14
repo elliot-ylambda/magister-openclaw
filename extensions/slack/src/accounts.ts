@@ -16,6 +16,7 @@ export type ResolvedSlackAccount = {
   botToken?: string;
   appToken?: string;
   userToken?: string;
+  slackApiUrl?: string;
   botTokenSource: SlackTokenSource;
   appTokenSource: SlackTokenSource;
   userTokenSource: SlackTokenSource;
@@ -83,6 +84,7 @@ export function resolveSlackAccount(params: {
     botToken,
     appToken,
     userToken,
+    slackApiUrl: merged.slackApiUrl,
     botTokenSource,
     appTokenSource,
     userTokenSource,

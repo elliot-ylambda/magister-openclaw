@@ -41,7 +41,7 @@ export type SlackPin = {
   file?: { id?: string; name?: string };
 };
 
-function resolveToken(explicit?: string, accountId?: string) {
+function resolveTokenAndApiUrl(explicit?: string, accountId?: string) {
   const cfg = loadConfig();
   const account = resolveSlackAccount({ cfg, accountId });
   const token = resolveSlackBotToken(explicit ?? account.botToken ?? undefined);
@@ -53,7 +53,7 @@ function resolveToken(explicit?: string, accountId?: string) {
     );
     throw new Error("SLACK_BOT_TOKEN or channels.slack.botToken is required for Slack actions");
   }
-  return token;
+  return { token, slackApiUrl: account.slackApiUrl };
 }
 
 function normalizeEmoji(raw: string) {
@@ -65,8 +65,8 @@ function normalizeEmoji(raw: string) {
 }
 
 async function getClient(opts: SlackActionClientOpts = {}) {
-  const token = resolveToken(opts.token, opts.accountId);
-  return opts.client ?? createSlackWebClient(token);
+  const { token, slackApiUrl } = resolveTokenAndApiUrl(opts.token, opts.accountId);
+  return opts.client ?? createSlackWebClient(token, { slackApiUrl });
 }
 
 async function resolveBotUserId(client: WebClient) {
@@ -414,7 +414,7 @@ export async function downloadSlackFile(
   fileId: string,
   opts: SlackActionClientOpts & { maxBytes: number; channelId?: string; threadId?: string },
 ): Promise<SlackMediaResult | null> {
-  const token = resolveToken(opts.token, opts.accountId);
+  const { token } = resolveTokenAndApiUrl(opts.token, opts.accountId);
   const client = await getClient(opts);
 
   // Fetch fresh file metadata (includes a current url_private_download).

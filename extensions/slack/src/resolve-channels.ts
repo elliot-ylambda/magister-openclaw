@@ -97,8 +97,10 @@ export async function resolveSlackChannelAllowlist(params: {
   token: string;
   entries: string[];
   client?: WebClient;
+  slackApiUrl?: string;
 }): Promise<SlackChannelResolution[]> {
-  const client = params.client ?? createSlackWebClient(params.token);
+  const client =
+    params.client ?? createSlackWebClient(params.token, { slackApiUrl: params.slackApiUrl });
   const channels = await listSlackChannels(client);
   return resolveSlackAllowlistEntries<
     { id?: string; name?: string },

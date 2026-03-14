@@ -45,7 +45,7 @@ describe("probeSlack", () => {
       bot: { id: "U123", name: "openclaw-bot" },
       team: { id: "T123", name: "OpenClaw" },
     });
-    expect(createSlackWebClientMock).toHaveBeenCalledWith("xoxb-test");
+    expect(createSlackWebClientMock).toHaveBeenCalledWith("xoxb-test", { slackApiUrl: undefined });
     expect(withTimeoutMock).toHaveBeenCalledWith(expect.any(Promise), 2500);
   });
 

@@ -383,10 +383,11 @@ async function resolveChannelReports(params: {
       const botToken = (resolvedAccount as { botToken?: string }).botToken?.trim();
       const userToken = (resolvedAccount as { userToken?: string }).userToken?.trim();
       const scopeReports: NonNullable<ChannelCapabilitiesReport["slackScopes"]> = [];
+      const slackApiUrl = (resolvedAccount as { slackApiUrl?: string }).slackApiUrl;
       if (botToken) {
         scopeReports.push({
           tokenType: "bot",
-          result: await fetchSlackScopes(botToken, timeoutMs),
+          result: await fetchSlackScopes(botToken, timeoutMs, slackApiUrl),
         });
       } else {
         scopeReports.push({
@@ -397,7 +398,7 @@ async function resolveChannelReports(params: {
       if (userToken) {
         scopeReports.push({
           tokenType: "user",
-          result: await fetchSlackScopes(userToken, timeoutMs),
+          result: await fetchSlackScopes(userToken, timeoutMs, slackApiUrl),
         });
       }
       slackScopes = scopeReports;

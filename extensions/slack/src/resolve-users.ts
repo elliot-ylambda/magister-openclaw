@@ -143,8 +143,10 @@ export async function resolveSlackUserAllowlist(params: {
   token: string;
   entries: string[];
   client?: WebClient;
+  slackApiUrl?: string;
 }): Promise<SlackUserResolution[]> {
-  const client = params.client ?? createSlackWebClient(params.token);
+  const client =
+    params.client ?? createSlackWebClient(params.token, { slackApiUrl: params.slackApiUrl });
   const users = await listSlackUsers(client);
   return resolveSlackAllowlistEntries<
     { id?: string; name?: string; email?: string },
