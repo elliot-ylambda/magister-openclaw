@@ -808,6 +808,7 @@ export const SlackAccountSchema = z
     mode: z.enum(["socket", "http"]).optional(),
     signingSecret: SecretInputSchema.optional().register(sensitive),
     webhookPath: z.string().optional(),
+    slackApiUrl: z.string().optional(),
     capabilities: z.array(z.string()).optional(),
     markdown: MarkdownConfigSchema,
     enabled: z.boolean().optional(),
