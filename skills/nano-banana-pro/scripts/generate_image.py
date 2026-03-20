@@ -123,8 +123,12 @@ def main():
     from google.genai import types
     from PIL import Image as PILImage
 
-    # Initialise client
-    client = genai.Client(api_key=api_key)
+    # Initialise client (support custom base URL for gateway proxy)
+    client_kwargs = {"api_key": api_key}
+    base_url = os.environ.get("GEMINI_BASE_URL")
+    if base_url:
+        client_kwargs["http_options"] = types.HttpOptions(base_url=base_url)
+    client = genai.Client(**client_kwargs)
 
     # Set up output path
     output_path = Path(args.filename)
