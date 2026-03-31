@@ -478,7 +478,11 @@ export function normalizeCronJobInput(
       isIsolatedAgentTurn &&
       payloadKind === "agentTurn"
     ) {
-      next.delivery = { mode: "announce" };
+      // Magister fork: default to "none" instead of "announce".
+      // Our machines are headless (no messaging channels), so announce
+      // always fails and triggers exponential backoff. The global
+      // completionWebhook handles all cron output reporting.
+      next.delivery = { mode: "none" };
     }
   }
 
