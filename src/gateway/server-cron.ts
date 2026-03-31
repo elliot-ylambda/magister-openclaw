@@ -99,6 +99,8 @@ async function postCronWebhook(params: {
   blockedLog: string;
   failedLog: string;
   logger: ReturnType<typeof getChildLogger>;
+  /** Allow private/internal network targets (for operator-configured URLs). */
+  allowPrivateNetwork?: boolean;
 }): Promise<void> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => {
@@ -114,6 +116,9 @@ async function postCronWebhook(params: {
         body: JSON.stringify(params.payload),
         signal: abortController.signal,
       },
+      ...(params.allowPrivateNetwork && {
+        policy: { dangerouslyAllowPrivateNetwork: true },
+      }),
     });
     await result.release();
   } catch (err) {
@@ -423,6 +428,7 @@ export function buildGatewayCronService(params: {
               blockedLog: "cron: completion webhook blocked by SSRF guard",
               failedLog: "cron: completion webhook delivery failed",
               logger: cronLogger,
+              allowPrivateNetwork: true,
             });
           })();
         }
