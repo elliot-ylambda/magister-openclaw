@@ -406,6 +406,27 @@ export function buildGatewayCronService(params: {
           })();
         }
 
+        // ── Magister fork: global completion webhook ──────────────
+        // Always POST to completionWebhook (if configured) for every
+        // finished job with a summary, regardless of per-job delivery.
+        // This lets the Magister gateway create chat sessions for ALL
+        // cron output, even native jobs the agent created without
+        // webhook delivery.
+        const completionWebhookUrl = trimToOptionalString(params.cfg.cron?.completionWebhook);
+        if (completionWebhookUrl && evt.summary && webhookTarget?.url !== completionWebhookUrl) {
+          void (async () => {
+            await postCronWebhook({
+              webhookUrl: completionWebhookUrl,
+              webhookToken,
+              payload: evt,
+              logContext: { jobId: evt.jobId },
+              blockedLog: "cron: completion webhook blocked by SSRF guard",
+              failedLog: "cron: completion webhook delivery failed",
+              logger: cronLogger,
+            });
+          })();
+        }
+
         if (evt.status === "error" && job) {
           const failureDest = resolveFailureDestination(job, params.cfg.cron?.failureDestination);
           if (failureDest) {
