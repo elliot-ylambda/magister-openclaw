@@ -413,12 +413,11 @@ export function buildGatewayCronService(params: {
 
         // ── Magister fork: global completion webhook ──────────────
         // Always POST to completionWebhook (if configured) for every
-        // finished job with a summary, regardless of per-job delivery.
-        // This lets the Magister gateway create chat sessions for ALL
-        // cron output, even native jobs the agent created without
-        // webhook delivery.
+        // finished job, regardless of per-job delivery or summary.
+        // The gateway decides what to do: orchestrate workflows (no
+        // summary needed) or record native cron output (needs summary).
         const completionWebhookUrl = trimToOptionalString(params.cfg.cron?.completionWebhook);
-        if (completionWebhookUrl && evt.summary && webhookTarget?.url !== completionWebhookUrl) {
+        if (completionWebhookUrl && webhookTarget?.url !== completionWebhookUrl) {
           void (async () => {
             await postCronWebhook({
               webhookUrl: completionWebhookUrl,
