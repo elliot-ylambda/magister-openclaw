@@ -418,6 +418,19 @@ function wrapStreamTrimToolCallNames(
   return stream;
 }
 
+/**
+ * Injects an X-Session-Id header into every outbound LLM request so the
+ * Magister gateway can resolve per-session model overrides.
+ */
+function wrapStreamFnWithSessionHeader(baseFn: StreamFn, sessionKey: string): StreamFn {
+  return (model, context, options) =>
+    baseFn(
+      { ...model, headers: { ...model.headers, "X-Session-Id": sessionKey } },
+      context,
+      options,
+    );
+}
+
 export function wrapStreamFnTrimToolCallNames(
   baseFn: StreamFn,
   allowedToolNames?: Set<string>,
@@ -1382,6 +1395,14 @@ export async function runEmbeddedAttempt(
       if (anthropicPayloadLogger) {
         activeSession.agent.streamFn = anthropicPayloadLogger.wrapStreamFn(
           activeSession.agent.streamFn,
+        );
+      }
+
+      // Magister fork: inject session key for gateway model override lookup
+      if (params.sessionKey) {
+        activeSession.agent.streamFn = wrapStreamFnWithSessionHeader(
+          activeSession.agent.streamFn,
+          params.sessionKey,
         );
       }
 
