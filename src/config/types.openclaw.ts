@@ -26,6 +26,7 @@ import type { NodeHostConfig } from "./types.node-host.js";
 import type { PluginsConfig } from "./types.plugins.js";
 import type { SecretsConfig } from "./types.secrets.js";
 import type { SkillsConfig } from "./types.skills.js";
+import type { SubagentConfig } from "./types.subagent.js";
 import type { ToolsConfig } from "./types.tools.js";
 
 export type OpenClawConfig = {
@@ -114,6 +115,7 @@ export type OpenClawConfig = {
   web?: WebConfig;
   channels?: ChannelsConfig;
   cron?: CronConfig;
+  subagent?: SubagentConfig;
   hooks?: HooksConfig;
   discovery?: DiscoveryConfig;
   canvasHost?: CanvasHostConfig;

@@ -2,6 +2,7 @@ import path from "node:path";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/runs.js";
 import { registerSkillsChangeListener } from "../agents/skills/refresh.js";
+import { registerSubagentCompletionWebhookHook } from "../agents/subagent-completion-webhook.js";
 import { initSubagentRegistry } from "../agents/subagent-registry.js";
 import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.js";
 import type { CanvasHostServer } from "../canvas-host/server.js";
@@ -644,6 +645,11 @@ export async function startGatewayServer(
   };
   const hasMobileNodeConnected = () => hasConnectedMobileNode(nodeRegistry);
   applyGatewayLaneConcurrency(cfgAtStart);
+
+  // Magister fork: register subagent completion webhook hook at gateway boot.
+  // Mirrors the cron.completionWebhook pattern (server-cron.ts:415-432).
+  // No-op when subagent.completionWebhook is unset.
+  registerSubagentCompletionWebhookHook();
 
   let cronState = buildGatewayCronService({
     cfg: cfgAtStart,

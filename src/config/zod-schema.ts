@@ -556,6 +556,14 @@ export const OpenClawSchema = z
         }
       })
       .optional(),
+    // Magister fork: subagent completion webhook (mirrors cron.completionWebhook).
+    subagent: z
+      .object({
+        completionWebhook: HttpUrlSchema.optional(),
+        webhookToken: SecretInputSchema.optional().register(sensitive),
+      })
+      .strict()
+      .optional(),
     hooks: z
       .object({
         enabled: z.boolean().optional(),

@@ -6,15 +6,15 @@
  */
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
-import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import path from "node:path";
+import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
+import { loadConfig } from "../config/config.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
-import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import { sendInvalidRequest, sendJson } from "./http-common.js";
+import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import { resolveAgentIdForRequest, resolveSessionKey } from "./http-utils.js";
-import { loadConfig } from "../config/config.js";
-import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 
 const DEFAULT_BODY_BYTES = 20 * 1024 * 1024; // 20 MB
 
