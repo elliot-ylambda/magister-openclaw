@@ -120,6 +120,37 @@ describe("MagisterIntegrationsContextEngine", () => {
     expect(second.systemPromptAddition).toContain("v2");
   });
 
+  it("emits the diff note only once — a third turn with stable content does not re-emit", async () => {
+    writeFileSync(filePath, "v1\n", "utf8");
+    const { inner } = makeInnerSpy();
+    const engine = new MagisterIntegrationsContextEngine({ filePath, inner });
+
+    await engine.assemble({ sessionId: "s1", messages: [makeMessage()] });
+    writeFileSync(filePath, "v2\n", "utf8");
+    const second = await engine.assemble({ sessionId: "s1", messages: [makeMessage()] });
+    const third = await engine.assemble({ sessionId: "s1", messages: [makeMessage()] });
+
+    expect(second.systemPromptAddition).toContain("Note: integrations changed");
+    expect(third.systemPromptAddition).not.toContain("Note: integrations changed");
+  });
+
+  it("dispose() clears per-session state so the next assemble treats the session as fresh", async () => {
+    writeFileSync(filePath, "v1\n", "utf8");
+    const { inner } = makeInnerSpy();
+    const engine = new MagisterIntegrationsContextEngine({ filePath, inner });
+
+    await engine.assemble({ sessionId: "s1", messages: [makeMessage()] });
+    await engine.dispose();
+
+    writeFileSync(filePath, "v2\n", "utf8");
+    const afterDispose = await engine.assemble({
+      sessionId: "s1",
+      messages: [makeMessage()],
+    });
+
+    expect(afterDispose.systemPromptAddition).not.toContain("Note: integrations changed");
+  });
+
   it("treats different sessions independently — change in one doesn't note in another", async () => {
     writeFileSync(filePath, "v1\n", "utf8");
     const { inner } = makeInnerSpy();

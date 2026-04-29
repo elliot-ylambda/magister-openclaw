@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { LegacyContextEngine } from "./legacy.js";
 import { registerContextEngine } from "./registry.js";
 import type {
@@ -41,7 +42,6 @@ export class MagisterIntegrationsContextEngine implements ContextEngine {
 
   private readonly inner: ContextEngine;
   private readonly filePath: string;
-  /** sessionId -> sha1 of last-seen INTEGRATIONS.md content */
   private readonly lastSeenHash = new Map<string, string>();
 
   constructor(options: Options = {}) {
@@ -62,14 +62,16 @@ export class MagisterIntegrationsContextEngine implements ContextEngine {
     messages: AgentMessage[];
     tokenBudget?: number;
   }): Promise<AssembleResult> {
-    const innerResult = await this.inner.assemble(params);
+    const [innerResult, content] = await Promise.all([
+      this.inner.assemble(params),
+      this.readIntegrationsMd(),
+    ]);
 
-    const content = await this.readIntegrationsMd();
     if (content === null) {
       return innerResult;
     }
 
-    const hash = createHash("sha1").update(content).digest("hex");
+    const hash = createHash("sha256").update(content).digest("hex");
     const previousHash = this.lastSeenHash.get(params.sessionId);
     const changed = previousHash !== undefined && previousHash !== hash;
     this.rememberHash(params.sessionId, hash);
@@ -129,16 +131,10 @@ export class MagisterIntegrationsContextEngine implements ContextEngine {
   }
 
   private rememberHash(sessionId: string, hash: string): void {
-    // Insertion-order LRU: re-insert moves to the end, evict the oldest when
-    // we exceed the cap. Bounds memory at ~200 sessionId+sha1 pairs.
+    // Map preserves insertion order; re-inserting on hit gives LRU eviction.
     this.lastSeenHash.delete(sessionId);
     this.lastSeenHash.set(sessionId, hash);
-    if (this.lastSeenHash.size > MAX_TRACKED_SESSIONS) {
-      const oldest = this.lastSeenHash.keys().next().value;
-      if (oldest !== undefined) {
-        this.lastSeenHash.delete(oldest);
-      }
-    }
+    pruneMapToMaxSize(this.lastSeenHash, MAX_TRACKED_SESSIONS);
   }
 }
 
