@@ -558,7 +558,20 @@ export async function closeDispatcher(dispatcher?: Dispatcher | null): Promise<v
   const candidate = dispatcher as { close?: () => Promise<void> | void; destroy?: () => void };
   try {
     if (typeof candidate.close === "function") {
-      await candidate.close();
+      // close() waits for in-flight connections to drain, which can hang
+      // indefinitely on tunnelled networks (e.g. Fly.io 6PN IPv6).
+      // Race against a timeout and fall back to destroy() if it stalls.
+      const closed = candidate.close();
+      if (closed && typeof closed.then === "function") {
+        const timer = new Promise<"timeout">((resolve) =>
+          setTimeout(() => resolve("timeout"), 5000),
+        );
+        const result = await Promise.race([closed, timer]);
+        if (result === "timeout" && typeof candidate.destroy === "function") {
+          candidate.destroy();
+        }
+        return;
+      }
       return;
     }
     if (typeof candidate.destroy === "function") {
