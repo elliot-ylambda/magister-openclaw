@@ -636,7 +636,13 @@ export function normalizeCronJobInput(
       (sessionTarget === "" && payloadKind === "agentTurn");
     const hasDelivery = "delivery" in next && next.delivery !== undefined;
     if (!hasDelivery && isIsolatedAgentTurn && payloadKind === "agentTurn") {
-      next.delivery = { mode: "announce" };
+      // Magister fork: default to "none" instead of "announce".
+      // Our machines are headless (no messaging channels), so announce
+      // always fails and triggers exponential backoff — breaking the
+      // schedule. The global cron.completionWebhook (configured in
+      // openclaw.json on Magister machines) handles all cron output
+      // reporting to the gateway.
+      next.delivery = { mode: "none" };
     }
   }
 

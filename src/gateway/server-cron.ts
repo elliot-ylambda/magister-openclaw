@@ -389,6 +389,7 @@ export function buildGatewayCronService(params: {
           resolveCronAgent,
           webhookToken: params.cfg.cron?.webhookToken,
           legacyWebhook: params.cfg.cron?.webhook,
+          completionWebhook: params.cfg.cron?.completionWebhook,
           globalFailureDestination: params.cfg.cron?.failureDestination,
           warnedLegacyWebhookJobs,
         });

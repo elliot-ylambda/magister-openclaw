@@ -91,7 +91,9 @@ describe("normalizeCronJobCreate", () => {
     expectPayloadDeliveryHintsCleared(payload);
 
     const delivery = normalized.delivery as Record<string, unknown>;
-    expect(delivery).toEqual({ mode: "announce" });
+    // Magister fork: default delivery is "none" instead of "announce" for
+    // headless agents. See src/cron/normalize.ts.
+    expect(delivery).toEqual({ mode: "none" });
   });
 
   it("trims agentId and drops null", () => {
@@ -176,14 +178,16 @@ describe("normalizeCronJobCreate", () => {
       threadId: " 99 ",
     }) as unknown as Record<string, unknown>;
 
-    expect(normalized.delivery).toEqual({ mode: "announce" });
+    // Magister fork: default delivery is "none" instead of "announce" for
+    // headless agents. See src/cron/normalize.ts.
+    expect(normalized.delivery).toEqual({ mode: "none" });
     expect(withLegacyTopLevel.deliver).toBeUndefined();
     expect(withLegacyTopLevel.channel).toBeUndefined();
     expect(withLegacyTopLevel.to).toBeUndefined();
     expect(withLegacyTopLevel.threadId).toBeUndefined();
 
     const delivery = withLegacyTopLevel.delivery as Record<string, unknown>;
-    expect(delivery).toEqual({ mode: "announce" });
+    expect(delivery).toEqual({ mode: "none" });
   });
 
   it("canonicalizes delivery.channel casing", () => {
@@ -365,16 +369,19 @@ describe("normalizeCronJobCreate", () => {
     expect(validateCronAddParams(normalized)).toBe(false);
   });
 
-  it("defaults isolated agentTurn delivery to announce", () => {
+  // Magister fork: default delivery is "none" instead of upstream's "announce"
+  // for headless agents (no messaging channels available). See
+  // src/cron/normalize.ts. Tests below renamed/updated to reflect this.
+  it("defaults isolated agentTurn delivery to none (Magister fork)", () => {
     const normalized = normalizeIsolatedAgentTurnCreateJob({
-      name: "default-announce",
+      name: "default-none",
     });
 
     const delivery = normalized.delivery as Record<string, unknown>;
-    expect(delivery.mode).toBe("announce");
+    expect(delivery.mode).toBe("none");
   });
 
-  it("migrates legacy isolation settings to announce delivery", () => {
+  it("migrates legacy isolation settings to none delivery (Magister fork)", () => {
     const normalized = normalizeCronJobCreate({
       name: "legacy isolation",
       enabled: true,
@@ -387,7 +394,7 @@ describe("normalizeCronJobCreate", () => {
     }) as unknown as Record<string, unknown>;
 
     const delivery = normalized.delivery as Record<string, unknown>;
-    expect(delivery.mode).toBe("announce");
+    expect(delivery.mode).toBe("none");
     expect((normalized as { isolation?: unknown }).isolation).toBeUndefined();
   });
 

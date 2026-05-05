@@ -83,6 +83,12 @@ async function postCronWebhook(params: {
   blockedLog: string;
   failedLog: string;
   logger: CronLogger;
+  /**
+   * Magister fork: allow private/internal network targets (e.g. Fly 6PN
+   * `*.internal` hostnames). Used for the operator-configured
+   * `cron.completionWebhook` that points at our gateway.
+   */
+  allowPrivateNetwork?: boolean;
 }): Promise<void> {
   const abortController = new AbortController();
   const timeout = setTimeout(() => {
@@ -98,6 +104,9 @@ async function postCronWebhook(params: {
         body: JSON.stringify(params.payload),
         signal: abortController.signal,
       },
+      ...(params.allowPrivateNetwork && {
+        policy: { dangerouslyAllowPrivateNetwork: true },
+      }),
     });
     await result.release();
   } catch (err) {
@@ -201,11 +210,19 @@ export function dispatchGatewayCronFinishedNotifications(params: {
   resolveCronAgent: CronAgentResolver;
   webhookToken?: unknown;
   legacyWebhook?: unknown;
+  /**
+   * Magister fork: global completion webhook URL. If set, every finished
+   * job POSTs here regardless of summary or per-job delivery. Allows
+   * private/internal network targets (Fly 6PN). Skipped when the same
+   * URL is already the resolved per-job webhookTarget to avoid double-fire.
+   */
+  completionWebhook?: unknown;
   globalFailureDestination?: CronFailureDestinationConfig;
   warnedLegacyWebhookJobs: Set<string>;
 }): void {
   const webhookToken = normalizeOptionalString(params.webhookToken);
   const legacyWebhook = normalizeOptionalString(params.legacyWebhook);
+  const completionWebhook = normalizeOptionalString(params.completionWebhook);
   const legacyNotify = (params.job as { notify?: unknown } | undefined)?.notify === true;
   const webhookTarget = resolveCronWebhookTarget({
     delivery:
@@ -247,6 +264,28 @@ export function dispatchGatewayCronFinishedNotifications(params: {
         blockedLog: "cron: webhook delivery blocked by SSRF guard",
         failedLog: "cron: webhook delivery failed",
         logger: params.logger,
+      });
+    })();
+  }
+
+  // ── Magister fork: global completion webhook ──────────────────────
+  // Always POST to completionWebhook (if configured) for every finished
+  // job, regardless of per-job delivery or the presence of a summary.
+  // The Magister gateway decides what to do: orchestrate workflows
+  // (no summary needed) or record native cron output (summary present).
+  // Skip when the same URL is already the per-job webhookTarget — the
+  // native dispatch above would already have fired.
+  if (completionWebhook && webhookTarget?.url !== completionWebhook) {
+    void (async () => {
+      await postCronWebhook({
+        webhookUrl: completionWebhook,
+        webhookToken,
+        payload: params.evt,
+        logContext: { jobId: params.evt.jobId },
+        blockedLog: "cron: completion webhook blocked by SSRF guard",
+        failedLog: "cron: completion webhook delivery failed",
+        logger: params.logger,
+        allowPrivateNetwork: true,
       });
     })();
   }

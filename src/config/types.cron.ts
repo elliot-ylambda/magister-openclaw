@@ -42,6 +42,16 @@ export type CronConfig = {
   /** Bearer token for cron webhook POST delivery. */
   webhookToken?: SecretInput;
   /**
+   * Magister fork: global completion webhook URL.
+   * When set, every finished cron job POSTs to this URL using
+   * cron.webhookToken for auth — regardless of per-job delivery
+   * settings or the presence of a summary. Lets the Magister gateway
+   * see ALL cron output (including workflow orchestration callbacks
+   * that have no summary). Required because upstream native delivery
+   * only fires when `evt.summary` is truthy.
+   */
+  completionWebhook?: string;
+  /**
    * How long to retain completed cron run sessions before automatic pruning.
    * Accepts a duration string (e.g. "24h", "7d", "1h30m") or `false` to disable pruning.
    * Default: "24h".
