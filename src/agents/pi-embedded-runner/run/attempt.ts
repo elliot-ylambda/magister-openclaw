@@ -2140,6 +2140,23 @@ export async function runEmbeddedAttempt(
         },
       );
 
+      // Magister fork: inject X-Session-Id on every outbound LLM request so the
+      // gateway can resolve per-session model overrides + BYOK keys for this
+      // session. Outermost wrap so the header is added after all other model
+      // mutations. Re-applies fork commit ae706eec08 at the v2026.5.4
+      // canonical site (the original fork put the wrap around line 1398; the
+      // agent.streamFn chain has been heavily refactored upstream).
+      if (params.sessionKey) {
+        const sessionKeyForHeader = params.sessionKey;
+        const innerStreamFn = activeSession.agent.streamFn;
+        activeSession.agent.streamFn = (model, context, options) =>
+          innerStreamFn(
+            { ...model, headers: { ...model.headers, "X-Session-Id": sessionKeyForHeader } },
+            context,
+            options,
+          );
+      }
+
       try {
         if (isRawModelRun) {
           activeSession.agent.reset();
