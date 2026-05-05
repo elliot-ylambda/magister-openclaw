@@ -161,6 +161,13 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 - Commit via `scripts/committer "<msg>" <file...>`; stage intended files only. It formats staged files; still run gates.
 - Commits: conventional-ish, concise, grouped.
 - No manual stash/autostash unless explicit. No branch/worktree changes unless requested.
+- **Archaeology footnote — Magister fork v2026.5.4 rebuild (May 2026):** the
+  fork was rebuilt off upstream tag `v2026.5.4` rather than merged from old
+  fork main, with a `git merge -s ours` history bridge (commit `647cae46`)
+  preserving pre-rebuild commits in the second-parent chain. Use
+  `git log --first-parent -- <path>` for archaeology on files that survived
+  the rebuild — plain `git log -- <path>` may surface pre-rebuild history
+  that no longer reflects the working tree.
 - `main`: no merge commits; rebase on latest `origin/main` before push. Do not
   keep chasing `main` with repeated full gates after one green run plus a clean
   rebase sanity pass.
