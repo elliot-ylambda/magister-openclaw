@@ -34,6 +34,7 @@ import type { NodeHostConfig } from "./types.node-host.js";
 import type { PluginsConfig } from "./types.plugins.js";
 import type { SecretsConfig } from "./types.secrets.js";
 import type { SkillsConfig } from "./types.skills.js";
+import type { SubagentConfig } from "./types.subagent.js";
 import type { ToolsConfig } from "./types.tools.js";
 import type { ProxyConfig } from "./zod-schema.proxy.js";
 
@@ -132,6 +133,8 @@ export type OpenClawConfig = {
   web?: WebConfig;
   channels?: ChannelsConfig;
   cron?: CronConfig;
+  /** Magister fork: subagent completion webhook (mirrors cron.completionWebhook). */
+  subagent?: SubagentConfig;
   commitments?: CommitmentsConfig;
   hooks?: HooksConfig;
   discovery?: DiscoveryConfig;
