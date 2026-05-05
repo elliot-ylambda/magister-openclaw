@@ -544,6 +544,15 @@ export function createSessionStatusTool(opts?: {
       const configured = resolveDefaultModelForAgent({ cfg, agentId });
       const modelRaw = readStringParam(params, "model");
       let changedModel = false;
+      if (typeof modelRaw === "string" && process.env.GATEWAY_TOKEN) {
+        // Magister fork: block model mutation via session_status in headless mode.
+        // Model switching is handled by the gateway's /api/models/session-switch endpoint.
+        // Detection: the GATEWAY_TOKEN env var is only present on Magister machines.
+        throw new Error(
+          "Model switching via session_status is disabled. " +
+            "Use the magister-model-switch skill (curl to /api/models/session-switch) instead.",
+        );
+      }
       if (typeof modelRaw === "string") {
         const selection = await resolveModelOverride({
           cfg,
