@@ -828,9 +828,9 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     if (params.silentExpected) {
       return;
     }
-    if (!state.streamReasoning || !params.onReasoningStream) {
-      return;
-    }
+    // Magister fork: always emit thinking event to global event bus (HTTP SSE
+    // listeners need it). Only the optional onReasoningStream callback is
+    // gated by streamReasoning + presence of the callback.
     const formatted = formatReasoningMessage(text);
     if (!formatted) {
       return;
@@ -844,7 +844,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     const delta = formatted.startsWith(prior) ? formatted.slice(prior.length) : formatted;
     state.lastStreamedReasoning = formatted;
 
-    // Broadcast thinking event to WebSocket clients in real-time
+    // Broadcast thinking event to all listeners (HTTP SSE, WebSocket, etc.)
     emitAgentEvent({
       runId: params.runId,
       stream: "thinking",
@@ -854,9 +854,11 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
       },
     });
 
-    void params.onReasoningStream({
-      text: formatted,
-    });
+    if (state.streamReasoning && params.onReasoningStream) {
+      void params.onReasoningStream({
+        text: formatted,
+      });
+    }
   };
 
   const resetForCompactionRetry = () => {

@@ -443,7 +443,9 @@ export function handleMessageUpdate(
       delta: thinkingDelta,
       content: thinkingContent,
     });
-    if (ctx.state.streamReasoning) {
+    {
+      // Magister fork: always emit so HTTP SSE clients receive thinking events,
+      // not just consumers that opted into streamReasoning.
       // Prefer full partial-message thinking when available; fall back to event payloads.
       const partialThinking = extractAssistantThinking(msg);
       ctx.emitReasoningStream(partialThinking || thinkingContent || thinkingDelta);
@@ -522,10 +524,9 @@ export function handleMessageUpdate(
     }
   }
 
-  if (ctx.state.streamReasoning) {
-    // Handle partial <think> tags: stream whatever reasoning is visible so far.
-    ctx.emitReasoningStream(extractThinkingFromTaggedStream(ctx.state.deltaBuffer));
-  }
+  // Magister fork: always emit (consumed by HTTP SSE and WebSocket listeners).
+  // Handle partial <think> tags: stream whatever reasoning is visible so far.
+  ctx.emitReasoningStream(extractThinkingFromTaggedStream(ctx.state.deltaBuffer));
   const next =
     phaseAwareVisibleText ||
     (deliveryPhase === "final_answer"
@@ -881,7 +882,8 @@ export function handleMessageEnd(
   if (!shouldEmitReasoningBeforeAnswer) {
     maybeEmitReasoning();
   }
-  if (!ctx.params.silentExpected && ctx.state.streamReasoning && rawThinking) {
+  // Magister fork: drop streamReasoning gate so HTTP SSE clients see end-of-turn thinking.
+  if (!ctx.params.silentExpected && rawThinking) {
     ctx.emitReasoningStream(rawThinking);
   }
 

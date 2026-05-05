@@ -117,6 +117,16 @@ function writeSse(res: ServerResponse, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+/**
+ * Magister fork: write a named SSE event (with `event:` line) for thinking
+ * and tool events. Consumed by `gateway/app/services/active_turns.py` which
+ * dispatches by event name to render thinking blocks and tool start/result
+ * blocks in the webapp chat.
+ */
+function writeCustomSseEvent(res: ServerResponse, event: string, data: unknown) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
 function buildAgentCommandInput(params: {
   prompt: { message: string; extraSystemPrompt?: string; images?: ImageContent[] };
   modelOverride?: string;
@@ -716,6 +726,35 @@ export async function handleOpenAiHttpRequest(
         content,
         finishReason: null,
       });
+      return;
+    }
+
+    // Magister fork: forward thinking events through HTTP SSE so the webapp
+    // can render reasoning blocks (active_turns.py dispatches on `event: thinking`).
+    if (evt.stream === "thinking") {
+      const delta = typeof evt.data?.delta === "string" ? evt.data.delta : "";
+      if (delta) {
+        writeCustomSseEvent(res, "thinking", { delta });
+      }
+      return;
+    }
+
+    // Magister fork: forward tool start/result events through HTTP SSE so the
+    // webapp can render tool blocks. `args` carries the tool's input (e.g. exec
+    // command, file path) so consumers can show meaningful labels. `result` is
+    // included on errors so failed tool blocks are readable in chat.
+    if (evt.stream === "tool") {
+      const data = evt.data as Record<string, unknown> | undefined;
+      if (data) {
+        writeCustomSseEvent(res, "tool", {
+          phase: data.phase,
+          name: data.name,
+          toolCallId: data.toolCallId,
+          ...(data.isError !== undefined && { isError: data.isError }),
+          ...(data.args !== undefined && { args: data.args }),
+          ...(data.isError && data.result !== undefined && { result: data.result }),
+        });
+      }
       return;
     }
 
