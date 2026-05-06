@@ -1,5 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sendSubagentCompletionWebhook } from "./subagent-completion-webhook.js";
+import {
+  normalizeSubagentCompletionWebhookOutcome,
+  sendSubagentCompletionWebhook,
+} from "./subagent-completion-webhook.js";
+
+describe("normalizeSubagentCompletionWebhookOutcome", () => {
+  it("does not report terminated subagents as successful completions", () => {
+    expect(normalizeSubagentCompletionWebhookOutcome("ok")).toBe("ok");
+    expect(normalizeSubagentCompletionWebhookOutcome(undefined)).toBe("ok");
+    expect(normalizeSubagentCompletionWebhookOutcome("timeout")).toBe("timeout");
+    expect(normalizeSubagentCompletionWebhookOutcome("error")).toBe("error");
+    expect(normalizeSubagentCompletionWebhookOutcome("killed")).toBe("error");
+    expect(normalizeSubagentCompletionWebhookOutcome("reset")).toBe("error");
+    expect(normalizeSubagentCompletionWebhookOutcome("deleted")).toBe("error");
+  });
+});
 
 describe("sendSubagentCompletionWebhook", () => {
   beforeEach(() => vi.clearAllMocks());

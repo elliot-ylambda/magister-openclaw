@@ -41,6 +41,43 @@ export type SubagentCompletionWebhookPayload = {
   output_tokens?: number;
 };
 
+export function normalizeSubagentCompletionWebhookOutcome(
+  rawOutcome: PluginHookSubagentEndedEvent["outcome"],
+): SubagentCompletionWebhookOutcome {
+  if (rawOutcome === "timeout") {
+    return "timeout";
+  }
+  if (
+    rawOutcome === "error" ||
+    rawOutcome === "killed" ||
+    rawOutcome === "reset" ||
+    rawOutcome === "deleted"
+  ) {
+    return "error";
+  }
+  return "ok";
+}
+
+function resolveSubagentCompletionWebhookError(
+  rawOutcome: PluginHookSubagentEndedEvent["outcome"],
+  rawError: string | undefined,
+): string | undefined {
+  const error = trimToOptionalString(rawError);
+  if (error) {
+    return error;
+  }
+  if (rawOutcome === "killed") {
+    return "Subagent was killed.";
+  }
+  if (rawOutcome === "reset") {
+    return "Subagent session was reset.";
+  }
+  if (rawOutcome === "deleted") {
+    return "Subagent session was deleted.";
+  }
+  return undefined;
+}
+
 /**
  * POST a sub-agent completion payload to the gateway. Best-effort: a delivery
  * failure logs and swallows so the lifecycle hook chain doesn't crash.
@@ -166,8 +203,7 @@ async function deliverSubagentCompletionWebhook(params: {
   const summary = (summaryRaw ?? "(no output)").trim();
 
   const rawOutcome = params.event.outcome;
-  const outcome: SubagentCompletionWebhookOutcome =
-    rawOutcome === "error" || rawOutcome === "timeout" ? rawOutcome : "ok";
+  const outcome = normalizeSubagentCompletionWebhookOutcome(rawOutcome);
 
   await sendSubagentCompletionWebhook({
     url: params.url,
@@ -182,7 +218,7 @@ async function deliverSubagentCompletionWebhook(params: {
       // subagent registry today. The gateway treats these as nice-to-haves;
       // omit cleanly rather than fabricate.
       runtime_ms: 0,
-      error: params.event.error,
+      error: resolveSubagentCompletionWebhookError(rawOutcome, params.event.error),
     },
   });
 }
