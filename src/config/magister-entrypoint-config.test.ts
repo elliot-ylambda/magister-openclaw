@@ -113,6 +113,11 @@ function buildCanaryRuntimeConfig() {
       completionWebhook: "http://magister-gateway.internal:8081/api/cron-webhook",
       webhookToken: "GATEWAY_TOKEN_DUMMY",
     },
+    // Entrypoint denies the native cron tool so workflows must use the
+    // Magister API. See openclaw-image/entrypoint.sh line 118-122.
+    tools: {
+      deny: ["cron"],
+    },
     subagent: {
       completionWebhook: "http://magister-gateway.internal:8081/api/subagent-webhook",
       webhookToken: "GATEWAY_TOKEN_DUMMY",
