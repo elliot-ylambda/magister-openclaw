@@ -973,6 +973,17 @@ function buildGatewaySessionStoreScanTargets(params: {
   if (params.canonicalKey === "global" || params.canonicalKey === "unknown") {
     return [...targets];
   }
+  // Symmetric bare-form scan: when canonical is agent-prefixed (e.g.
+  // `agent:main:webchat:abc`), also scan for the bare form (`webchat:abc`).
+  // The chat-HTTP path writes entries under whichever form arrived in the
+  // `x-openclaw-session-key` header — historically bare — so lookups that
+  // target only the canonical form would miss them. Without this, manual
+  // compaction returns "no sessionId" for every webchat session whose entry
+  // was written under the bare key.
+  const parsedCanonical = parseAgentSessionKey(params.canonicalKey);
+  if (parsedCanonical?.rest) {
+    targets.add(parsedCanonical.rest);
+  }
   const agentMainKey = resolveAgentMainSessionKey({ cfg: params.cfg, agentId: params.agentId });
   if (params.canonicalKey === agentMainKey) {
     targets.add(`agent:${params.agentId}:main`);
