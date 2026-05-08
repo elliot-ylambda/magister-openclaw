@@ -195,6 +195,16 @@ function resolveGoogleGeneratedVideoDownloadUrl(params: {
       const configuredOrigin = new URL(params.configuredBaseUrl).origin;
       if (configuredOrigin.startsWith("https://")) {
         allowedOrigins.add(configuredOrigin);
+      } else if (configuredOrigin.startsWith("http://")) {
+        // Magister patch — when configured baseUrl is our internal gateway
+        // proxy (http://magister-gateway.internal:*), the agent doesn't hold
+        // the real Gemini key, so it cannot download direct from canonical
+        // Google with the agent's apiKey. Drop the canonical entry from the
+        // allowlist so this function returns undefined and the caller falls
+        // back to the @google/genai SDK download path, which uses the
+        // configured baseUrl and routes through the proxy + its
+        // follow_redirects logic. See docs/openclaw-sync.md.
+        allowedOrigins.delete("https://generativelanguage.googleapis.com");
       }
     } catch {
       // Ignore invalid configured origins; resolveConfiguredGoogleVideoBaseUrl already normalizes.

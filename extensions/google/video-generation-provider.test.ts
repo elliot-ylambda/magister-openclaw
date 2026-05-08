@@ -372,6 +372,67 @@ describe("google video generation provider", () => {
     ).rejects.toThrow("Google video generation does not support image and video inputs together.");
   });
 
+  // Magister patch — see resolveGoogleGeneratedVideoDownloadUrl in
+  // video-generation-provider.ts. When configured baseUrl is our internal
+  // gateway proxy (http://magister-gateway.internal), direct download from
+  // canonical Google must be skipped — the agent uses GATEWAY_TOKEN, not the
+  // real Gemini key. SDK fallback (client.files.download) routes through the
+  // configured baseUrl and the proxy follows Google's 302 server-side.
+  it("falls back to the SDK download path when configured baseUrl is the internal http proxy", async () => {
+    vi.spyOn(providerAuthRuntime, "resolveApiKeyForProvider").mockResolvedValue({
+      apiKey: "gateway-token",
+      source: "env",
+      mode: "api-key",
+    });
+    generateVideosMock.mockResolvedValue({
+      done: true,
+      name: "operations/123",
+      response: {
+        generatedVideos: [
+          {
+            video: {
+              // No videoBytes inline — only a uri, forcing the download branch.
+              uri: "https://generativelanguage.googleapis.com/v1beta/files/abc:download",
+              mimeType: "video/mp4",
+            },
+          },
+        ],
+      },
+    });
+    // SDK download is the path we expect to be taken.
+    downloadMock.mockImplementation(async ({ downloadPath }: { downloadPath: string }) => {
+      const fs = await import("node:fs/promises");
+      await fs.writeFile(downloadPath, Buffer.from("sdk-downloaded-mp4"));
+    });
+    // Direct fetch must NOT be called (would hit canonical Google with the
+    // wrong key). Stub fetch to fail loudly if anything tries it.
+    const fetchMock = vi.fn(async () => {
+      throw new Error("direct fetch should not happen — SDK fallback expected");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = buildGoogleVideoGenerationProvider();
+    const result = await provider.generateVideo({
+      provider: "google",
+      model: "veo-3.1-fast-generate-preview",
+      prompt: "test",
+      cfg: {
+        models: {
+          providers: {
+            google: {
+              baseUrl: "http://magister-gateway.internal:8081/api/gemini/v1beta",
+            },
+          },
+        },
+      },
+    });
+
+    expect(downloadMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.videos).toHaveLength(1);
+    expect(result.videos[0]?.buffer.toString()).toBe("sdk-downloaded-mp4");
+  });
+
   it("rounds unsupported durations to the nearest Veo value", async () => {
     vi.spyOn(providerAuthRuntime, "resolveApiKeyForProvider").mockResolvedValue({
       apiKey: "google-key",
