@@ -244,4 +244,25 @@ describe("google generative ai helpers", () => {
     });
     expect(config.allowPrivateNetwork).toBe(true);
   });
+
+  // Magister fork patch — see api.ts TRUSTED_INTERNAL_GENAI_HOSTNAMES.
+  it("trusts the magister gateway internal hostname for image capability", () => {
+    expect(() =>
+      resolveGoogleGenerativeAiHttpRequestConfig({
+        apiKey: "api-key-123",
+        baseUrl: "http://magister-gateway.internal:8081/api/gemini/v1beta",
+        capability: "image",
+        transport: "http",
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      resolveGoogleGenerativeAiHttpRequestConfig({
+        apiKey: "api-key-123",
+        baseUrl: "http://other-host.internal:8081/api/gemini/v1beta",
+        capability: "image",
+        transport: "http",
+      }),
+    ).toThrow("Google Generative AI baseUrl must use https://generativelanguage.googleapis.com");
+  });
 });

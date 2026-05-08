@@ -46,6 +46,15 @@ type GoogleGenerativeAiRequestOverrides = ProviderRequestTransportOverrides & {
   allowPrivateNetwork?: boolean;
 };
 
+// Magister fork patch: allow http:// to a fixed allowlist of internal Fly hostnames so
+// image/audio/video generation can route through the gateway proxy (gemini_proxy.py),
+// which injects the real Gemini key server-side. The .internal TLD is Fly's private 6PN
+// namespace and is unreachable from public DNS or outside our Fly org. See
+// openclaw-image/entrypoint.sh and docs/openclaw-sync.md (Fork-specific patches).
+const TRUSTED_INTERNAL_GENAI_HOSTNAMES: ReadonlySet<string> = new Set([
+  "magister-gateway.internal",
+]);
+
 function resolveTrustedGoogleGenerativeAiBaseUrl(baseUrl?: string): string {
   const normalized =
     normalizeGoogleGenerativeAiBaseUrl(baseUrl ?? DEFAULT_GOOGLE_API_BASE_URL) ??
@@ -58,10 +67,12 @@ function resolveTrustedGoogleGenerativeAiBaseUrl(baseUrl?: string): string {
       "Google Generative AI baseUrl must be a valid https URL on generativelanguage.googleapis.com",
     );
   }
-  if (
-    url.protocol !== "https:" ||
-    url.hostname.toLowerCase() !== "generativelanguage.googleapis.com"
-  ) {
+  const hostname = url.hostname.toLowerCase();
+  const isCanonicalGoogle =
+    url.protocol === "https:" && hostname === "generativelanguage.googleapis.com";
+  const isTrustedInternalProxy =
+    url.protocol === "http:" && TRUSTED_INTERNAL_GENAI_HOSTNAMES.has(hostname);
+  if (!isCanonicalGoogle && !isTrustedInternalProxy) {
     throw new Error(
       "Google Generative AI baseUrl must use https://generativelanguage.googleapis.com",
     );
