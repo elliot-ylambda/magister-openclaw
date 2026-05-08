@@ -11,6 +11,25 @@ import { normalizeGoogleModelId, resolveGoogleGenerativeAiHttpRequestConfig } fr
 
 const DEFAULT_GOOGLE_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const DEFAULT_OUTPUT_MIME = "image/png";
+
+// Magister patch: single-step fallback for transient Google capacity issues.
+// Preview models (gemini-3.x-*-image-preview, nano-banana-pro) sometimes 503
+// with "high demand" or stall; gemini-2.5-flash-image is the stable baseline.
+// We retry once with the baseline on retryable errors. See docs/openclaw-sync.md.
+const FALLBACK_GOOGLE_IMAGE_MODEL = "gemini-2.5-flash-image";
+
+function isRetryableImageGenerationError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  if (/timed out|timeout|fetch failed/i.test(message)) {
+    return true;
+  }
+  const httpMatch = /\(HTTP (\d{3})\)/.exec(message);
+  if (httpMatch) {
+    const status = Number.parseInt(httpMatch[1] ?? "", 10);
+    return status === 429 || (status >= 500 && status <= 599);
+  }
+  return false;
+}
 const GOOGLE_SUPPORTED_SIZES = [
   "1024x1024",
   "1024x1536",
@@ -131,7 +150,7 @@ export function buildGoogleImageGenerationProvider(): ImageGenerationProvider {
         throw new Error("Google API key missing");
       }
 
-      const model = normalizeGoogleImageModel(req.model);
+      const requestedModel = normalizeGoogleImageModel(req.model);
       const { baseUrl, allowPrivateNetwork, headers, dispatcherPolicy } =
         resolveGoogleGenerativeAiHttpRequestConfig({
           apiKey: auth.apiKey,
@@ -155,64 +174,83 @@ export function buildGoogleImageGenerationProvider(): ImageGenerationProvider {
         ...(req.resolution ? { imageSize: req.resolution } : {}),
       };
 
-      const { response: res, release } = await postJsonRequest({
-        url: `${baseUrl}/models/${model}:generateContent`,
-        headers,
-        body: {
-          contents: [
-            {
-              role: "user",
-              parts: [...inputParts, { text: req.prompt }],
+      const callOnce = async (model: string) => {
+        const { response: res, release } = await postJsonRequest({
+          url: `${baseUrl}/models/${model}:generateContent`,
+          headers,
+          body: {
+            contents: [
+              {
+                role: "user",
+                parts: [...inputParts, { text: req.prompt }],
+              },
+            ],
+            generationConfig: {
+              responseModalities: ["TEXT", "IMAGE"],
+              ...(Object.keys(resolvedImageConfig).length > 0
+                ? { imageConfig: resolvedImageConfig }
+                : {}),
             },
-          ],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
-            ...(Object.keys(resolvedImageConfig).length > 0
-              ? { imageConfig: resolvedImageConfig }
-              : {}),
           },
-        },
-        timeoutMs: req.timeoutMs ?? 60_000,
-        fetchFn: fetch,
-        pinDns: false,
-        allowPrivateNetwork,
-        dispatcherPolicy,
-      });
+          timeoutMs: req.timeoutMs ?? 60_000,
+          fetchFn: fetch,
+          pinDns: false,
+          allowPrivateNetwork,
+          dispatcherPolicy,
+        });
+
+        try {
+          await assertOkOrThrowHttpError(res, "Google image generation failed");
+
+          const payload = (await res.json()) as GoogleGenerateImageResponse;
+          let imageIndex = 0;
+          const images = (payload.candidates ?? [])
+            .flatMap((candidate) => candidate.content?.parts ?? [])
+            .map((part) => {
+              const inline = part.inlineData ?? part.inline_data;
+              const data = inline?.data?.trim();
+              if (!data) {
+                return null;
+              }
+              const mimeType = inline?.mimeType ?? inline?.mime_type ?? DEFAULT_OUTPUT_MIME;
+              const extension = mimeType.includes("jpeg")
+                ? "jpg"
+                : (mimeType.split("/")[1] ?? "png");
+              imageIndex += 1;
+              return {
+                buffer: Buffer.from(data, "base64"),
+                mimeType,
+                fileName: `image-${imageIndex}.${extension}`,
+              };
+            })
+            .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+          if (images.length === 0) {
+            throw new Error("Google image generation response missing image data");
+          }
+
+          return {
+            images,
+            model,
+          };
+        } finally {
+          await release();
+        }
+      };
 
       try {
-        await assertOkOrThrowHttpError(res, "Google image generation failed");
-
-        const payload = (await res.json()) as GoogleGenerateImageResponse;
-        let imageIndex = 0;
-        const images = (payload.candidates ?? [])
-          .flatMap((candidate) => candidate.content?.parts ?? [])
-          .map((part) => {
-            const inline = part.inlineData ?? part.inline_data;
-            const data = inline?.data?.trim();
-            if (!data) {
-              return null;
-            }
-            const mimeType = inline?.mimeType ?? inline?.mime_type ?? DEFAULT_OUTPUT_MIME;
-            const extension = mimeType.includes("jpeg") ? "jpg" : (mimeType.split("/")[1] ?? "png");
-            imageIndex += 1;
-            return {
-              buffer: Buffer.from(data, "base64"),
-              mimeType,
-              fileName: `image-${imageIndex}.${extension}`,
-            };
-          })
-          .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-        if (images.length === 0) {
-          throw new Error("Google image generation response missing image data");
+        return await callOnce(requestedModel);
+      } catch (err) {
+        if (
+          requestedModel === FALLBACK_GOOGLE_IMAGE_MODEL ||
+          !isRetryableImageGenerationError(err)
+        ) {
+          throw err;
         }
-
-        return {
-          images,
-          model,
-        };
-      } finally {
-        await release();
+        // Retry once with the stable baseline. The original error is
+        // intentionally swallowed; if the fallback also fails its error
+        // is what the caller sees.
+        return await callOnce(FALLBACK_GOOGLE_IMAGE_MODEL);
       }
     },
   };

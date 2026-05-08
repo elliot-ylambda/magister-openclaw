@@ -377,4 +377,98 @@ describe("Google image-generation provider", () => {
       "gemini-2.5-pro",
     );
   });
+
+  // Magister patch — see image-generation-provider.ts FALLBACK_GOOGLE_IMAGE_MODEL.
+  it("falls back to gemini-2.5-flash-image when the requested model returns 503", async () => {
+    mockGoogleApiKeyAuth();
+    const errorResponse = {
+      ok: false,
+      status: 503,
+      headers: new Headers(),
+      text: async () =>
+        JSON.stringify({ error: { code: 503, message: "high demand", status: "UNAVAILABLE" } }),
+    };
+    const successResponse = {
+      ok: true,
+      json: async () => ({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: "image/png",
+                    data: Buffer.from("fallback-png").toString("base64"),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse)
+      .mockResolvedValueOnce(successResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = buildGoogleImageGenerationProvider();
+    const result = await provider.generateImage({
+      provider: "google",
+      model: "gemini-3.1-flash-image-preview",
+      prompt: "test",
+      cfg: {},
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("gemini-3.1-flash-image-preview");
+    expect(fetchMock.mock.calls[1]?.[0]).toContain("gemini-2.5-flash-image");
+    expect(result.model).toBe("gemini-2.5-flash-image");
+    expect(result.images[0]?.buffer.toString()).toBe("fallback-png");
+  });
+
+  it("does not retry on non-retryable errors", async () => {
+    mockGoogleApiKeyAuth();
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ error: { code: 400, message: "bad request" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = buildGoogleImageGenerationProvider();
+    await expect(
+      provider.generateImage({
+        provider: "google",
+        model: "gemini-3.1-flash-image-preview",
+        prompt: "test",
+        cfg: {},
+      }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not loop when the requested model is already the fallback", async () => {
+    mockGoogleApiKeyAuth();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: new Headers(),
+      text: async () => "high demand",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = buildGoogleImageGenerationProvider();
+    await expect(
+      provider.generateImage({
+        provider: "google",
+        model: "gemini-2.5-flash-image",
+        prompt: "test",
+        cfg: {},
+      }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
