@@ -1,0 +1,18 @@
+{
+  "id": "magister-memory",
+  "name": "Magister Memory",
+  "description": "Bounded, file-backed agent memory with tool-mediated writes, threat scanning, and gateway audit mirroring. Replaces the legacy MEMORY.md + memory/learnings/ tiered system.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "memoryCharLimit": { "type": "integer", "minimum": 200, "maximum": 20000 },
+      "userCharLimit": { "type": "integer", "minimum": 200, "maximum": 20000 },
+      "auditEndpoint": { "type": "string" }
+    }
+  }
+}
