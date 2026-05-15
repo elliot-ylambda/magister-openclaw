@@ -1,5 +1,6 @@
 import { registerLegacyContextEngine } from "./legacy.registration.js";
 import { registerMagisterIntegrationsContextEngine } from "./magister-integrations.js";
+import { registerMagisterMemoryContextEngine } from "./magister-memory.js";
 
 /**
  * Ensures all built-in context engines are registered exactly once.
@@ -24,4 +25,8 @@ export function ensureContextEnginesInitialized(): void {
 
   // Magister fork: wraps legacy and folds INTEGRATIONS.md into per-turn context.
   registerMagisterIntegrationsContextEngine();
+
+  // Magister fork: wraps magister-integrations and folds MEMORY.md + USER.md
+  // into the system prompt as a per-session frozen snapshot (prefix-cache safe).
+  registerMagisterMemoryContextEngine();
 }
