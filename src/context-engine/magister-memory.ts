@@ -153,17 +153,9 @@ export class MagisterMemoryContextEngine implements ContextEngine {
 
 async function readTextOrEmpty(path: string): Promise<string> {
   try {
-    const raw = await readFile(path, "utf-8");
-    return raw.trim();
-  } catch (err: unknown) {
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return "";
-    }
+    return (await readFile(path, "utf-8")).trim();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return "";
     throw err;
   }
 }
