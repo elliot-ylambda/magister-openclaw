@@ -81,4 +81,23 @@ describe("MagisterWorkflowsContextEngine", () => {
       "workflows changed since your last reply",
     );
   });
+
+  it("composes with magister-integrations so both files fold in", async () => {
+    const workflowsPath = filePath;
+    const integrationsPath = join(tempDir, "INTEGRATIONS.md");
+    await writeFile(workflowsPath, "WORKFLOWS body", "utf8");
+    await writeFile(integrationsPath, "INTEGRATIONS body", "utf8");
+
+    const { MagisterIntegrationsContextEngine } = await import("./magister-integrations.js");
+    const engine = new MagisterWorkflowsContextEngine({
+      filePath: workflowsPath,
+      inner: new MagisterIntegrationsContextEngine({ filePath: integrationsPath }),
+    });
+
+    const result = await engine.assemble({ sessionId: "s1", messages: [message] });
+    expect(result.systemPromptAddition).toContain("## Available Integrations");
+    expect(result.systemPromptAddition).toContain("INTEGRATIONS body");
+    expect(result.systemPromptAddition).toContain("## Available Workflows");
+    expect(result.systemPromptAddition).toContain("WORKFLOWS body");
+  });
 });
