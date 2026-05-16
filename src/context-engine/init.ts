@@ -1,5 +1,6 @@
 import { registerLegacyContextEngine } from "./legacy.registration.js";
 import { registerMagisterIntegrationsContextEngine } from "./magister-integrations.js";
+import { registerMagisterWorkflowsContextEngine } from "./magister-workflows.js";
 
 /**
  * Ensures all built-in context engines are registered exactly once.
@@ -24,4 +25,9 @@ export function ensureContextEnginesInitialized(): void {
 
   // Magister fork: wraps legacy and folds INTEGRATIONS.md into per-turn context.
   registerMagisterIntegrationsContextEngine();
+
+  // Magister fork: composes with magister-integrations and additionally folds
+  // WORKFLOWS.md into per-turn context. The active slot in the gateway-image
+  // entrypoint selects 'magister-workflows', which yields the full chain.
+  registerMagisterWorkflowsContextEngine();
 }
