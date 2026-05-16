@@ -110,26 +110,17 @@ export class MemoryStore {
       return fail(target, `Blocked: ${threat}`);
     }
 
-    const matches = this.entries[target]
-      .map((entry, idx) => ({ entry, idx }))
-      .filter(({ entry }) => entry.includes(oldText));
-
-    if (matches.length === 0) {
-      return fail(target, `No entry contains the substring '${oldText}'`);
-    }
-    if (matches.length > 1) {
-      return fail(
-        target,
-        `Substring '${oldText}' matches ${matches.length} entries — use a more unique substring`,
-      );
+    const match = findUniqueMatch(this.entries[target], oldText);
+    if (typeof match === "string") {
+      return fail(target, match);
     }
 
-    const { entry: original, idx } = matches[0];
-    this.entries[target][idx] = trimmedNew;
+    const original = this.entries[target][match];
+    this.entries[target][match] = trimmedNew;
 
     if (this.charCount(target) > this.limits[target]) {
       // Revert and reject.
-      this.entries[target][idx] = original;
+      this.entries[target][match] = original;
       return fail(target, `Replace would exceed char limit (${this.limits[target]})`);
     }
 
@@ -138,21 +129,11 @@ export class MemoryStore {
   }
 
   async remove(target: MemoryTarget, oldText: string): Promise<MemoryResult> {
-    const matches = this.entries[target]
-      .map((entry, idx) => ({ entry, idx }))
-      .filter(({ entry }) => entry.includes(oldText));
-
-    if (matches.length === 0) {
-      return fail(target, `No entry contains the substring '${oldText}'`);
+    const match = findUniqueMatch(this.entries[target], oldText);
+    if (typeof match === "string") {
+      return fail(target, match);
     }
-    if (matches.length > 1) {
-      return fail(
-        target,
-        `Substring '${oldText}' matches ${matches.length} entries — use a more unique substring`,
-      );
-    }
-
-    this.entries[target].splice(matches[0].idx, 1);
+    this.entries[target].splice(match, 1);
     await this.persist(target);
     return ok(target, this.entries[target], this.charCount(target));
   }
@@ -199,6 +180,25 @@ async function atomicWrite(path: string, content: string): Promise<void> {
     await unlink(tmp).catch(() => {});
     throw err;
   }
+}
+
+/**
+ * Returns the index of the single entry containing `needle`, or an error
+ * message string when there are zero or multiple matches.
+ */
+function findUniqueMatch(entries: readonly string[], needle: string): number | string {
+  let foundIdx = -1;
+  let count = 0;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].includes(needle)) {
+      foundIdx = i;
+      count++;
+    }
+  }
+  if (count === 0) return `No entry contains the substring '${needle}'`;
+  if (count > 1)
+    return `Substring '${needle}' matches ${count} entries — use a more unique substring`;
+  return foundIdx;
 }
 
 function dedupe(arr: string[]): string[] {
