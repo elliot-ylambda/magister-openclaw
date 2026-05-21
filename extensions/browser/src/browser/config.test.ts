@@ -449,17 +449,17 @@ describe("browser config", () => {
     it("uses defaults for local launch and post-launch readiness windows", () => {
       const resolved = resolveBrowserConfig({});
 
-      expect(resolved.localLaunchTimeoutMs).toBe(15_000);
-      expect(resolved.localCdpReadyTimeoutMs).toBe(8_000);
+      expect(resolved.localLaunchTimeoutMs).toBe(45_000);
+      expect(resolved.localCdpReadyTimeoutMs).toBe(20_000);
     });
 
     it("accepts custom local startup timeout values", () => {
       const resolved = resolveBrowserConfig({
-        localLaunchTimeoutMs: 45_000,
+        localLaunchTimeoutMs: 60_000,
         localCdpReadyTimeoutMs: 30_000,
       });
 
-      expect(resolved.localLaunchTimeoutMs).toBe(45_000);
+      expect(resolved.localLaunchTimeoutMs).toBe(60_000);
       expect(resolved.localCdpReadyTimeoutMs).toBe(30_000);
     });
 
