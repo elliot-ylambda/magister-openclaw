@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as auditMirror from "./audit-mirror.js";
 import { createMemoryTool } from "./index.js";
@@ -13,6 +15,23 @@ import { createMemoryTool } from "./index.js";
  * persistence behavior in detail. Here we lock the dispatch + audit mirror
  * contract.
  */
+describe("manifest tool contract", () => {
+  // OpenClaw v2026.5.4+ requires every name passed to api.registerTool to be
+  // declared in the manifest's contracts.tools, or the registry refuses to
+  // register the tool (registry.ts: "plugin must declare contracts.tools before
+  // registering agent tools"). The failure is a logged diagnostic, not a thrown
+  // error, so a missing declaration silently drops the memory tool — exactly
+  // what happened until 2026-05-22. This locks the contract: the single tool we
+  // register (name "memory", index.ts) must be declared in the manifest.
+  it("declares every registered tool name in contracts.tools", () => {
+    const manifestPath = join(dirname(fileURLToPath(import.meta.url)), "openclaw.plugin.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      contracts?: { tools?: string[] };
+    };
+    expect(manifest.contracts?.tools).toContain("memory");
+  });
+});
+
 describe("memory tool dispatch", () => {
   let dir: string;
 
