@@ -163,7 +163,11 @@ import {
 import { UNKNOWN_TOOL_THRESHOLD } from "../../tool-loop-detection.js";
 import { shouldAllowProviderOwnedThinkingReplay } from "../../transcript-policy.js";
 import { normalizeUsage, type NormalizedUsage } from "../../usage.js";
-import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
+import {
+  DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_USER_FILENAME,
+} from "../../workspace.js";
 import { isRunnerAbortError } from "../abort.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "../cache-ttl.js";
 import { resolveCompactionTimeoutMs } from "../compaction-safety-timeout.js";
@@ -952,12 +956,30 @@ export async function runEmbeddedAttempt(
       sourceWorkspaceDir: resolvedWorkspace,
       targetWorkspaceDir: effectiveWorkspace,
     });
-    const contextFiles = bootstrapRouting.includeBootstrapInSystemContext
+    const contextFilesBeforeMemoryDedupe = bootstrapRouting.includeBootstrapInSystemContext
       ? remappedContextFiles
       : remappedContextFiles.filter((file) => !/(^|[\\/])BOOTSTRAP\.md$/iu.test(file.path.trim()));
-    const bootstrapFilesForInjectionStats = bootstrapRouting.includeBootstrapInSystemContext
+    const magisterMemoryOwnsMemoryFiles = activeContextEngine?.info.id === "magister-memory";
+    const shouldKeepMemoryBootstrapFile = (nameOrPath: string): boolean => {
+      if (!magisterMemoryOwnsMemoryFiles) {
+        return true;
+      }
+      const normalized = nameOrPath.trim().replace(/\\/g, "/").toLowerCase();
+      const basename = normalized.split("/").pop() ?? normalized;
+      return (
+        basename !== DEFAULT_MEMORY_FILENAME.toLowerCase() &&
+        basename !== DEFAULT_USER_FILENAME.toLowerCase()
+      );
+    };
+    const contextFiles = contextFilesBeforeMemoryDedupe.filter((file) =>
+      shouldKeepMemoryBootstrapFile(file.path),
+    );
+    const bootstrapFilesBeforeMemoryDedupe = bootstrapRouting.includeBootstrapInSystemContext
       ? hookAdjustedBootstrapFiles
       : hookAdjustedBootstrapFiles.filter((file) => file.name !== DEFAULT_BOOTSTRAP_FILENAME);
+    const bootstrapFilesForInjectionStats = bootstrapFilesBeforeMemoryDedupe.filter((file) =>
+      shouldKeepMemoryBootstrapFile(file.name),
+    );
     const bootstrapMaxChars = resolveBootstrapMaxChars(params.config);
     const bootstrapTotalMaxChars = resolveBootstrapTotalMaxChars(params.config);
     const bootstrapAnalysis = analyzeBootstrapBudget({
