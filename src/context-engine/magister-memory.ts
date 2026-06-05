@@ -3,6 +3,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { MagisterIntegrationsContextEngine } from "./magister-integrations.js";
+import { MagisterPlanContextEngine } from "./magister-plan.js";
 import { MagisterWorkflowsContextEngine } from "./magister-workflows.js";
 import { registerContextEngine } from "./registry.js";
 import type {
@@ -162,19 +163,22 @@ async function readTextOrEmpty(path: string): Promise<string> {
 }
 
 export function registerMagisterMemoryContextEngine(): void {
-  // Compose ON TOP of magister-workflows so the active 'magister-memory' slot
-  // folds MEMORY.md + USER.md (frozen per-session snapshot) AND WORKFLOWS.md AND
-  // INTEGRATIONS.md. The chain is:
+  // Compose ON TOP of magister-plan so the active 'magister-memory' slot folds
+  // MEMORY.md + USER.md (frozen per-session snapshot), the live marketing plan,
+  // WORKFLOWS.md, and INTEGRATIONS.md. The chain is:
   //   MagisterMemoryContextEngine (frozen)
-  //     → MagisterWorkflowsContextEngine (per-turn)
-  //       → MagisterIntegrationsContextEngine (per-turn)
-  //         → LegacyContextEngine
+  //     -> MagisterPlanContextEngine (per-turn gateway summary + PLAN.md fallback)
+  //       -> MagisterWorkflowsContextEngine (per-turn)
+  //         -> MagisterIntegrationsContextEngine (per-turn)
+  //           -> LegacyContextEngine
   registerContextEngine(
     "magister-memory",
     () =>
       new MagisterMemoryContextEngine({
-        inner: new MagisterWorkflowsContextEngine({
-          inner: new MagisterIntegrationsContextEngine(),
+        inner: new MagisterPlanContextEngine({
+          inner: new MagisterWorkflowsContextEngine({
+            inner: new MagisterIntegrationsContextEngine(),
+          }),
         }),
       }),
   );

@@ -1,6 +1,7 @@
 import { registerLegacyContextEngine } from "./legacy.registration.js";
 import { registerMagisterIntegrationsContextEngine } from "./magister-integrations.js";
 import { registerMagisterMemoryContextEngine } from "./magister-memory.js";
+import { registerMagisterPlanContextEngine } from "./magister-plan.js";
 import { registerMagisterWorkflowsContextEngine } from "./magister-workflows.js";
 
 /**
@@ -32,10 +33,15 @@ export function ensureContextEnginesInitialized(): void {
   //   Workflows → Integrations → Legacy
   registerMagisterWorkflowsContextEngine();
 
+  // Magister fork: folds the live marketing plan into every turn by reading
+  // the gateway summary endpoint, with PLAN.md as a local fallback.
+  //   Plan → Workflows → Integrations → Legacy
+  registerMagisterPlanContextEngine();
+
   // Magister fork: composes ON TOP of magister-workflows and folds MEMORY.md +
   // USER.md into the system prompt as a per-session frozen snapshot. The active
   // slot in the gateway-image entrypoint selects 'magister-memory', yielding
   // the full chain:
-  //   Memory (frozen) → Workflows → Integrations → Legacy
+  //   Memory (frozen) → Plan → Workflows → Integrations → Legacy
   registerMagisterMemoryContextEngine();
 }
