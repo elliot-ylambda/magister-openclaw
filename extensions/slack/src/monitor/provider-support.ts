@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import type { SlackChannelResolution } from "../resolve-channels.js";
 import type { SlackUserResolution } from "../resolve-users.js";
 import { formatUnknownError, waitForSlackSocketDisconnect } from "./reconnect-policy.js";
@@ -207,6 +208,43 @@ export function shouldSkipOpenClawSlackSelfEvent(args: SlackSelfFilterArgs): boo
   );
 }
 
+/**
+ * Magister fork signal. On gateway-managed machines the per-project
+ * GATEWAY_TOKEN is always present in the environment (set as a Fly secret at
+ * provision time); upstream OpenClaw installs never set it. We use its presence
+ * to switch Slack HTTP inbound auth away from Bolt's app-global signing-secret
+ * verification (which would require shipping that global secret to every
+ * machine) and over to per-machine GATEWAY_TOKEN bearer auth on the gateway
+ * relay. The gateway remains the sole internet-facing Slack ingress and still
+ * verifies Slack's real signature with the global secret at the edge.
+ */
+export function magisterSlackRelayToken(): string | undefined {
+  const token = process.env.GATEWAY_TOKEN;
+  return token && token.length > 0 ? token : undefined;
+}
+
+/**
+ * Magister fork: constant-time check that the gateway relay presented this
+ * machine's own GATEWAY_TOKEN as a `Bearer` credential. Returns false on any
+ * missing/malformed header so the caller responds 401.
+ */
+export function slackGatewayRelayBearerOk(
+  authHeader: string | string[] | undefined,
+  expectedToken: string,
+): boolean {
+  const header = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  const prefix = "Bearer ";
+  if (typeof header !== "string" || !header.startsWith(prefix)) {
+    return false;
+  }
+  const presented = Buffer.from(header.slice(prefix.length));
+  const expected = Buffer.from(expectedToken);
+  if (presented.length !== expected.length) {
+    return false;
+  }
+  return timingSafeEqual(presented, expected);
+}
+
 export function createSlackBoltApp(params: {
   interop: SlackBoltResolvedExports;
   slackMode: "socket" | "http";
@@ -240,6 +278,14 @@ export function createSlackBoltApp(params: {
       : new params.interop.HTTPReceiver({
           signingSecret: params.signingSecret ?? "",
           endpoints: params.slackWebhookPath,
+          // Magister fork: in gateway-relay mode the gateway already verified
+          // Slack's signature at the edge (with the app-global secret it
+          // legitimately holds) and authenticates the private-network relay
+          // with the per-machine GATEWAY_TOKEN bearer instead. Re-verifying the
+          // Slack signature here would require shipping the global secret to
+          // every machine, so disable Bolt's redundant check in that mode.
+          // Upstream installs (no GATEWAY_TOKEN) keep verification on.
+          ...(magisterSlackRelayToken() ? { signatureVerification: false } : {}),
         });
   const app = new params.interop.App({
     token: params.botToken,

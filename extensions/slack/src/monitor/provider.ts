@@ -52,10 +52,12 @@ import {
   formatSlackChannelResolved,
   formatSlackUserResolved,
   gracefulStopSlackApp,
+  magisterSlackRelayToken,
   publishSlackConnectedStatus,
   publishSlackDisconnectedStatus,
   resolveSlackBoltInterop,
   resolveSlackSocketShutdownClient,
+  slackGatewayRelayBearerOk,
   startSlackSocketAndWaitForDisconnect,
   type SlackBoltResolvedExports,
 } from "./provider-support.js";
@@ -233,6 +235,18 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
   const slackHttpHandler =
     slackMode === "http" && receiver
       ? async (req: IncomingMessage, res: ServerResponse) => {
+          // Magister fork: on gateway-managed machines the only legitimate
+          // caller of the Slack webhook is the gateway relay over the private
+          // network. Authenticate it with this machine's GATEWAY_TOKEN bearer
+          // (Bolt's signature verification is disabled in this mode — see
+          // createSlackBoltApp). Upstream installs have no GATEWAY_TOKEN, so this
+          // is skipped and Bolt's signature verification remains the gate.
+          const relayToken = magisterSlackRelayToken();
+          if (relayToken && !slackGatewayRelayBearerOk(req.headers.authorization, relayToken)) {
+            res.statusCode = 401;
+            res.end("unauthorized");
+            return;
+          }
           const httpReceiver = receiver as {
             requestListener: (req: IncomingMessage, res: ServerResponse) => unknown;
           };
