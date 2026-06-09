@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInlineCodeState } from "../markdown/code-spans.js";
+import {
+  armOverflowRecovery,
+  consumeSuppressedTerminal,
+  disarmOverflowRecovery,
+} from "./pi-embedded-runner/overflow-recovery-registry.js";
 import { handleAgentEnd } from "./pi-embedded-subscribe.handlers.lifecycle.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 
@@ -607,5 +612,90 @@ describe("handleAgentEnd", () => {
       stream: "lifecycle",
       data: { phase: "end" },
     });
+  });
+});
+
+describe("handleAgentEnd overflow-recovery suppression (Magister fork)", () => {
+  const OVERFLOW_ERROR =
+    "Context overflow: estimated context size exceeds safe threshold during tool loop.";
+
+  afterEach(() => {
+    disarmOverflowRecovery("run-1");
+  });
+
+  it("suppresses the terminal lifecycle error while the run loop will retry", async () => {
+    const { emitAgentEvent } = await import("../infra/agent-events.js");
+    vi.mocked(emitAgentEvent).mockClear();
+    armOverflowRecovery("run-1", () => true);
+    const onAgentEvent = vi.fn();
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: OVERFLOW_ERROR,
+        content: [{ type: "text", text: "" }],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.livenessState = "working";
+
+    await handleAgentEnd(ctx);
+
+    // No terminal lifecycle event reached subscribers …
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(vi.mocked(emitAgentEvent)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ stream: "lifecycle" }),
+    );
+    // … and the suppression was recorded for the run loop's give-up path.
+    expect(consumeSuppressedTerminal("run-1")).toBe(true);
+  });
+
+  it("emits the terminal error normally once overflow budget is exhausted", async () => {
+    armOverflowRecovery("run-1", () => false);
+    const onAgentEvent = vi.fn();
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: OVERFLOW_ERROR,
+        content: [{ type: "text", text: "" }],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.livenessState = "working";
+
+    await handleAgentEnd(ctx);
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "lifecycle",
+        data: expect.objectContaining({ phase: "error" }),
+      }),
+    );
+    expect(consumeSuppressedTerminal("run-1")).toBe(false);
+  });
+
+  it("emits non-overflow terminal errors even while armed", async () => {
+    armOverflowRecovery("run-1", () => true);
+    const onAgentEvent = vi.fn();
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "connection refused",
+        content: [{ type: "text", text: "" }],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.livenessState = "working";
+
+    await handleAgentEnd(ctx);
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "lifecycle",
+        data: expect.objectContaining({ phase: "error" }),
+      }),
+    );
   });
 });

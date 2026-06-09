@@ -5,7 +5,7 @@ import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
 import { resolveContextEngine } from "../../context-engine/registry.js";
-import { emitAgentPlanEvent } from "../../infra/agent-events.js";
+import { emitAgentEvent, emitAgentPlanEvent } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -93,6 +93,12 @@ import { resolveEmbeddedRunFailureSignal } from "./failure-signal.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
 import { resolveModelAsync } from "./model.js";
+import {
+  armOverflowRecovery,
+  consumeSuppressedTerminal,
+  disarmOverflowRecovery,
+  noteOverflowAttemptStarted,
+} from "./overflow-recovery-registry.js";
 import {
   createPostCompactionLoopGuard,
   PostCompactionLoopPersistedError,
@@ -851,6 +857,37 @@ export async function runEmbeddedPiAgent(
         nextAttemptPromptOverride = MID_TURN_PRECHECK_CONTINUATION_PROMPT;
         suppressNextUserMessagePersistence = true;
       };
+      // Magister fork: when the per-attempt terminal lifecycle error was
+      // suppressed (recoverable overflow) but recovery is giving up without a
+      // retry, the run loop owns emitting the terminal error exactly once so
+      // subscribers (openai-http, agent.wait) still observe a terminal state.
+      const emitSuppressedOverflowTerminal = (errorText: string): void => {
+        if (!consumeSuppressedTerminal(params.runId)) {
+          return;
+        }
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "lifecycle",
+          data: { phase: "error", error: errorText, endedAt: Date.now() },
+        });
+        void params.onAgentEvent?.({
+          stream: "lifecycle",
+          data: { phase: "error", error: errorText },
+        });
+      };
+      // Magister fork: surface mid-run overflow compaction to stream
+      // subscribers (the gateway maps these onto its compaction UI events).
+      const emitOverflowCompactionEvent = (data: Record<string, unknown>): void => {
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "compaction",
+          data: { trigger: "overflow", ...data },
+        });
+        void params.onAgentEvent?.({
+          stream: "compaction",
+          data: { trigger: "overflow", ...data },
+        });
+      };
       const maybeEscalateRateLimitProfileFallback = (params: {
         failoverProvider: string;
         failoverModel: string;
@@ -931,6 +968,15 @@ export async function runEmbeddedPiAgent(
       });
       startupStages.mark("context-engine");
       try {
+        // Magister fork: while this run still has overflow-compaction budget,
+        // a context-overflow attempt error is recoverable — the per-attempt
+        // lifecycle handler must not emit a terminal `error` for it (that
+        // would close HTTP/WS subscribers while the retried prompt keeps
+        // working headless). Disarmed in this try's finally.
+        armOverflowRecovery(
+          params.runId,
+          () => overflowCompactionAttempts < MAX_OVERFLOW_COMPACTION_ATTEMPTS,
+        );
         const resolveActiveHookContext = () => ({
           ...hookCtx,
           sessionId: activeSessionId,
@@ -1050,6 +1096,9 @@ export async function runEmbeddedPiAgent(
             });
           }
           runLoopIterations += 1;
+          // Magister fork: a retry attempt is starting — any suppressed
+          // terminal from the previous attempt is owned by this retry now.
+          noteOverflowAttemptStarted(params.runId);
           const runtimeAuthRetry = authRetryPending;
           authRetryPending = false;
           attemptedThinking.add(thinkLevel);
@@ -1593,6 +1642,7 @@ export async function runEmbeddedPiAgent(
               log.warn(
                 `context overflow detected (attempt ${overflowCompactionAttempts}/${MAX_OVERFLOW_COMPACTION_ATTEMPTS}); attempting auto-compaction for ${provider}/${modelId}`,
               );
+              emitOverflowCompactionEvent({ phase: "start" });
               let compactResult: Awaited<ReturnType<typeof contextEngine.compact>>;
               await runOwnsCompactionBeforeHook("overflow recovery");
               try {
@@ -1667,6 +1717,16 @@ export async function runEmbeddedPiAgent(
                 };
               }
               await runOwnsCompactionAfterHook("overflow recovery", compactResult);
+              emitOverflowCompactionEvent({
+                phase: "end",
+                willRetry: compactResult.compacted === true,
+                ...(typeof compactResult.result?.tokensBefore === "number"
+                  ? { tokensBefore: compactResult.result.tokensBefore }
+                  : {}),
+                ...(typeof compactResult.result?.tokensAfter === "number"
+                  ? { tokensAfter: compactResult.result.tokensAfter }
+                  : {}),
+              });
               if (compactResult.compacted) {
                 adoptCompactionTranscript(compactResult);
                 if (
@@ -1777,6 +1837,9 @@ export async function runEmbeddedPiAgent(
               );
             }
             const kind = isCompactionFailure ? "compaction_failure" : "context_overflow";
+            // Magister fork: recovery predicted a retry (terminal suppressed)
+            // but is giving up — emit the terminal error it withheld.
+            emitSuppressedOverflowTerminal(errorText);
             attempt.setTerminalLifecycleMeta?.({
               replayInvalid: resolveReplayInvalidForAttempt(),
               livenessState: "blocked",
@@ -2820,6 +2883,17 @@ export async function runEmbeddedPiAgent(
           };
         }
       } finally {
+        // Magister fork: catch-all for return/throw paths reached after a
+        // suppressed per-attempt terminal (e.g. a non-overflow promptError in
+        // the same attempt as an overflow assistant error). The give-up site
+        // above consumes first with a specific message; this only fires when
+        // a suppression would otherwise leave subscribers without a terminal
+        // event. Throw paths are safe: agent-command's emission dedupes via
+        // its lifecycleEnded flag, set by the onAgentEvent relay here.
+        emitSuppressedOverflowTerminal(
+          "Context overflow: recovery did not complete. Try /reset or a larger-context model.",
+        );
+        disarmOverflowRecovery(params.runId);
         forgetPromptBuildDrainCacheForRun(params.runId);
         stopRuntimeAuthRefreshTimer();
         await runAgentCleanupStep({

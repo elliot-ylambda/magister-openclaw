@@ -212,7 +212,7 @@ describe("registerMagisterIntegrationsContextEngine", () => {
     expect(listContextEngineIds()).toContain("magister-integrations");
     const factory = getContextEngineFactory("magister-integrations");
     expect(factory).toBeDefined();
-    const engine = factory!();
+    const engine = factory!({});
     expect(engine).toBeInstanceOf(MagisterIntegrationsContextEngine);
   });
 });

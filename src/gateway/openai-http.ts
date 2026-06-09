@@ -752,14 +752,41 @@ export async function handleOpenAiHttpRequest(
           toolCallId: data.toolCallId,
           ...(data.isError !== undefined && { isError: data.isError }),
           ...(data.args !== undefined && { args: data.args }),
-          ...(data.isError && data.result !== undefined && { result: data.result }),
+          ...(Boolean(data.isError) && data.result !== undefined && { result: data.result }),
         });
       }
       return;
     }
 
+    // Magister fork: forward compaction progress (mid-turn overflow recovery
+    // or SDK auto-compaction) so the gateway can show a "compacting" state
+    // instead of dead air — overflow compaction can take minutes.
+    if (evt.stream === "compaction") {
+      const data = (evt.data ?? {}) as Record<string, unknown>;
+      const payload: Record<string, unknown> = { phase: data.phase };
+      for (const key of ["trigger", "willRetry", "tokensBefore", "tokensAfter"]) {
+        if (data[key] !== undefined) {
+          payload[key] = data[key];
+        }
+      }
+      writeCustomSseEvent(res, "compaction", payload);
+      return;
+    }
+
     if (evt.stream === "lifecycle") {
       const phase = evt.data?.phase;
+      if (phase === "error") {
+        // Magister fork: surface the terminal error as a custom SSE event
+        // before finalizing. Without it a run that died mid-turn is
+        // indistinguishable from one that finished, and the gateway records
+        // the turn as completed-with-partial-content.
+        writeCustomSseEvent(res, "error", {
+          message:
+            typeof evt.data?.error === "string" && evt.data.error
+              ? evt.data.error
+              : "Agent run failed",
+        });
+      }
       if (phase === "end" || phase === "error") {
         requestFinalize();
       }

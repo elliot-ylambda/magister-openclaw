@@ -1159,6 +1159,87 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
     });
   });
 
+  it("forwards compaction events as custom SSE events (Magister fork)", async () => {
+    const port = enabledPort;
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({
+            runId,
+            stream: "compaction",
+            data: { phase: "start", trigger: "overflow" },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "compaction",
+            data: {
+              phase: "end",
+              trigger: "overflow",
+              willRetry: true,
+              tokensBefore: 180_000,
+              tokensAfter: 40_000,
+            },
+          });
+          emitAgentEvent({ runId, stream: "assistant", data: { delta: "recovered" } });
+          emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "end" } });
+          setTimeout(() => {
+            resolve({ payloads: [{ text: "recovered" }], meta: {} });
+          }, 50);
+        })) as never,
+    );
+
+    const res = await postChatCompletions(port, {
+      stream: true,
+      model: "openclaw",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    expect(text).toContain("event: compaction");
+    expect(text).toContain('"phase":"start"');
+    expect(text).toContain('"trigger":"overflow"');
+    expect(text).toContain('"willRetry":true');
+    expect(text).toContain('"tokensAfter":40000');
+    const data = parseSseDataLines(text);
+    expect(data[data.length - 1]).toBe("[DONE]");
+  });
+
+  it("writes an error SSE event before finalizing on terminal lifecycle error (Magister fork)", async () => {
+    const port = enabledPort;
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({ runId, stream: "assistant", data: { delta: "partial" } });
+          emitAgentEvent({
+            runId,
+            stream: "lifecycle",
+            data: { phase: "error", error: "Context overflow: recovery exhausted" },
+          });
+          setTimeout(() => {
+            resolve({ payloads: [{ text: "partial" }], meta: {} });
+          }, 50);
+        })) as never,
+    );
+
+    const res = await postChatCompletions(port, {
+      stream: true,
+      model: "openclaw",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    expect(text).toContain("event: error");
+    expect(text).toContain("Context overflow: recovery exhausted");
+    const data = parseSseDataLines(text);
+    expect(data[data.length - 1]).toBe("[DONE]");
+  });
+
   it(
     "cleans up usage-enabled stream when client disconnects before usage arrives",
     { timeout: 15_000 },

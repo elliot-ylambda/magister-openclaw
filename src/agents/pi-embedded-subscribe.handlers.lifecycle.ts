@@ -7,6 +7,7 @@ import {
 } from "./pi-embedded-error-observation.js";
 import { classifyFailoverReason, formatAssistantErrorText } from "./pi-embedded-helpers.js";
 import { hasCommittedMessagingToolDeliveryEvidence } from "./pi-embedded-runner/delivery-evidence.js";
+import { shouldSuppressTerminalOverflowError } from "./pi-embedded-runner/overflow-recovery-registry.js";
 import { isIncompleteTerminalAssistantTurn } from "./pi-embedded-runner/run/incomplete-turn.js";
 import {
   consumePendingToolMediaReply,
@@ -121,6 +122,24 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
       ...(ctx.state.terminalStopReason ? { stopReason: ctx.state.terminalStopReason } : {}),
       ...(ctx.state.yielded === true ? { yielded: true } : {}),
     };
+    // Magister fork: a context-overflow attempt error the run loop will
+    // compact-and-retry is not terminal for the run — emitting `error` here
+    // would close HTTP/WS subscribers while the retried prompt keeps working
+    // headless. The run loop emits the terminal error itself if recovery
+    // gives up (see overflow-recovery-registry.ts).
+    if (isError) {
+      const overflowProbeText =
+        (isAssistantMessage(lastAssistant)
+          ? lastAssistant.errorMessage?.trim() || undefined
+          : undefined) ?? lifecycleErrorText;
+      if (shouldSuppressTerminalOverflowError(ctx.params.runId, overflowProbeText)) {
+        ctx.log.warn(
+          `suppressing terminal lifecycle error for recoverable context overflow: ` +
+            `runId=${ctx.params.runId} (run loop owns overflow recovery)`,
+        );
+        return;
+      }
+    }
     if (isError) {
       emitAgentEvent({
         runId: ctx.params.runId,

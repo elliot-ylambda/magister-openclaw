@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   makeAttemptResult,
   makeCompactionSuccess,
@@ -222,6 +222,74 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error?.kind).toBe("context_overflow");
     expect(result.payloads?.[0]?.isError).toBe(true);
     expect(mockedLog.warn).toHaveBeenCalledWith(expect.stringContaining("auto-compaction failed"));
+  });
+
+  it("emits compaction start/end agent events around overflow recovery (Magister fork)", async () => {
+    const onAgentEvent = vi.fn();
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({ promptError: makeOverflowError() }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted session",
+        tokensBefore: 180_000,
+        tokensAfter: 40_000,
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent({ ...baseParams, onAgentEvent });
+
+    expect(result.meta.error).toBeUndefined();
+    const compactionEvents = onAgentEvent.mock.calls
+      .map((call) => call[0] as { stream?: string; data?: Record<string, unknown> })
+      .filter((evt) => evt.stream === "compaction");
+    expect(compactionEvents).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({ phase: "start", trigger: "overflow" }),
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          phase: "end",
+          trigger: "overflow",
+          willRetry: true,
+          tokensBefore: 180_000,
+          tokensAfter: 40_000,
+        }),
+      }),
+    ]);
+  });
+
+  it("emits the withheld terminal error when recovery gives up after a suppressed attempt (Magister fork)", async () => {
+    const onAgentEvent = vi.fn();
+    const overflowError = makeOverflowError();
+
+    mockedRunEmbeddedAttempt.mockImplementationOnce(async () => {
+      // The subscribe layer (handleAgentEnd) consults the registry while the
+      // attempt is live; mimic that here so the suppression is recorded
+      // mid-run exactly as in production.
+      const { shouldSuppressTerminalOverflowError } =
+        await import("./overflow-recovery-registry.js");
+      expect(shouldSuppressTerminalOverflowError(baseParams.runId, overflowError.message)).toBe(
+        true,
+      );
+      return makeAttemptResult({ promptError: overflowError });
+    });
+    mockedCompactDirect.mockResolvedValueOnce({
+      ok: false,
+      compacted: false,
+      reason: "nothing to compact",
+    });
+
+    const result = await runEmbeddedPiAgent({ ...baseParams, onAgentEvent });
+
+    expect(result.meta.error?.kind).toBe("context_overflow");
+    const terminalErrors = onAgentEvent.mock.calls
+      .map((call) => call[0] as { stream?: string; data?: Record<string, unknown> })
+      .filter((evt) => evt.stream === "lifecycle" && evt.data?.phase === "error");
+    // Exactly once: the run loop re-emits the terminal error it withheld.
+    expect(terminalErrors).toHaveLength(1);
+    expect(terminalErrors[0]?.data?.error).toBe(overflowError.message);
   });
 
   it("falls back to tool-result truncation and retries when oversized results are detected", async () => {

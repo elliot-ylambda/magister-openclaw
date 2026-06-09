@@ -9,6 +9,7 @@ import { MagisterWorkflowsContextEngine } from "./magister-workflows.js";
 const message: AgentMessage = {
   role: "user",
   content: [{ type: "text", text: "hello" }],
+  timestamp: 0,
 };
 
 describe("MagisterWorkflowsContextEngine", () => {
