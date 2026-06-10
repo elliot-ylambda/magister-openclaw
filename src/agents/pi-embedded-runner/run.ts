@@ -857,14 +857,10 @@ export async function runEmbeddedPiAgent(
         nextAttemptPromptOverride = MID_TURN_PRECHECK_CONTINUATION_PROMPT;
         suppressNextUserMessagePersistence = true;
       };
-      // Magister fork: when the per-attempt terminal lifecycle error was
-      // suppressed (recoverable overflow) but recovery is giving up without a
-      // retry, the run loop owns emitting the terminal error exactly once so
-      // subscribers (openai-http, agent.wait) still observe a terminal state.
-      const emitSuppressedOverflowTerminal = (errorText: string): void => {
-        if (!consumeSuppressedTerminal(params.runId)) {
-          return;
-        }
+      // Magister fork: emit a terminal lifecycle error from the run loop so
+      // subscribers (openai-http, agent.wait) observe a terminal state even
+      // when the per-attempt lifecycle handler would suppress it.
+      const emitOverflowTerminal = (errorText: string): void => {
         emitAgentEvent({
           runId: params.runId,
           stream: "lifecycle",
@@ -874,6 +870,15 @@ export async function runEmbeddedPiAgent(
           stream: "lifecycle",
           data: { phase: "error", error: errorText },
         });
+      };
+      // Magister fork: when the per-attempt terminal lifecycle error was
+      // suppressed (recoverable overflow) but recovery is exiting without a
+      // retry, re-emit the terminal it withheld — exactly once.
+      const emitSuppressedOverflowTerminal = (errorText: string): void => {
+        if (!consumeSuppressedTerminal(params.runId)) {
+          return;
+        }
+        emitOverflowTerminal(errorText);
       };
       // Magister fork: surface mid-run overflow compaction to stream
       // subscribers (the gateway maps these onto its compaction UI events).
@@ -1837,9 +1842,17 @@ export async function runEmbeddedPiAgent(
               );
             }
             const kind = isCompactionFailure ? "compaction_failure" : "context_overflow";
-            // Magister fork: recovery predicted a retry (terminal suppressed)
-            // but is giving up — emit the terminal error it withheld.
-            emitSuppressedOverflowTerminal(errorText);
+            // Magister fork: recovery is giving up — the run loop owns the
+            // terminal error. Emit it unconditionally (the precheck route
+            // reaches this branch with no previously-suppressed terminal,
+            // so a consume-gated emit would stay silent), clear any withheld
+            // terminal so the finally-block catch-all can't re-fire, and
+            // disarm so the attempt's own lifecycle error isn't swallowed
+            // while we're exiting. Downstream dedup (openai-http `closed`,
+            // agent-command `lifecycleEnded`) absorbs the potential double.
+            consumeSuppressedTerminal(params.runId);
+            emitOverflowTerminal(errorText);
+            disarmOverflowRecovery(params.runId);
             attempt.setTerminalLifecycleMeta?.({
               replayInvalid: resolveReplayInvalidForAttempt(),
               livenessState: "blocked",

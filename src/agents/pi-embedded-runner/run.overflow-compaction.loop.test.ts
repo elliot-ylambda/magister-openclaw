@@ -292,6 +292,41 @@ describe("overflow compaction in run loop", () => {
     expect(terminalErrors[0]?.data?.error).toBe(overflowError.message);
   });
 
+  it("emits the terminal error on give-up even when no attempt terminal was suppressed (Magister fork)", async () => {
+    // Precheck-route regression (live-proof 2026-06-10): the run loop hits the
+    // give-up branch directly from a promptError precheck — no lifecycle error
+    // was ever suppressed mid-run. A consume-gated emit stays silent and the
+    // attempt's own terminal then gets swallowed by the still-armed registry,
+    // so subscribers see the stream end with no error at all.
+    const onAgentEvent = vi.fn();
+    const overflowError = makeOverflowError();
+
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({ promptError: overflowError }),
+    );
+    mockedCompactDirect.mockResolvedValueOnce({
+      ok: false,
+      compacted: false,
+      reason: "nothing to compact",
+    });
+
+    const result = await runEmbeddedPiAgent({ ...baseParams, onAgentEvent });
+
+    expect(result.meta.error?.kind).toBe("context_overflow");
+    const terminalErrors = onAgentEvent.mock.calls
+      .map((call) => call[0] as { stream?: string; data?: Record<string, unknown> })
+      .filter((evt) => evt.stream === "lifecycle" && evt.data?.phase === "error");
+    expect(terminalErrors).toHaveLength(1);
+    expect(terminalErrors[0]?.data?.error).toBe(overflowError.message);
+
+    // Give-up disarms the registry, so a late attempt-level lifecycle error
+    // (emitted after the run returns) must pass through unsuppressed.
+    const { shouldSuppressTerminalOverflowError } = await import("./overflow-recovery-registry.js");
+    expect(shouldSuppressTerminalOverflowError(baseParams.runId, overflowError.message)).toBe(
+      false,
+    );
+  });
+
   it("falls back to tool-result truncation and retries when oversized results are detected", async () => {
     queueOverflowAttemptWithOversizedToolOutput(mockedRunEmbeddedAttempt, makeOverflowError());
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
