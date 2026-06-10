@@ -95,6 +95,31 @@ describe("runEmbeddedAttempt bootstrap routing", () => {
     expect(routing.includeBootstrapInRuntimeContext).toBe(false);
   });
 
+  it("does not revive bootstrap from a stale workspace BOOTSTRAP.md after setup is complete", async () => {
+    const routing = await resolveAttemptWorkspaceBootstrapRouting({
+      isWorkspaceBootstrapPending: vi.fn(async () => false),
+      bootstrapFiles: [
+        {
+          name: "BOOTSTRAP.md",
+          path: "/tmp/openclaw-workspace/BOOTSTRAP.md",
+          content: "Old first-run instructions that should no longer run.",
+          missing: false,
+          source: "workspace",
+        },
+      ],
+      trigger: "user",
+      isPrimaryRun: true,
+      isCanonicalWorkspace: true,
+      effectiveWorkspace: "/tmp/openclaw-workspace",
+      resolvedWorkspace: "/tmp/openclaw-workspace",
+      hasBootstrapFileAccess: true,
+    });
+
+    expect(routing.bootstrapMode).toBe("none");
+    expect(routing.includeBootstrapInSystemContext).toBe(false);
+    expect(routing.includeBootstrapInRuntimeContext).toBe(false);
+  });
+
   it("does not treat empty hook-provided BOOTSTRAP.md as pending bootstrap context", () => {
     expect(
       hasBootstrapFileContent([

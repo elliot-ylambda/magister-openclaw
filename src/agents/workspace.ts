@@ -142,6 +142,7 @@ export type WorkspaceBootstrapFile = {
   path: string;
   content?: string;
   missing: boolean;
+  source?: "workspace" | "hook";
 };
 
 export type ExtraBootstrapLoadDiagnosticCode =
@@ -683,9 +684,15 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
         path: entry.filePath,
         content: loaded.content,
         missing: false,
+        source: "workspace",
       });
     } else {
-      result.push({ name: entry.name, path: entry.filePath, missing: true });
+      result.push({
+        name: entry.name,
+        path: entry.filePath,
+        missing: true,
+        source: "workspace",
+      });
     }
   }
   return result;

@@ -72,13 +72,26 @@ export function hasBootstrapFileContent(files?: readonly WorkspaceBootstrapFile[
   );
 }
 
+function hasHookBootstrapFileContent(files?: readonly WorkspaceBootstrapFile[]): boolean {
+  return (
+    files?.some(
+      (file) =>
+        file.source !== "workspace" &&
+        file.name === DEFAULT_BOOTSTRAP_FILENAME &&
+        !file.missing &&
+        typeof file.content === "string" &&
+        file.content.trim().length > 0,
+    ) ?? false
+  );
+}
+
 export async function resolveAttemptWorkspaceBootstrapRouting(
   params: AttemptWorkspaceBootstrapRoutingInput,
 ): Promise<AttemptBootstrapRouting> {
   const workspaceBootstrapPending = await params.isWorkspaceBootstrapPending(
     params.resolvedWorkspace,
   );
-  const hasHookBootstrapContent = hasBootstrapFileContent(params.bootstrapFiles);
+  const hasHookBootstrapContent = hasHookBootstrapFileContent(params.bootstrapFiles);
   return resolveAttemptBootstrapRouting({
     ...params,
     workspaceBootstrapPending: workspaceBootstrapPending || hasHookBootstrapContent,

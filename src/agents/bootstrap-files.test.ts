@@ -106,6 +106,18 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(files.some((file) => file.path === path.join(workspaceDir, "EXTRA.md"))).toBe(true);
   });
 
+  it("marks disk files as workspace source and hook additions as hook source", async () => {
+    registerExtraBootstrapFileHook();
+
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    await fs.writeFile(path.join(workspaceDir, "AGENTS.md"), "workspace rules", "utf8");
+
+    const files = await resolveBootstrapFilesForRun({ workspaceDir });
+
+    expect(files.find((file) => file.name === "AGENTS.md")?.source).toBe("workspace");
+    expect(files.find((file) => file.path.endsWith("EXTRA.md"))?.source).toBe("hook");
+  });
+
   it("drops malformed hook files with missing/invalid paths", async () => {
     registerMalformedBootstrapFileHook();
 
