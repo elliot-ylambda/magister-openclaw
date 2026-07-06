@@ -704,6 +704,14 @@ export const OpenClawSchema = z
       })
       .strict()
       .optional(),
+    // Magister fork: Slack run completion webhook (mirrors subagent block above).
+    slackCompletion: z
+      .object({
+        completionWebhook: HttpUrlSchema.optional(),
+        webhookToken: SecretInputSchema.optional().register(sensitive),
+      })
+      .strict()
+      .optional(),
     hooks: z
       .object({
         enabled: z.boolean().optional(),

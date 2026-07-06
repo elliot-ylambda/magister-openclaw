@@ -21185,6 +21185,10 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
             description:
               "Bearer token attached to cron webhook POST deliveries when webhook mode is used. Prefer secret/env substitution and rotate this token regularly if shared webhook endpoints are internet-reachable.",
           },
+          completionWebhook: {
+            type: "string",
+            format: "uri",
+          },
           sessionRetention: {
             anyOf: [
               {
@@ -21305,6 +21309,158 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
         title: "Commitments",
         description:
           "Inferred follow-up commitment controls for automatically detecting check-ins from conversation turns and delivering them through heartbeat runs.",
+      },
+      subagent: {
+        type: "object",
+        properties: {
+          completionWebhook: {
+            type: "string",
+            format: "uri",
+          },
+          webhookToken: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                oneOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        const: "env",
+                      },
+                      provider: {
+                        type: "string",
+                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                      },
+                      id: {
+                        type: "string",
+                        pattern: "^[A-Z][A-Z0-9_]{0,127}$",
+                      },
+                    },
+                    required: ["source", "provider", "id"],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        const: "file",
+                      },
+                      provider: {
+                        type: "string",
+                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                      },
+                      id: {
+                        type: "string",
+                      },
+                    },
+                    required: ["source", "provider", "id"],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        const: "exec",
+                      },
+                      provider: {
+                        type: "string",
+                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                      },
+                      id: {
+                        type: "string",
+                      },
+                    },
+                    required: ["source", "provider", "id"],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        additionalProperties: false,
+      },
+      slackCompletion: {
+        type: "object",
+        properties: {
+          completionWebhook: {
+            type: "string",
+            format: "uri",
+          },
+          webhookToken: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                oneOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        const: "env",
+                      },
+                      provider: {
+                        type: "string",
+                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                      },
+                      id: {
+                        type: "string",
+                        pattern: "^[A-Z][A-Z0-9_]{0,127}$",
+                      },
+                    },
+                    required: ["source", "provider", "id"],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        const: "file",
+                      },
+                      provider: {
+                        type: "string",
+                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                      },
+                      id: {
+                        type: "string",
+                      },
+                    },
+                    required: ["source", "provider", "id"],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      source: {
+                        type: "string",
+                        const: "exec",
+                      },
+                      provider: {
+                        type: "string",
+                        pattern: "^[a-z][a-z0-9_-]{0,63}$",
+                      },
+                      id: {
+                        type: "string",
+                      },
+                    },
+                    required: ["source", "provider", "id"],
+                    additionalProperties: false,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        additionalProperties: false,
       },
       hooks: {
         type: "object",
@@ -29357,6 +29513,14 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
     "messages.tts.personas.*.providers.*.apiKey": {
       sensitive: true,
       tags: ["security", "auth", "media"],
+    },
+    "subagent.webhookToken": {
+      sensitive: true,
+      tags: ["security", "auth"],
+    },
+    "slackCompletion.webhookToken": {
+      sensitive: true,
+      tags: ["security", "auth"],
     },
     "mcp.servers.*.headers.*": {
       sensitive: true,
