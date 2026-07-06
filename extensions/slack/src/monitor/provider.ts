@@ -247,6 +247,13 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
             res.end("unauthorized");
             return;
           }
+          // Magister fork: advertise agent_end completion-webhook capability.
+          // The Magister gateway holds the project's agent_turns slot until
+          // the run finishes when it sees this header; legacy images without
+          // it keep complete-on-delivery semantics. Static by design — on
+          // gateway-managed machines the entrypoint always configures
+          // slackCompletion when GATEWAY_TOKEN is present.
+          res.setHeader("x-magister-agent-end-webhook", "1");
           const httpReceiver = receiver as {
             requestListener: (req: IncomingMessage, res: ServerResponse) => unknown;
           };
