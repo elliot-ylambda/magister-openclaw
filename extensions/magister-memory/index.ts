@@ -2,6 +2,7 @@ import { resolveAgentWorkspaceDir } from "openclaw/plugin-sdk/agent-runtime";
 import {
   definePluginEntry,
   jsonResult,
+  KeyedAsyncQueue,
   type OpenClawPluginApi,
   type OpenClawPluginToolContext,
 } from "openclaw/plugin-sdk/core";
@@ -12,6 +13,12 @@ import { MemoryStore, type MemoryTarget } from "./memory-store.js";
 const DEFAULT_AUDIT_ENDPOINT = "http://magister-gateway.internal:8081/api/memory/audit";
 const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
 const DEFAULT_USER_CHAR_LIMIT = 1375;
+
+// Serializes load→mutate→persist per memory file across concurrent agent
+// turns in this process (up to 4 run in parallel on the `main` lane, plus
+// cron). Without this, two turns can both loadFromDisk(), then the second
+// persist() silently drops the first turn's entry (last-writer-wins).
+const memoryWriteQueue = new KeyedAsyncQueue();
 
 type MemoryPluginConfig = {
   enabled?: boolean;
@@ -88,84 +95,86 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
       const params = rawParams as MemoryToolParams;
       const action = params.action;
       const target: MemoryTarget = params.target === "user" ? "user" : "memory";
-
       const workspaceDir = resolveWorkspaceDir(api, ctx);
-      const store = new MemoryStore({
-        memoryDir: workspaceDir,
-        memoryCharLimit: cfg.memoryCharLimit,
-        userCharLimit: cfg.userCharLimit,
-      });
-      await store.loadFromDisk();
 
-      const gatewayToken = process.env.GATEWAY_TOKEN ?? "";
-      const auditEnabled = gatewayToken.length > 0;
-      const fireAudit = (
-        kind: "add" | "replace" | "remove" | "blocked",
-        content: string,
-        blockedReason?: string,
-      ): void => {
-        if (!auditEnabled) {
-          return;
-        }
-        void mirrorAudit(
-          { endpoint: cfg.auditEndpoint, gatewayToken },
-          { action: kind, target, content, blockedReason },
-        );
-      };
+      return memoryWriteQueue.enqueue(`${workspaceDir}:${target}`, async () => {
+        const store = new MemoryStore({
+          memoryDir: workspaceDir,
+          memoryCharLimit: cfg.memoryCharLimit,
+          userCharLimit: cfg.userCharLimit,
+        });
+        await store.loadFromDisk();
 
-      if (action === "add") {
-        if (!params.content) {
-          return jsonResult({
-            success: false,
-            target,
-            message: "content is required for add",
-          });
-        }
-        const res = await store.add(target, params.content);
-        if (res.success) {
-          fireAudit("add", params.content);
-        } else {
-          fireAudit("blocked", params.content, res.message);
-        }
-        return jsonResult(res);
-      }
+        const gatewayToken = process.env.GATEWAY_TOKEN ?? "";
+        const auditEnabled = gatewayToken.length > 0;
+        const fireAudit = (
+          kind: "add" | "replace" | "remove" | "blocked",
+          content: string,
+          blockedReason?: string,
+        ): void => {
+          if (!auditEnabled) {
+            return;
+          }
+          void mirrorAudit(
+            { endpoint: cfg.auditEndpoint, gatewayToken },
+            { action: kind, target, content, blockedReason },
+          );
+        };
 
-      if (action === "replace") {
-        if (!params.old_text || !params.content) {
-          return jsonResult({
-            success: false,
-            target,
-            message: "old_text and content are required for replace",
-          });
+        if (action === "add") {
+          if (!params.content) {
+            return jsonResult({
+              success: false,
+              target,
+              message: "content is required for add",
+            });
+          }
+          const res = await store.add(target, params.content);
+          if (res.success) {
+            fireAudit("add", params.content);
+          } else {
+            fireAudit("blocked", params.content, res.message);
+          }
+          return jsonResult(res);
         }
-        const res = await store.replace(target, params.old_text, params.content);
-        if (res.success) {
-          fireAudit("replace", params.content);
-        } else {
-          fireAudit("blocked", params.content, res.message);
-        }
-        return jsonResult(res);
-      }
 
-      if (action === "remove") {
-        if (!params.old_text) {
-          return jsonResult({
-            success: false,
-            target,
-            message: "old_text is required for remove",
-          });
+        if (action === "replace") {
+          if (!params.old_text || !params.content) {
+            return jsonResult({
+              success: false,
+              target,
+              message: "old_text and content are required for replace",
+            });
+          }
+          const res = await store.replace(target, params.old_text, params.content);
+          if (res.success) {
+            fireAudit("replace", params.content);
+          } else {
+            fireAudit("blocked", params.content, res.message);
+          }
+          return jsonResult(res);
         }
-        const res = await store.remove(target, params.old_text);
-        if (res.success) {
-          fireAudit("remove", params.old_text);
-        }
-        return jsonResult(res);
-      }
 
-      return jsonResult({
-        success: false,
-        target,
-        message: `Unknown action: ${String(action)}`,
+        if (action === "remove") {
+          if (!params.old_text) {
+            return jsonResult({
+              success: false,
+              target,
+              message: "old_text is required for remove",
+            });
+          }
+          const res = await store.remove(target, params.old_text);
+          if (res.success) {
+            fireAudit("remove", params.old_text);
+          }
+          return jsonResult(res);
+        }
+
+        return jsonResult({
+          success: false,
+          target,
+          message: `Unknown action: ${String(action)}`,
+        });
       });
     },
   };
