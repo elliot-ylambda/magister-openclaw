@@ -5,6 +5,7 @@ describe("SUPERVISOR_HINT_ENV_VARS", () => {
   it("includes the cross-platform supervisor hint env vars", () => {
     expect(SUPERVISOR_HINT_ENV_VARS).toEqual(
       expect.arrayContaining([
+        "OPENCLAW_ENTRYPOINT_SUPERVISED",
         "LAUNCH_JOB_LABEL",
         "INVOCATION_ID",
         "OPENCLAW_WINDOWS_TASK_NAME",
@@ -16,6 +17,15 @@ describe("SUPERVISOR_HINT_ENV_VARS", () => {
 });
 
 describe("detectRespawnSupervisor", () => {
+  it("detects an explicit entrypoint supervisor on every platform", () => {
+    for (const platform of ["linux", "darwin", "win32"] as const) {
+      expect(detectRespawnSupervisor({ OPENCLAW_ENTRYPOINT_SUPERVISED: "1" }, platform)).toBe(
+        "entrypoint",
+      );
+    }
+    expect(detectRespawnSupervisor({ OPENCLAW_ENTRYPOINT_SUPERVISED: "   " }, "linux")).toBeNull();
+  });
+
   it("detects launchd and systemd only from non-blank platform-specific hints", () => {
     expect(detectRespawnSupervisor({ LAUNCH_JOB_LABEL: " ai.openclaw.gateway " }, "darwin")).toBe(
       "launchd",
