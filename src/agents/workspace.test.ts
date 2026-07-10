@@ -9,6 +9,7 @@ import {
   DEFAULT_HEARTBEAT_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_MEMORY_FILENAME,
+  DEFAULT_PROJECT_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_USER_FILENAME,
@@ -69,6 +70,7 @@ function expectSubagentAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
   expect(names).toContain("TOOLS.md");
   expect(names).toContain("SOUL.md");
   expect(names).toContain("IDENTITY.md");
+  expect(names).toContain(DEFAULT_PROJECT_FILENAME);
   expect(names).toContain("USER.md");
   expect(names).not.toContain("HEARTBEAT.md");
   expect(names).not.toContain("BOOTSTRAP.md");
@@ -411,6 +413,12 @@ describe("filterBootstrapFilesForSession", () => {
     { name: "SOUL.md", path: "/w/SOUL.md", content: "", missing: false },
     { name: "TOOLS.md", path: "/w/TOOLS.md", content: "", missing: false },
     { name: "IDENTITY.md", path: "/w/IDENTITY.md", content: "", missing: false },
+    {
+      name: DEFAULT_PROJECT_FILENAME,
+      path: "/w/PROJECT.md",
+      content: "",
+      missing: false,
+    },
     { name: "USER.md", path: "/w/USER.md", content: "", missing: false },
     { name: "HEARTBEAT.md", path: "/w/HEARTBEAT.md", content: "", missing: false },
     { name: "BOOTSTRAP.md", path: "/w/BOOTSTRAP.md", content: "", missing: false },

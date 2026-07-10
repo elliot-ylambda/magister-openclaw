@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -85,5 +85,27 @@ describe("MemoryStore", () => {
     const fresh = new MemoryStore({ memoryDir: dir, memoryCharLimit: 200, userCharLimit: 100 });
     await fresh.loadFromDisk();
     expect(fresh.entriesFor("memory")).toEqual(["entry-1", "entry-2"]);
+  });
+
+  it("preserves every untargeted raw record byte-for-byte", async () => {
+    const untouched = "  User-owned spacing and markdown **stay**.  ";
+    await writeFile(
+      join(dir, "MEMORY.md"),
+      `[magister_seed:company] Company/Product: Old\n§\n${untouched}`,
+      "utf8",
+    );
+    const fresh = new MemoryStore({ memoryDir: dir, memoryCharLimit: 200, userCharLimit: 100 });
+    await fresh.loadFromDisk();
+
+    const result = await fresh.replace(
+      "memory",
+      "Company/Product",
+      "[magister_seed:company] Company/Product: New",
+    );
+
+    expect(result.success).toBe(true);
+    expect(await readFile(join(dir, "MEMORY.md"), "utf8")).toBe(
+      `[magister_seed:company] Company/Product: New\n§\n${untouched}`,
+    );
   });
 });

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { canExecRequestNode } from "../../agents/exec-defaults.js";
+import { readActiveRuntimeBundle } from "../../agents/runtime-bundle-presence.js";
 import { buildWorkspaceSkillSnapshot } from "../../agents/skills.js";
 import { matchesSkillFilter } from "../../agents/skills/filter.js";
 import {
@@ -156,9 +157,11 @@ export async function ensureSkillSnapshot(params: {
   });
   const snapshotVersion = getSkillsSnapshotVersion(workspaceDir);
   const existingSnapshot = nextEntry?.skillsSnapshot;
+  const activeRuntimeBundleReleaseId = readActiveRuntimeBundle(workspaceDir)?.releaseId;
   ensureSkillsWatcher({ workspaceDir, config: cfg });
   const shouldRefreshSnapshot =
     shouldRefreshSnapshotForVersion(existingSnapshot?.version, snapshotVersion) ||
+    existingSnapshot?.releaseId !== activeRuntimeBundleReleaseId ||
     !matchesSkillFilter(existingSnapshot?.skillFilter, skillFilter);
   const buildSnapshot = () =>
     buildWorkspaceSkillSnapshot(workspaceDir, {

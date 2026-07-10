@@ -78,7 +78,7 @@ export class MemoryStore {
       return fail(target, `Blocked: ${threat}`);
     }
 
-    if (this.entries[target].includes(trimmed)) {
+    if (this.entries[target].some((entry) => entry.trim() === trimmed)) {
       return fail(target, "Entry already exists (duplicate)");
     }
 
@@ -151,10 +151,10 @@ async function readEntries(path: string): Promise<string[]> {
     if (!raw.trim()) {
       return [];
     }
-    return raw
-      .split(ENTRY_DELIMITER)
-      .map((e) => e.trim())
-      .filter(Boolean);
+    // Keep record bytes exactly as found. Only the record targeted by a tool
+    // operation may change; gateway-owned and user-owned neighbors survive a
+    // load/mutate/persist cycle byte-for-byte.
+    return raw.split(ENTRY_DELIMITER).filter((entry) => entry.trim().length > 0);
   } catch (err: unknown) {
     if (isNodeError(err) && err.code === "ENOENT") {
       return [];
@@ -173,6 +173,12 @@ async function atomicWrite(path: string, content: string): Promise<void> {
     await handle.close();
     handle = null;
     await rename(tmp, path);
+    const directory = await open(dirname(path), "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
   } catch (err) {
     if (handle) {
       await handle.close().catch(() => {});
@@ -205,8 +211,9 @@ function dedupe(arr: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const e of arr) {
-    if (!seen.has(e)) {
-      seen.add(e);
+    const identity = e.trim();
+    if (identity && !seen.has(identity)) {
+      seen.add(identity);
       out.push(e);
     }
   }

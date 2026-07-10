@@ -7,6 +7,7 @@ import { isPathInside } from "../../infra/path-guards.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { CONFIG_DIR, resolveHomeDir, resolveUserPath } from "../../utils.js";
+import { readActiveRuntimeBundle } from "../runtime-bundle-presence.js";
 import { resolveSandboxPath } from "../sandbox-paths.js";
 import {
   resolveEffectiveAgentSkillFilter,
@@ -933,6 +934,7 @@ export function buildWorkspaceSkillSnapshot(
 ): SkillSnapshot {
   const { eligible, prompt, resolvedSkills } = resolveWorkspaceSkillPromptState(workspaceDir, opts);
   const skillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
+  const runtimeBundle = readActiveRuntimeBundle(workspaceDir);
   return {
     prompt,
     skills: eligible.map((entry) => ({
@@ -941,6 +943,7 @@ export function buildWorkspaceSkillSnapshot(
       requiredEnv: entry.metadata?.requires?.env?.slice(),
     })),
     ...(skillFilter === undefined ? {} : { skillFilter }),
+    ...(runtimeBundle ? { releaseId: runtimeBundle.releaseId } : {}),
     resolvedSkills,
     version: opts?.snapshotVersion,
   };

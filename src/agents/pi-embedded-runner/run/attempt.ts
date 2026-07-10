@@ -124,6 +124,11 @@ import { wrapStreamFnTextTransforms } from "../../plugin-text-transforms.js";
 import { describeProviderRequestRoutingSummary } from "../../provider-attribution.js";
 import { registerProviderStreamForModel } from "../../provider-stream.js";
 import { runAgentCleanupStep } from "../../run-cleanup-timeout.js";
+import {
+  beginPromptPresence,
+  retryPromptPresence,
+  type PendingPromptPresence,
+} from "../../runtime-bundle-presence.js";
 import { collectRuntimeChannelCapabilities } from "../../runtime-capabilities.js";
 import {
   logAgentRuntimeToolDiagnostics,
@@ -163,11 +168,7 @@ import {
 import { UNKNOWN_TOOL_THRESHOLD } from "../../tool-loop-detection.js";
 import { shouldAllowProviderOwnedThinkingReplay } from "../../transcript-policy.js";
 import { normalizeUsage, type NormalizedUsage } from "../../usage.js";
-import {
-  DEFAULT_BOOTSTRAP_FILENAME,
-  DEFAULT_MEMORY_FILENAME,
-  DEFAULT_USER_FILENAME,
-} from "../../workspace.js";
+import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
 import { isRunnerAbortError } from "../abort.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "../cache-ttl.js";
 import { resolveCompactionTimeoutMs } from "../compaction-safety-timeout.js";
@@ -959,17 +960,15 @@ export async function runEmbeddedAttempt(
     const contextFilesBeforeMemoryDedupe = bootstrapRouting.includeBootstrapInSystemContext
       ? remappedContextFiles
       : remappedContextFiles.filter((file) => !/(^|[\\/])BOOTSTRAP\.md$/iu.test(file.path.trim()));
-    const magisterMemoryOwnsMemoryFiles = activeContextEngine?.info.id === "magister-memory";
+    const contextEngineOwnedBootstrapFiles = new Set(
+      (activeContextEngine?.info.ownsWorkspaceBootstrapFiles ?? []).map((name) =>
+        name.trim().toLowerCase(),
+      ),
+    );
     const shouldKeepMemoryBootstrapFile = (nameOrPath: string): boolean => {
-      if (!magisterMemoryOwnsMemoryFiles) {
-        return true;
-      }
       const normalized = nameOrPath.trim().replace(/\\/g, "/").toLowerCase();
       const basename = normalized.split("/").pop() ?? normalized;
-      return (
-        basename !== DEFAULT_MEMORY_FILENAME.toLowerCase() &&
-        basename !== DEFAULT_USER_FILENAME.toLowerCase()
-      );
+      return !contextEngineOwnedBootstrapFiles.has(basename);
     };
     const contextFiles = contextFilesBeforeMemoryDedupe.filter((file) =>
       shouldKeepMemoryBootstrapFile(file.path),
@@ -3041,23 +3040,45 @@ export async function runEmbeddedAttempt(
               messages: btwSnapshotMessages,
               inFlightPrompt: promptForModel,
             });
-            if (promptSubmission.runtimeOnly) {
-              await abortable(activeSession.prompt(promptForModel));
-            } else {
-              const runtimeContext = promptSubmission.runtimeContext?.trim();
-              await queueRuntimeContextForNextTurn({
-                session: activeSession,
-                runtimeContext,
-              });
-
-              // Only pass images option if there are actually images to pass
-              // This avoids potential issues with models that don't expect the images parameter
-              if (imageResult.images.length > 0) {
-                await abortable(
-                  activeSession.prompt(promptForModel, { images: imageResult.images }),
-                );
-              } else {
+            let promptPresence: PendingPromptPresence | undefined;
+            if (!isRawModelRun) {
+              try {
+                // This writes the local pending record before the first model
+                // byte can leave the process. Its network attempt is bounded
+                // and fail-open; the durable record is retried after the call.
+                promptPresence = await beginPromptPresence({
+                  workspaceDir: params.workspaceDir,
+                  sessionId: params.sessionId,
+                });
+              } catch (error) {
+                log.warn(`runtime bundle prompt-presence record failed: ${String(error)}`);
+              }
+            }
+            try {
+              if (promptSubmission.runtimeOnly) {
                 await abortable(activeSession.prompt(promptForModel));
+              } else {
+                const runtimeContext = promptSubmission.runtimeContext?.trim();
+                await queueRuntimeContextForNextTurn({
+                  session: activeSession,
+                  runtimeContext,
+                });
+
+                // Only pass images option if there are actually images to pass
+                // This avoids potential issues with models that don't expect the images parameter
+                if (imageResult.images.length > 0) {
+                  await abortable(
+                    activeSession.prompt(promptForModel, { images: imageResult.images }),
+                  );
+                } else {
+                  await abortable(activeSession.prompt(promptForModel));
+                }
+              }
+            } finally {
+              try {
+                await retryPromptPresence(promptPresence);
+              } catch (error) {
+                log.warn(`runtime bundle prompt-presence retry failed: ${String(error)}`);
               }
             }
           }

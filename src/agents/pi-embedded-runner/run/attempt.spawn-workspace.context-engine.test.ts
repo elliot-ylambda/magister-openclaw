@@ -137,6 +137,59 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     vi.restoreAllMocks();
   });
 
+  it("composes USER, MEMORY, and PROJECT exactly once for main, subagent, and cron", async () => {
+    const sessionKeys = ["agent:main:main", "agent:main:subagent:child", "agent:main:cron:job-1"];
+    for (const currentSessionKey of sessionKeys) {
+      hoisted.resolveBootstrapContextForRunMock.mockResolvedValue({
+        bootstrapFiles: [
+          { name: "USER.md", path: "/source/USER.md", content: "USER_ONCE", missing: false },
+          {
+            name: "MEMORY.md",
+            path: "/source/MEMORY.md",
+            content: "MEMORY_ONCE",
+            missing: false,
+          },
+          {
+            name: "PROJECT.md",
+            path: "/source/PROJECT.md",
+            content: "PROJECT_ONCE",
+            missing: false,
+          },
+        ],
+        contextFiles: [
+          { path: "/source/USER.md", content: "USER_ONCE" },
+          { path: "/source/MEMORY.md", content: "MEMORY_ONCE" },
+          { path: "/source/PROJECT.md", content: "PROJECT_ONCE" },
+        ],
+      });
+      let composed = "";
+      await createContextEngineAttemptRunner({
+        contextEngine: {
+          info: {
+            id: "wrapped-magister-context",
+            name: "Wrapped Magister Context",
+            ownsWorkspaceBootstrapFiles: ["USER.md", "MEMORY.md", "PROJECT.md"],
+          },
+          assemble: async ({ messages }) => ({
+            messages,
+            estimatedTokens: 10,
+            systemPromptAddition:
+              "## User Profile\nUSER_ONCE\n\n## Memory\nMEMORY_ONCE\n\n" +
+              "## Project Assignment\nPROJECT_ONCE",
+          }),
+        },
+        sessionKey: currentSessionKey,
+        tempPaths,
+        sessionPrompt: async (session) => {
+          composed = session.agent.state.systemPrompt ?? "";
+        },
+      });
+      expect(composed.match(/USER_ONCE/gu)).toHaveLength(1);
+      expect(composed.match(/MEMORY_ONCE/gu)).toHaveLength(1);
+      expect(composed.match(/PROJECT_ONCE/gu)).toHaveLength(1);
+    }
+  });
+
   it("sends transcriptPrompt visibly and queues runtime context as hidden custom context", async () => {
     const seen: { prompt?: string; messages?: unknown[]; systemPrompt?: string } = {};
 

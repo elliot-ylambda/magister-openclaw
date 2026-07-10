@@ -2,6 +2,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import { buildBootstrapInjectionStats } from "./bootstrap-budget.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
+import { readActiveRuntimeBundle } from "./runtime-bundle-presence.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
 type ToolReportEntry = SessionSystemPromptReport["tools"]["entries"][number];
@@ -124,6 +125,7 @@ export function buildSystemPromptReport(params: {
     bootstrapTotalMaxChars: params.bootstrapTotalMaxChars,
     ...(params.bootstrapTruncation ? { bootstrapTruncation: params.bootstrapTruncation } : {}),
     sandbox: params.sandbox,
+    runtimeBundle: readActiveRuntimeBundle(params.workspaceDir),
     systemPrompt: {
       chars: systemPromptChars,
       projectContextChars,
