@@ -126,6 +126,8 @@ import { registerProviderStreamForModel } from "../../provider-stream.js";
 import { runAgentCleanupStep } from "../../run-cleanup-timeout.js";
 import {
   beginPromptPresence,
+  markPromptRequestStarted,
+  recordPromptFirstToken,
   retryPromptPresence,
   type PendingPromptPresence,
 } from "../../runtime-bundle-presence.js";
@@ -2342,6 +2344,7 @@ export async function runEmbeddedAttempt(
       };
       const abortable = <T>(promise: Promise<T>): Promise<T> =>
         abortableWithSignal(runAbortController.signal, promise);
+      let promptPresence: PendingPromptPresence | undefined;
 
       const subscription = subscribeEmbeddedPiSession(
         buildEmbeddedSubscriptionParams({
@@ -2363,7 +2366,10 @@ export async function runEmbeddedAttempt(
           blockReplyBreak: params.blockReplyBreak,
           blockReplyChunking: params.blockReplyChunking,
           onPartialReply: params.onPartialReply,
-          onAssistantMessageStart: params.onAssistantMessageStart,
+          onAssistantMessageStart: async () => {
+            recordPromptFirstToken(promptPresence);
+            await params.onAssistantMessageStart?.();
+          },
           onAgentEvent: params.onAgentEvent,
           onBeforeLifecycleTerminal: () => {
             // Clear embedded-run activity before emitting terminal lifecycle events so
@@ -3040,7 +3046,7 @@ export async function runEmbeddedAttempt(
               messages: btwSnapshotMessages,
               inFlightPrompt: promptForModel,
             });
-            let promptPresence: PendingPromptPresence | undefined;
+            promptPresence = undefined;
             if (!isRawModelRun) {
               try {
                 // This writes the local pending record before the first model
@@ -3056,6 +3062,7 @@ export async function runEmbeddedAttempt(
             }
             try {
               if (promptSubmission.runtimeOnly) {
+                markPromptRequestStarted(promptPresence);
                 await abortable(activeSession.prompt(promptForModel));
               } else {
                 const runtimeContext = promptSubmission.runtimeContext?.trim();
@@ -3066,6 +3073,7 @@ export async function runEmbeddedAttempt(
 
                 // Only pass images option if there are actually images to pass
                 // This avoids potential issues with models that don't expect the images parameter
+                markPromptRequestStarted(promptPresence);
                 if (imageResult.images.length > 0) {
                   await abortable(
                     activeSession.prompt(promptForModel, { images: imageResult.images }),

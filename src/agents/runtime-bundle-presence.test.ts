@@ -5,7 +5,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginPromptPresence,
+  markPromptRequestStarted,
   readActiveRuntimeBundle,
+  recordPromptFirstToken,
   retryPromptPresence,
 } from "./runtime-bundle-presence.js";
 import { buildWorkspaceSkillSnapshot } from "./skills/workspace.js";
@@ -132,5 +134,38 @@ describe("runtime bundle prompt presence", () => {
       await beginPromptPresence({ workspaceDir: workspace, sessionId: "session" }),
     ).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("records first-token latency through an idempotent prompt ACK", async () => {
+    const workspace = await activeWorkspace();
+    vi.stubEnv("GATEWAY_TOKEN", "machine-token");
+    const payloads: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        payloads.push(JSON.parse(String(init.body)));
+        return { ok: true } as Response;
+      }),
+    );
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValueOnce(1_000);
+    const record = await beginPromptPresence({
+      workspaceDir: workspace,
+      sessionId: "session-latency",
+    });
+    expect(record).toBeDefined();
+
+    now.mockReturnValueOnce(2_000);
+    markPromptRequestStarted(record);
+    now.mockReturnValueOnce(2_125);
+    recordPromptFirstToken(record);
+    await retryPromptPresence(record);
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[1]).toMatchObject({ first_token_latency_ms: 125 });
+    expect(JSON.parse(await readFile(record!.metricSentPath, "utf8"))).toMatchObject({
+      first_token_latency_ms: 125,
+      release_id: releaseId,
+    });
   });
 });
