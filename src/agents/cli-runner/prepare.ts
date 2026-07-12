@@ -323,6 +323,7 @@ export async function prepareCliRunContext(
     workspaceDir,
     config: params.config,
     agentId: sessionAgentId,
+    taskText: params.prompt,
   });
   const builtSystemPrompt =
     resolveSystemPromptOverride({

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { describe, expect, it, vi } from "vitest";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../system-prompt-cache-boundary.js";
 import { prepareGooglePromptCacheStreamFn } from "./google-prompt-cache.js";
 
 type SessionCustomEntry = {
@@ -294,6 +295,29 @@ describe("google prompt cache", () => {
         sessionManager: makeSessionManager(),
         streamFn: vi.fn(() => "stream" as never),
         systemPrompt: "Follow policy.",
+      },
+      {
+        buildGuardedFetch: () => fetchMock as typeof fetch,
+        now: () => 0,
+      },
+    );
+
+    expect(wrapped).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not flatten a volatile suffix into explicit cachedContent", async () => {
+    const fetchMock = vi.fn();
+    const wrapped = await prepareGooglePromptCacheStreamFn(
+      {
+        apiKey: "gemini-api-key",
+        extraParams: { cacheRetention: "long" },
+        model: makeGoogleModel(),
+        modelId: "gemini-3.1-pro-preview",
+        provider: "google",
+        sessionManager: makeSessionManager(),
+        streamFn: vi.fn(() => "stream" as never),
+        systemPrompt: `Stable policy${SYSTEM_PROMPT_CACHE_BOUNDARY}Current project state`,
       },
       {
         buildGuardedFetch: () => fetchMock as typeof fetch,

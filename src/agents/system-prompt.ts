@@ -501,6 +501,58 @@ function buildMessagingSection(params: {
   ];
 }
 
+function buildChannelRuntimePolicySection(params: {
+  isMinimal: boolean;
+  runtimeChannel?: string;
+  runtimeCapabilities: readonly string[];
+  inlineButtonsEnabled: boolean;
+  threadBoundAcpSpawnEnabled: boolean;
+  silentReplyPromptMode: SilentReplyPromptMode;
+}) {
+  if (params.isMinimal) {
+    return [];
+  }
+  const lines = [
+    "## Current Channel Contract",
+    buildExecApprovalPromptGuidance({
+      runtimeChannel: params.runtimeChannel,
+      inlineButtonsEnabled: params.inlineButtonsEnabled,
+      runtimeCapabilities: params.runtimeCapabilities,
+    }),
+    params.runtimeChannel === "webchat"
+      ? "Webchat may emit canonical `<json-render>` only after reading the selected UI-render skill."
+      : "This channel does not render JSON-render. Never emit `<json-render>` tags, their raw JSON body, or web-only embeds; use plain text and full links.",
+    ...(params.runtimeChannel === "discord" && params.threadBoundAcpSpawnEnabled
+      ? [
+          'Default ACP harness requests to thread-bound persistent sessions (`thread: true`, `mode: "session"`) unless the user asks otherwise.',
+        ]
+      : []),
+    ...(params.threadBoundAcpSpawnEnabled
+      ? [
+          'For ACP harness thread spawns, do not call `message` with `action=thread-create`; use `sessions_spawn` (`runtime: "acp"`, `thread: true`) as the single thread creation path.',
+        ]
+      : []),
+    "",
+  ];
+  if (params.silentReplyPromptMode !== "none") {
+    lines.push(
+      "## Silent Replies",
+      `When you have nothing to say, respond with ONLY: ${SILENT_REPLY_TOKEN}`,
+      "",
+      "⚠️ Rules:",
+      "- It must be your ENTIRE message — nothing else",
+      `- Never append it to an actual response (never include "${SILENT_REPLY_TOKEN}" in real replies)`,
+      "- Never wrap it in markdown or code blocks",
+      "",
+      `❌ Wrong: "Here's help... ${SILENT_REPLY_TOKEN}"`,
+      `❌ Wrong: "${SILENT_REPLY_TOKEN}"`,
+      `✅ Right: ${SILENT_REPLY_TOKEN}`,
+      "",
+    );
+  }
+  return lines;
+}
+
 function buildVoiceSection(params: { isMinimal: boolean; ttsHint?: string }) {
   if (params.isMinimal) {
     return [];
@@ -854,12 +906,6 @@ export function buildAgentSystemPrompt(params: {
     reasoningHint,
     reasoningLevel,
     userTimezone,
-    runtimeChannel,
-    runtimeCapabilities,
-    inlineButtonsEnabled,
-    threadBoundAcpSpawnEnabled,
-    sourceMessageToolOnly,
-    silentReplyPromptMode,
     sandboxInfo: params.sandboxInfo,
     displayWorkspaceDir,
     workspaceGuidance,
@@ -868,7 +914,6 @@ export function buildAgentSystemPrompt(params: {
     bootstrapSystemPromptSections,
     docsPath: params.docsPath,
     sourcePath: params.sourcePath,
-    skillsPrompt,
     modelAliasLines: params.modelAliasLines,
     includeMemorySection: params.includeMemorySection,
     memoryCitationsMode: params.memoryCitationsMode,
@@ -911,17 +956,7 @@ export function buildAgentSystemPrompt(params: {
       ...(acpHarnessSpawnAllowed
         ? [
             'For requests like "do this in claude code/cursor/gemini/opencode" or similar ACP harnesses, treat it as ACP harness intent and call `sessions_spawn` with `runtime: "acp"`.',
-            ...(runtimeChannel === "discord" && threadBoundAcpSpawnEnabled
-              ? [
-                  'On Discord, default ACP harness requests to thread-bound persistent sessions (`thread: true`, `mode: "session"`) unless the user asks otherwise.',
-                ]
-              : []),
             "Set `agentId` explicitly unless `acp.defaultAgent` is configured, and do not route ACP harness requests through `subagents`/`agents_list` or local PTY exec flows.",
-            ...(threadBoundAcpSpawnEnabled
-              ? [
-                  'For ACP harness thread spawns, do not call `message` with `action=thread-create`; use `sessions_spawn` (`runtime: "acp"`, `thread: true`) as the single thread creation path.',
-                ]
-              : []),
           ]
         : []),
       "Do not poll `subagents list` / `sessions_list` in a loop; only check status on-demand (for intervention, debugging, or when explicitly asked).",
@@ -939,11 +974,6 @@ export function buildAgentSystemPrompt(params: {
           "Keep narration brief and value-dense; avoid repeating obvious steps.",
           "Use plain human language for narration unless in a technical context.",
           "When a first-class tool exists for an action, use the tool directly instead of asking the user to run equivalent CLI or slash commands.",
-          buildExecApprovalPromptGuidance({
-            runtimeChannel: params.runtimeInfo?.channel,
-            inlineButtonsEnabled,
-            runtimeCapabilities,
-          }),
           "Never execute /approve through exec or any other shell/tool path; /approve is a user-facing approval command, not a shell command.",
           "Treat allow-once as single-command only: if another elevated command needs approval, request a fresh /approve and do not claim prior approval covered it.",
           "When approvals are required, preserve and show the full command/script exactly as provided (including chained operators like &&, ||, |, ;, or multiline shells) so the user can approve what will actually run, but keep command/script previews separate from the /approve command and never substitute the shell command/script for the approval id or slug.",
@@ -974,7 +1004,6 @@ export function buildAgentSystemPrompt(params: {
       "Do not chain `openclaw gateway stop` and `openclaw gateway start` as a restart substitute.",
       "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
       "",
-      ...skillsSection,
       ...memorySection,
       hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",
       hasGateway && !isMinimal
@@ -1093,23 +1122,6 @@ export function buildAgentSystemPrompt(params: {
       }),
     );
 
-    if (!isMinimal && silentReplyPromptMode !== "none") {
-      lines.push(
-        "## Silent Replies",
-        `When you have nothing to say, respond with ONLY: ${SILENT_REPLY_TOKEN}`,
-        "",
-        "⚠️ Rules:",
-        "- It must be your ENTIRE message — nothing else",
-        `- Never append it to an actual response (never include "${SILENT_REPLY_TOKEN}" in real replies)`,
-        "- Never wrap it in markdown or code blocks",
-        "",
-        `❌ Wrong: "Here's help... ${SILENT_REPLY_TOKEN}"`,
-        `❌ Wrong: "${SILENT_REPLY_TOKEN}"`,
-        `✅ Right: ${SILENT_REPLY_TOKEN}`,
-        "",
-      );
-    }
-
     lines.push(SYSTEM_PROMPT_CACHE_BOUNDARY);
     return lines.filter(Boolean).join("\n");
   });
@@ -1122,11 +1134,20 @@ export function buildAgentSystemPrompt(params: {
       heading: stableContextFiles.length > 0 ? "# Dynamic Project Context" : "# Project Context",
       dynamic: true,
     }),
+    ...skillsSection,
   );
 
   // Channel/session-specific guidance lives below the cache boundary so large
   // stable workspace context can remain a byte-identical prefix across turns.
   lines.push(
+    ...buildChannelRuntimePolicySection({
+      isMinimal,
+      runtimeChannel,
+      runtimeCapabilities,
+      inlineButtonsEnabled,
+      threadBoundAcpSpawnEnabled,
+      silentReplyPromptMode,
+    }),
     ...buildWebchatCanvasSection({
       isMinimal,
       runtimeChannel,

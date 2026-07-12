@@ -92,6 +92,9 @@ describe("MagisterIntegrationsContextEngine", () => {
 
     expect(result.systemPromptAddition).toContain("## Available Integrations");
     expect(result.systemPromptAddition).toContain("# Slack");
+    expect(result.systemPromptAddition).toContain(
+      "provenance=trusted_project_state source=integration_readiness",
+    );
     expect(result.systemPromptAddition).not.toContain("Note: integrations changed");
   });
 

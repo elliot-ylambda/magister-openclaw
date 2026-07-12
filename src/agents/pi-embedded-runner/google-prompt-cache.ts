@@ -6,7 +6,10 @@ import { normalizeGoogleApiBaseUrl } from "../../infra/google-api-base-url.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { buildGuardedModelFetch } from "../provider-transport-fetch.js";
 import { stableStringify } from "../stable-stringify.js";
-import { stripSystemPromptCacheBoundary } from "../system-prompt-cache-boundary.js";
+import {
+  splitSystemPromptCacheBoundary,
+  stripSystemPromptCacheBoundary,
+} from "../system-prompt-cache-boundary.js";
 import { mergeTransportHeaders, sanitizeTransportPayloadText } from "../transport-stream-shared.js";
 import { log } from "./logger.js";
 import { isGooglePromptCacheEligible, resolveCacheRetention } from "./prompt-cache-retention.js";
@@ -84,6 +87,17 @@ function digestSystemPrompt(systemPrompt: string): string {
 }
 
 function resolveManagedSystemPrompt(systemPrompt: string | undefined): string | undefined {
+  if (typeof systemPrompt === "string") {
+    const split = splitSystemPromptCacheBoundary(systemPrompt);
+    // Gemini explicit cachedContent owns the whole systemInstruction. Until the
+    // provider accepts an additional uncached system block, caching a prompt
+    // with a dynamic suffix would either stale that suffix or erase it from the
+    // live request. Keep the original prompt on the normal transport instead;
+    // its stable prefix remains eligible for provider-managed implicit caching.
+    if (split?.dynamicSuffix) {
+      return undefined;
+    }
+  }
   const stripped =
     typeof systemPrompt === "string" ? stripSystemPromptCacheBoundary(systemPrompt) : "";
   const sanitized = sanitizeTransportPayloadText(stripped);
@@ -376,6 +390,11 @@ export async function prepareGooglePromptCacheStreamFn(
   const systemPrompt = resolveManagedSystemPrompt(params.systemPrompt);
   const apiKey = params.apiKey?.trim();
   if (!systemPrompt || !apiKey) {
+    if (params.systemPrompt && splitSystemPromptCacheBoundary(params.systemPrompt)?.dynamicSuffix) {
+      log.debug(
+        `google explicit prompt cache skipped for ${params.provider}/${params.modelId}; preserving uncached dynamic suffix`,
+      );
+    }
     return undefined;
   }
 

@@ -597,6 +597,7 @@ async function compactEmbeddedPiSessionDirectOnce(
       config: params.config,
       workspaceDir: effectiveWorkspace,
       agentId: effectiveSkillAgentId,
+      taskText: params.customInstructions ?? "session compaction",
     });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;

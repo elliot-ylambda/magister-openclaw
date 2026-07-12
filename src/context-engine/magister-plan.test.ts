@@ -51,6 +51,9 @@ describe("MagisterPlanContextEngine", () => {
     );
     expect(res.systemPromptAddition).toContain("Current Marketing Plan");
     expect(res.systemPromptAddition).toContain("Fix metadata");
+    expect(res.systemPromptAddition).toContain(
+      "provenance=trusted_project_state source=live_marketing_plan",
+    );
   });
 
   it("adds the current-plan heading when gateway returns a bare summary", async () => {

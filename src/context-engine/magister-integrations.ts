@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { LegacyContextEngine } from "./legacy.js";
+import { renderMagisterContextBlock } from "./magister-provenance.js";
 import { registerContextEngine } from "./registry.js";
 import type {
   AssembleResult,
@@ -79,7 +80,12 @@ export class MagisterIntegrationsContextEngine implements ContextEngine {
     const note = changed
       ? "Note: integrations changed since your last reply. The Available Integrations section below is the current authoritative state.\n\n"
       : "";
-    const block = `${note}## Available Integrations\n\n${content.trimEnd()}`;
+    const block = renderMagisterContextBlock({
+      provenance: "trusted_project_state",
+      source: "integration_readiness",
+      title: "Available Integrations",
+      content: `${note}${content.trimEnd()}`,
+    });
 
     const previous = innerResult.systemPromptAddition?.trim();
     const merged = previous ? `${previous}\n\n${block}` : block;
