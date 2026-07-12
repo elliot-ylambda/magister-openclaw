@@ -1,0 +1,455 @@
+{
+  "actions": [
+    {
+      "action": "get_brand",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read the current sourced brand profile for this project.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_brand"
+    },
+    {
+      "action": "list_integrations",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List canonical capability readiness and connection guidance for this project.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_integrations"
+    },
+    {
+      "action": "get_marketing_plan",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read the active live marketing plan, sections, and executable items.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_marketing_plan"
+    },
+    {
+      "action": "recompile_marketing_plan",
+      "approval_policy": "none",
+      "async_status_adapter": "compile_run",
+      "description": "Enqueue a live-plan recompile, then poll magister_get_compile_run until terminal.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "default": false,
+            "type": "boolean"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "tool_name": "magister_recompile_marketing_plan"
+    },
+    {
+      "action": "get_compile_run",
+      "approval_policy": "none",
+      "async_status_adapter": "compile_run",
+      "description": "Poll one live-plan compile run and return normalized terminal status.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "compile_run_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["compile_run_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_compile_run"
+    },
+    {
+      "action": "get_audit_health",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read persisted audit health and channel evidence for an audit plan.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "plan_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["plan_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_audit_health"
+    },
+    {
+      "action": "list_skills",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List the complete active Magister skill index without loading skill bodies.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_skills"
+    },
+    {
+      "action": "get_skill",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Load one active Magister SKILL.md body by exact catalog name.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["name"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_skill"
+    },
+    {
+      "action": "list_aeo_audits",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List recent answer-engine optimization audits for this project.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_aeo_audits"
+    },
+    {
+      "action": "run_aeo_audit",
+      "approval_policy": "none",
+      "async_status_adapter": "aeo_audit",
+      "description": "Start an AEO audit and poll magister_get_aeo_audit until terminal.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "tool_name": "magister_run_aeo_audit"
+    },
+    {
+      "action": "get_aeo_audit",
+      "approval_policy": "none",
+      "async_status_adapter": "aeo_audit",
+      "description": "Read one AEO audit with normalized terminal status.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audit_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["audit_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_aeo_audit"
+    },
+    {
+      "action": "list_ai_visibility_sets",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List this project's tracked AI-visibility prompt sets.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_ai_visibility_sets"
+    },
+    {
+      "action": "get_ai_visibility_set",
+      "approval_policy": "none",
+      "async_status_adapter": "ai_visibility_round",
+      "description": "Read one AI-visibility set, members, rounds, scores, and terminal status.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["set_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_ai_visibility_set"
+    },
+    {
+      "action": "run_ai_visibility_set",
+      "approval_policy": "none",
+      "async_status_adapter": "ai_visibility_round",
+      "description": "Start a scoring round and poll magister_get_ai_visibility_set until terminal.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "set_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "tool_name": "magister_run_ai_visibility_set"
+    },
+    {
+      "action": "keyword_research",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Research keyword ideas plus current domain rankings through DataForSEO.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "seed": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_keyword_research"
+    },
+    {
+      "action": "discover_influencers",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Find and rank relevant creators with public contact evidence where available.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "enum": ["instagram", "tiktok", "youtube", "reddit", "linkedin", "x"],
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "topic": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["channel", "topic"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_discover_influencers"
+    },
+    {
+      "action": "list_social_accounts",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List connected social and advertising accounts for this project.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_social_accounts"
+    },
+    {
+      "action": "list_social_posts",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List project social posts, optionally filtered by status.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_social_posts"
+    },
+    {
+      "action": "get_social_analytics",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read post, follower, daily, and best-time social analytics.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "from_date": {
+            "maxLength": 10,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          },
+          "to_date": {
+            "maxLength": 10,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_social_analytics"
+    },
+    {
+      "action": "list_ad_campaigns",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List this project's advertising campaigns without changing spend.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_list_ad_campaigns"
+    },
+    {
+      "action": "get_ad_analytics",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read performance analytics for one project-owned advertisement.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "ad_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "required": ["ad_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_ad_analytics"
+    }
+  ],
+  "registry_revision": "811e7dd77cf6add6266cb9f0fab0d0953db554957736b21841d60b506b25c98b",
+  "schema_version": 1
+}

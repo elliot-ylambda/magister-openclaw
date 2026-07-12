@@ -15,6 +15,10 @@
           - "extensions/file-transfer/**"
           - "docs/nodes/index.md"
           - "docs/plugins/sdk-runtime.md"
+"plugin: magister-actions":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/magister-actions/**"
 "channel: discord":
   - changed-files:
       - any-glob-to-any-file:

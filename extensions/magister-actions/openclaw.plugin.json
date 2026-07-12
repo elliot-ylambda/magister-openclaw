@@ -1,0 +1,53 @@
+{
+  "id": "magister-actions",
+  "name": "Magister Actions",
+  "description": "Typed, project-scoped marketing actions executed through the Magister gateway.",
+  "enabledByDefault": true,
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "magister_get_brand",
+      "magister_list_integrations",
+      "magister_get_marketing_plan",
+      "magister_recompile_marketing_plan",
+      "magister_get_compile_run",
+      "magister_get_audit_health",
+      "magister_list_skills",
+      "magister_get_skill",
+      "magister_list_aeo_audits",
+      "magister_run_aeo_audit",
+      "magister_get_aeo_audit",
+      "magister_list_ai_visibility_sets",
+      "magister_get_ai_visibility_set",
+      "magister_run_ai_visibility_set",
+      "magister_keyword_research",
+      "magister_discover_influencers",
+      "magister_list_social_accounts",
+      "magister_list_social_posts",
+      "magister_get_social_analytics",
+      "magister_list_ad_campaigns",
+      "magister_get_ad_analytics"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "endpoint": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 120000
+      },
+      "maxResponseBytes": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 2097152
+      }
+    }
+  }
+}
