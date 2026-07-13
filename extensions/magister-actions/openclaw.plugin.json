@@ -28,7 +28,21 @@
       "magister_list_social_posts",
       "magister_get_social_analytics",
       "magister_list_ad_campaigns",
-      "magister_get_ad_analytics"
+      "magister_get_ad_analytics",
+      "magister_get_action_approval",
+      "magister_send_email",
+      "magister_create_social_draft",
+      "magister_schedule_social_post",
+      "magister_publish_social_post",
+      "magister_create_ad_campaign",
+      "magister_activate_ad_campaign",
+      "magister_pause_ad_campaign",
+      "magister_create_blog_post",
+      "magister_update_blog_post",
+      "magister_open_pull_request",
+      "magister_create_product",
+      "magister_publish_content",
+      "magister_merge_pull_request"
     ]
   },
   "configSchema": {
