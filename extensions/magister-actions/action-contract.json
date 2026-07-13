@@ -448,8 +448,581 @@
       "retry_policy": "backoff",
       "side_effect": "none",
       "tool_name": "magister_get_ad_analytics"
+    },
+    {
+      "action": "get_action_approval",
+      "approval_policy": "none",
+      "async_status_adapter": "action_approval",
+      "description": "Poll a payload-bound approval operation until it is terminal.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "maxLength": 35,
+            "minLength": 35,
+            "pattern": "^op_[a-f0-9]{32}$",
+            "type": "string"
+          }
+        },
+        "required": ["operation_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "tool_name": "magister_get_action_approval"
+    },
+    {
+      "action": "send_email",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request one-time human approval to send this exact email payload.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bcc": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "body": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "cc": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "html": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 998,
+            "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": ["idempotency_key", "to", "subject", "body"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "tool_name": "magister_send_email"
+    },
+    {
+      "action": "create_social_draft",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create an unpublished social draft; scheduling and publishing are separate approvals.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "$defs": {
+          "SocialTarget": {
+            "additionalProperties": false,
+            "properties": {
+              "account_id": {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              "platform": {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["platform", "account_id"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "media_urls": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "platforms": {
+            "items": {
+              "$ref": "#/$defs/SocialTarget"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": ["content", "platforms"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "draft",
+      "tool_name": "magister_create_social_draft"
+    },
+    {
+      "action": "schedule_social_post",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request approval to schedule an existing draft at the exact supplied time.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "post_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "scheduled_for": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "post_id", "scheduled_for"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "tool_name": "magister_schedule_social_post"
+    },
+    {
+      "action": "publish_social_post",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request approval to publish one exact project-owned social post now.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "post_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "post_id"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "tool_name": "magister_publish_social_post"
+    },
+    {
+      "action": "create_ad_campaign",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create a project-owned advertising campaign in a forced paused state.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "body": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "budget_amount": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "budget_type": {
+            "enum": ["daily", "lifetime"],
+            "type": "string"
+          },
+          "call_to_action": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "goal": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "headline": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "image_url": {
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "link_url": {
+            "maxLength": 2048,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "platform": {
+            "enum": ["metaads", "tiktokads", "linkedinads", "pinterestads", "xads"],
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "platform",
+          "account_id",
+          "name",
+          "goal",
+          "budget_amount",
+          "budget_type"
+        ],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "draft",
+      "tool_name": "magister_create_ad_campaign"
+    },
+    {
+      "action": "activate_ad_campaign",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request approval to activate one exact campaign and begin spending.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "campaign_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "campaign_id"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "spend",
+      "tool_name": "magister_activate_ad_campaign"
+    },
+    {
+      "action": "pause_ad_campaign",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Pause a project-owned campaign to stop spend; this protective action needs no approval.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "campaign_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "campaign_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "external_write",
+      "tool_name": "magister_pause_ad_campaign"
+    },
+    {
+      "action": "create_blog_post",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create an unpublished CMS blog draft.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "body_markdown": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "collection_id": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "service": {
+            "enum": ["wordpress", "webflow", "wix"],
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": ["service", "title", "body_markdown"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "draft",
+      "tool_name": "magister_create_blog_post"
+    },
+    {
+      "action": "update_blog_post",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Update an existing CMS draft while forcing it to remain unpublished.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "body_markdown": {
+            "maxLength": 200000,
+            "type": "string"
+          },
+          "collection_id": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "post_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "service": {
+            "enum": ["wordpress", "webflow", "wix"],
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "type": "string"
+          }
+        },
+        "required": ["service", "post_id"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "draft",
+      "tool_name": "magister_update_blog_post"
+    },
+    {
+      "action": "open_pull_request",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create a branch and pull request without merging the default branch.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "$defs": {
+          "RepoChange": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "maxLength": 500000,
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["path", "content"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "base_branch": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "body": {
+            "maxLength": 100000,
+            "type": "string"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/$defs/RepoChange"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "repo": {
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "type": "string"
+          }
+        },
+        "required": ["repo", "title", "body", "changes"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "draft",
+      "tool_name": "magister_open_pull_request"
+    },
+    {
+      "action": "create_product",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create a Shopify product in draft state.",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 200000,
+            "type": "string"
+          },
+          "price": {
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": ["title", "description"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "draft",
+      "tool_name": "magister_create_product"
+    },
+    {
+      "action": "publish_content",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request approval to publish one exact CMS or Shopify draft.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection_id": {
+            "maxLength": 160,
+            "type": "string"
+          },
+          "content_ref": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "service": {
+            "enum": ["wordpress", "webflow", "wix", "shopify"],
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "service", "content_ref"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "tool_name": "magister_publish_content"
+    },
+    {
+      "action": "merge_pull_request",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request approval to merge one exact GitHub pull request.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "pr_number": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "repo": {
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "repo", "pr_number"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "tool_name": "magister_merge_pull_request"
     }
   ],
-  "registry_revision": "811e7dd77cf6add6266cb9f0fab0d0953db554957736b21841d60b506b25c98b",
+  "registry_revision": "eb6d4564b0a570d4aef3a25cc8ce73f0a4d0d293e5b9133303394184406c7342",
   "schema_version": 1
 }
