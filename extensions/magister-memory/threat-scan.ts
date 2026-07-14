@@ -44,7 +44,7 @@ const EXFIL_PATTERNS: ThreatHit[] = [
 ];
 
 const PROVIDER_KEY_PATTERNS: ThreatHit[] = [
-  { pattern: /sk-ant-(api|admin)[A-Za-z0-9_\-]{20,}/i, id: "provider_key_anthropic" },
+  { pattern: /sk-ant-(api|admin)[A-Za-z0-9_-]{20,}/i, id: "provider_key_anthropic" },
   { pattern: /sk-proj-[A-Za-z0-9_-]{20,}/i, id: "provider_key_openai_proj" },
   { pattern: /\bsk-[A-Za-z0-9]{40,}/i, id: "provider_key_openai" },
   { pattern: /AIza[A-Za-z0-9_-]{30,}/i, id: "provider_key_gemini" },

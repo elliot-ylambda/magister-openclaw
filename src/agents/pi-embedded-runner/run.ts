@@ -1724,7 +1724,7 @@ export async function runEmbeddedPiAgent(
               await runOwnsCompactionAfterHook("overflow recovery", compactResult);
               emitOverflowCompactionEvent({
                 phase: "end",
-                willRetry: compactResult.compacted === true,
+                willRetry: compactResult.compacted,
                 ...(typeof compactResult.result?.tokensBefore === "number"
                   ? { tokensBefore: compactResult.result.tokensBefore }
                   : {}),

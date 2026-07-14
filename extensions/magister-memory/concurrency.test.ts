@@ -9,7 +9,9 @@ function makeTool(workspaceDir: string) {
   const api = { pluginConfig: {}, config: {} } as unknown as OpenClawPluginApi;
   const ctx = { workspaceDir, agentId: "main" } as unknown as OpenClawPluginToolContext;
   const tool = createMemoryTool(api, ctx);
-  if (!tool) throw new Error("memory tool disabled");
+  if (!tool) {
+    throw new Error("memory tool disabled");
+  }
   return tool;
 }
 

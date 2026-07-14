@@ -108,13 +108,11 @@ export async function sendSubagentCompletionWebhook(params: {
     if (!res.ok) {
       // Best-effort: log + swallow. The user can still see results via the
       // existing on-load `agent_turns` poll if delivery fails entirely.
-      // eslint-disable-next-line no-console
       console.warn(
         `[subagent-completion-webhook] non-2xx response status=${res.status} run=${params.payload.run_id}`,
       );
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn("[subagent-completion-webhook] delivery failed:", err);
   } finally {
     clearTimeout(timer);
@@ -166,7 +164,6 @@ export function registerSubagentCompletionWebhookHook(): void {
     try {
       await deliverSubagentCompletionWebhook({ event, ctx, url, token });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[subagent-completion-webhook] hook handler error:", err);
     }
   };

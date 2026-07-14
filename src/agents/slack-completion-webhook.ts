@@ -58,13 +58,11 @@ export async function sendSlackCompletionWebhook(params: {
       signal: controller.signal,
     });
     if (!res.ok) {
-      // eslint-disable-next-line no-console
       console.warn(
         `[slack-completion-webhook] non-2xx response status=${res.status} run=${params.payload.run_id}`,
       );
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn("[slack-completion-webhook] delivery failed:", err);
   } finally {
     clearTimeout(timer);
@@ -119,7 +117,6 @@ export function registerSlackCompletionWebhookHook(): void {
         },
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[slack-completion-webhook] hook handler error:", err);
     }
   };

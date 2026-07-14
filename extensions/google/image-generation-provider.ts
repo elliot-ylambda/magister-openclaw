@@ -19,7 +19,7 @@ const DEFAULT_OUTPUT_MIME = "image/png";
 const FALLBACK_GOOGLE_IMAGE_MODEL = "gemini-2.5-flash-image";
 
 function isRetryableImageGenerationError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err ?? "");
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "";
   if (/timed out|timeout|fetch failed/i.test(message)) {
     return true;
   }
