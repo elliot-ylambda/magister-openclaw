@@ -31,7 +31,10 @@ type RuntimeBundleProcessState = {
 export type PendingPromptPresence = {
   pendingPath: string;
   sentPath: string;
+  metricSentPath: string;
   payload: Record<string, unknown>;
+  modelRequestStartedAtMs?: number;
+  firstTokenLatencyMs?: number;
 };
 
 function readJsonSync(filePath: string): unknown {
@@ -186,6 +189,7 @@ export async function beginPromptPresence(params: {
   const record: PendingPromptPresence = {
     pendingPath: path.join(directory, "pending", `${identity}.json`),
     sentPath: path.join(directory, "sent", `${identity}.json`),
+    metricSentPath: path.join(directory, "first-token", `${identity}.json`),
     payload: {
       boot_id: state.boot_id,
       lease: state.lease,
@@ -215,11 +219,43 @@ export async function beginPromptPresence(params: {
   return record;
 }
 
+export function markPromptRequestStarted(record: PendingPromptPresence | undefined): void {
+  if (!record) return;
+  record.modelRequestStartedAtMs = Date.now();
+}
+
+export function recordPromptFirstToken(record: PendingPromptPresence | undefined): void {
+  if (
+    !record ||
+    record.firstTokenLatencyMs !== undefined ||
+    record.modelRequestStartedAtMs === undefined
+  ) {
+    return;
+  }
+  record.firstTokenLatencyMs = Math.max(0, Date.now() - record.modelRequestStartedAtMs);
+}
+
 export async function retryPromptPresence(
   record: PendingPromptPresence | undefined,
 ): Promise<void> {
-  if (!record || !fs.existsSync(record.pendingPath)) return;
-  if (await sendPromptPresence(record.payload, POST_REQUEST_TIMEOUT_MS)) {
-    await markSent(record);
+  if (!record) return;
+  const promptPending = fs.existsSync(record.pendingPath);
+  const metricPending =
+    record.firstTokenLatencyMs !== undefined && !fs.existsSync(record.metricSentPath);
+  if (!promptPending && !metricPending) return;
+  const payload =
+    record.firstTokenLatencyMs === undefined
+      ? record.payload
+      : { ...record.payload, first_token_latency_ms: record.firstTokenLatencyMs };
+  if (await sendPromptPresence(payload, POST_REQUEST_TIMEOUT_MS)) {
+    if (promptPending) await markSent(record);
+    if (metricPending) {
+      await atomicJson(record.metricSentPath, {
+        acknowledged_at: Date.now(),
+        first_token_latency_ms: record.firstTokenLatencyMs,
+        release_id: record.payload.release_id,
+        session_id: record.payload.session_id,
+      });
+    }
   }
 }
