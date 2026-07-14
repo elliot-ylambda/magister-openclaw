@@ -421,6 +421,7 @@ describe("google video generation provider", () => {
           providers: {
             google: {
               baseUrl: "http://magister-gateway.internal:8081/api/gemini/v1beta",
+              models: [],
             },
           },
         },
@@ -430,7 +431,7 @@ describe("google video generation provider", () => {
     expect(downloadMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.videos).toHaveLength(1);
-    expect(result.videos[0]?.buffer.toString()).toBe("sdk-downloaded-mp4");
+    expect(result.videos?.[0]?.buffer?.toString()).toBe("sdk-downloaded-mp4");
   });
 
   it("rounds unsupported durations to the nearest Veo value", async () => {

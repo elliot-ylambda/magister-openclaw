@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { findLaneByName } from "../../scripts/lib/docker-e2e-plan.mjs";
@@ -9,6 +9,8 @@ import {
   assertPluginPrereleaseTestPlanComplete,
   createPluginPrereleaseTestPlan,
 } from "../../scripts/lib/plugin-prerelease-test-plan.mjs";
+
+const upstreamWorkflowIt = existsSync(".github/workflows/ci.yml") ? it : it.skip;
 
 function readCiWorkflow() {
   return parse(readFileSync(".github/workflows/ci.yml", "utf8"));
@@ -178,7 +180,7 @@ describe("scripts/lib/plugin-prerelease-test-plan.mjs", () => {
     expect(fixtureServer).toContain("/versions/${fixture.version}/artifact");
   });
 
-  it("wires the full plugin prerelease plan into its release workflow", () => {
+  upstreamWorkflowIt("wires the full plugin prerelease plan into its release workflow", () => {
     const workflow = readCiWorkflow();
     const preflight = workflow.jobs.preflight;
     const pluginWorkflow = readPluginPrereleaseWorkflow();
@@ -322,36 +324,39 @@ describe("scripts/lib/plugin-prerelease-test-plan.mjs", () => {
     ]);
   });
 
-  it("keeps release-check reruns independent while cancelling superseded umbrella runs", () => {
-    const releaseChecksWorkflow = parse(
-      readFileSync(".github/workflows/openclaw-release-checks.yml", "utf8"),
-    );
-    const fullReleaseWorkflow = readFullReleaseValidationWorkflow();
+  upstreamWorkflowIt(
+    "keeps release-check reruns independent while cancelling superseded umbrella runs",
+    () => {
+      const releaseChecksWorkflow = parse(
+        readFileSync(".github/workflows/openclaw-release-checks.yml", "utf8"),
+      );
+      const fullReleaseWorkflow = readFullReleaseValidationWorkflow();
 
-    expect(releaseChecksWorkflow.concurrency).toEqual({
-      group:
-        "openclaw-release-checks-${{ inputs.expected_sha || inputs.ref }}-${{ inputs.rerun_group }}",
-      "cancel-in-progress": false,
-    });
-    expect(fullReleaseWorkflow.concurrency).toEqual({
-      group: "full-release-validation-${{ inputs.ref }}-${{ inputs.rerun_group }}",
-      "cancel-in-progress": "${{ inputs.ref == 'main' && inputs.rerun_group == 'all' }}",
-    });
-    expect(releaseChecksWorkflow.jobs.resolve_target["runs-on"]).toBe("ubuntu-24.04");
-    expect(releaseChecksWorkflow.jobs.prepare_release_package["runs-on"]).toBe("ubuntu-24.04");
-    expect(releaseChecksWorkflow.jobs.summary["runs-on"]).toBe("ubuntu-24.04");
-    for (const jobName of [
-      "resolve_target",
-      "normal_ci",
-      "plugin_prerelease",
-      "release_checks",
-      "prepare_release_package",
-      "npm_telegram",
-      "summary",
-    ]) {
-      expect(fullReleaseWorkflow.jobs[jobName]["runs-on"]).toBe("ubuntu-24.04");
-    }
-  });
+      expect(releaseChecksWorkflow.concurrency).toEqual({
+        group:
+          "openclaw-release-checks-${{ inputs.expected_sha || inputs.ref }}-${{ inputs.rerun_group }}",
+        "cancel-in-progress": false,
+      });
+      expect(fullReleaseWorkflow.concurrency).toEqual({
+        group: "full-release-validation-${{ inputs.ref }}-${{ inputs.rerun_group }}",
+        "cancel-in-progress": "${{ inputs.ref == 'main' && inputs.rerun_group == 'all' }}",
+      });
+      expect(releaseChecksWorkflow.jobs.resolve_target["runs-on"]).toBe("ubuntu-24.04");
+      expect(releaseChecksWorkflow.jobs.prepare_release_package["runs-on"]).toBe("ubuntu-24.04");
+      expect(releaseChecksWorkflow.jobs.summary["runs-on"]).toBe("ubuntu-24.04");
+      for (const jobName of [
+        "resolve_target",
+        "normal_ci",
+        "plugin_prerelease",
+        "release_checks",
+        "prepare_release_package",
+        "npm_telegram",
+        "summary",
+      ]) {
+        expect(fullReleaseWorkflow.jobs[jobName]["runs-on"]).toBe("ubuntu-24.04");
+      }
+    },
+  );
 
   it("keeps the live-ish availability check redacted", () => {
     const output = execFileSync(

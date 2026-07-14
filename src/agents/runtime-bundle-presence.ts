@@ -40,7 +40,9 @@ export type PendingPromptPresence = {
 function readJsonSync(filePath: string): unknown {
   try {
     const stat = fs.lstatSync(filePath);
-    if (!stat.isFile() || stat.isSymbolicLink()) return undefined;
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      return undefined;
+    }
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch {
     return undefined;
@@ -84,9 +86,13 @@ function readValidatedState(workspaceDir: string): RuntimeBundleProcessState | u
 }
 
 export function readActiveRuntimeBundle(workspaceDir?: string): RuntimeBundlePresence | undefined {
-  if (!workspaceDir) return undefined;
+  if (!workspaceDir) {
+    return undefined;
+  }
   const state = readValidatedState(workspaceDir);
-  if (!state) return undefined;
+  if (!state) {
+    return undefined;
+  }
   return {
     manifestSha256: state.active.manifest_sha256,
     releaseId: state.active.release_id,
@@ -135,7 +141,9 @@ async function sendPromptPresence(
   timeoutMs: number,
 ): Promise<boolean> {
   const token = process.env.GATEWAY_TOKEN ?? "";
-  if (!token) return false;
+  if (!token) {
+    return false;
+  }
   const baseUrl = process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081";
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -172,7 +180,9 @@ export async function beginPromptPresence(params: {
   sessionId: string;
 }): Promise<PendingPromptPresence | undefined> {
   const state = readValidatedState(params.workspaceDir);
-  if (!state || !(process.env.GATEWAY_TOKEN ?? "")) return undefined;
+  if (!state || !(process.env.GATEWAY_TOKEN ?? "")) {
+    return undefined;
+  }
   const sessionId = params.sessionId.slice(0, 500);
   const identity = createHash("sha256")
     .update(
@@ -203,7 +213,9 @@ export async function beginPromptPresence(params: {
       templates_sha256: state.active.templates_sha256,
     },
   };
-  if (fs.existsSync(record.sentPath)) return undefined;
+  if (fs.existsSync(record.sentPath)) {
+    return undefined;
+  }
   if (!fs.existsSync(record.pendingPath)) {
     await atomicJson(record.pendingPath, record.payload);
   } else {
@@ -220,7 +232,9 @@ export async function beginPromptPresence(params: {
 }
 
 export function markPromptRequestStarted(record: PendingPromptPresence | undefined): void {
-  if (!record) return;
+  if (!record) {
+    return;
+  }
   record.modelRequestStartedAtMs = Date.now();
 }
 
@@ -238,17 +252,23 @@ export function recordPromptFirstToken(record: PendingPromptPresence | undefined
 export async function retryPromptPresence(
   record: PendingPromptPresence | undefined,
 ): Promise<void> {
-  if (!record) return;
+  if (!record) {
+    return;
+  }
   const promptPending = fs.existsSync(record.pendingPath);
   const metricPending =
     record.firstTokenLatencyMs !== undefined && !fs.existsSync(record.metricSentPath);
-  if (!promptPending && !metricPending) return;
+  if (!promptPending && !metricPending) {
+    return;
+  }
   const payload =
     record.firstTokenLatencyMs === undefined
       ? record.payload
       : { ...record.payload, first_token_latency_ms: record.firstTokenLatencyMs };
   if (await sendPromptPresence(payload, POST_REQUEST_TIMEOUT_MS)) {
-    if (promptPending) await markSent(record);
+    if (promptPending) {
+      await markSent(record);
+    }
     if (metricPending) {
       await atomicJson(record.metricSentPath, {
         acknowledged_at: Date.now(),

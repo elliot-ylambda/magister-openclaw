@@ -248,7 +248,9 @@ async function readTextOrEmpty(path: string): Promise<string> {
   try {
     return (await readFile(path, "utf-8")).trim();
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return "";
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return "";
+    }
     throw err;
   }
 }

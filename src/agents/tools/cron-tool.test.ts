@@ -515,6 +515,7 @@ describe("cron tool", () => {
       await executeAddAndReadDelivery({
         callId: "call-thread",
         agentSessionKey: "agent:main:slack:channel:general:thread:1699999999.0001",
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -528,6 +529,7 @@ describe("cron tool", () => {
       await executeAddAndReadDelivery({
         callId: "call-telegram-topic",
         agentSessionKey: "agent:main:telegram:group:-1001234567890:topic:99",
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -541,6 +543,7 @@ describe("cron tool", () => {
       await executeAddAndReadDelivery({
         callId: "call-telegram-direct-thread",
         agentSessionKey: "agent:main:telegram:direct:123456789:thread:123456789:99",
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -555,6 +558,7 @@ describe("cron tool", () => {
       await executeAddAndReadDelivery({
         callId: "call-telegram-account-direct-thread",
         agentSessionKey: "agent:main:telegram:bot-a:direct:123456789:thread:123456789:99",
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -570,6 +574,7 @@ describe("cron tool", () => {
       await executeAddAndReadDelivery({
         callId: "call-telegram-dm-thread",
         agentSessionKey: "agent:main:telegram:dm:123456789:thread:123456789:99",
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -584,6 +589,7 @@ describe("cron tool", () => {
       await executeAddAndReadDelivery({
         callId: "call-telegram-mismatched-direct-thread",
         agentSessionKey: "agent:main:telegram:direct:123456789:thread:987654321:99",
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -603,6 +609,7 @@ describe("cron tool", () => {
           accountId: "bot-a",
           threadId: "$RootEvent:Example.Org",
         },
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -672,6 +679,7 @@ describe("cron tool", () => {
           accountId: " Bot-A ",
           threadId: "  $RootEvent:Example.Org  ",
         },
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -690,6 +698,7 @@ describe("cron tool", () => {
           channel: "matrix",
           to: "!AbCdEf1234567890:example.org",
         },
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",
@@ -725,6 +734,7 @@ describe("cron tool", () => {
           channel: "matrix",
           to: "   ",
         },
+        delivery: { mode: "announce" },
       }),
     ).toEqual({
       mode: "announce",

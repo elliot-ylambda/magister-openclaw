@@ -762,7 +762,7 @@ export async function handleOpenAiHttpRequest(
     // or SDK auto-compaction) so the gateway can show a "compacting" state
     // instead of dead air — overflow compaction can take minutes.
     if (evt.stream === "compaction") {
-      const data = (evt.data ?? {}) as Record<string, unknown>;
+      const data = evt.data ?? {};
       const payload: Record<string, unknown> = { phase: data.phase };
       for (const key of ["trigger", "willRetry", "tokensBefore", "tokensAfter"]) {
         if (data[key] !== undefined) {

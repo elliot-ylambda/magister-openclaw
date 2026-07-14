@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -56,7 +56,8 @@ function expectTextToIncludeAll(text: string | undefined, snippets: string[]): v
   }
 }
 
-describe("package acceptance workflow", () => {
+// Upstream workflow fixtures are deliberately absent from the Magister fork.
+describe.skipIf(!existsSync(PACKAGE_ACCEPTANCE_WORKFLOW))("package acceptance workflow", () => {
   it("resolves candidate package sources before reusing Docker E2E lanes", () => {
     const workflow = readFileSync(PACKAGE_ACCEPTANCE_WORKFLOW, "utf8");
 
@@ -180,7 +181,7 @@ describe("package acceptance workflow", () => {
   });
 });
 
-describe("package artifact reuse", () => {
+describe.skipIf(!existsSync(LIVE_E2E_WORKFLOW))("package artifact reuse", () => {
   it("lets reusable Docker E2E consume an already resolved package artifact", () => {
     const workflow = readFileSync(LIVE_E2E_WORKFLOW, "utf8");
     const packageJson = readFileSync(PACKAGE_JSON, "utf8");

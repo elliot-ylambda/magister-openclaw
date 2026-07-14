@@ -95,7 +95,10 @@ describe("runtime bundle prompt presence", () => {
         calls += 1;
         const pending = path.join(workspace, ".magister", "runtime", "prompt-presence", "pending");
         expect(fs.readdirSync(pending)).toHaveLength(1);
-        const payload = JSON.parse(String(init.body));
+        if (typeof init.body !== "string") {
+          throw new TypeError("expected JSON request body");
+        }
+        const payload = JSON.parse(init.body);
         expect(payload).toMatchObject({
           phase: "prompt_present",
           release_id: releaseId,
@@ -143,7 +146,10 @@ describe("runtime bundle prompt presence", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_url: string, init: RequestInit) => {
-        payloads.push(JSON.parse(String(init.body)));
+        if (typeof init.body !== "string") {
+          throw new TypeError("expected JSON request body");
+        }
+        payloads.push(JSON.parse(init.body));
         return { ok: true } as Response;
       }),
     );
