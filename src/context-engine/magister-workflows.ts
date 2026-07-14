@@ -4,6 +4,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { LegacyContextEngine } from "./legacy.js";
 import { MagisterIntegrationsContextEngine } from "./magister-integrations.js";
+import { renderMagisterContextBlock } from "./magister-provenance.js";
 import { registerContextEngine } from "./registry.js";
 import type {
   AssembleResult,
@@ -81,7 +82,12 @@ export class MagisterWorkflowsContextEngine implements ContextEngine {
     const note = changed
       ? "Note: workflows changed since your last reply. The Available Workflows section below is the current authoritative state.\n\n"
       : "";
-    const block = `${note}## Available Workflows\n\n${content.trimEnd()}`;
+    const block = renderMagisterContextBlock({
+      provenance: "trusted_project_state",
+      source: "workflow_summary",
+      title: "Available Workflows",
+      content: `${note}${content.trimEnd()}`,
+    });
 
     const previous = innerResult.systemPromptAddition?.trim();
     const merged = previous ? `${previous}\n\n${block}` : block;

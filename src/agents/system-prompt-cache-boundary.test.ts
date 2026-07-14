@@ -5,6 +5,7 @@ import {
   stripSystemPromptCacheBoundary,
   SYSTEM_PROMPT_CACHE_BOUNDARY,
 } from "./system-prompt-cache-boundary.js";
+import { buildAgentSystemPrompt } from "./system-prompt.js";
 
 describe("system prompt cache boundary helpers", () => {
   it("splits stable and dynamic prompt regions", () => {
@@ -40,5 +41,51 @@ describe("system prompt cache boundary helpers", () => {
     ).toBe(
       `Stable prefix${SYSTEM_PROMPT_CACHE_BOUNDARY}Per-turn lab context\nSecond line\n\nDynamic suffix\n\nMore detail`,
     );
+  });
+
+  it("keeps channel, task-selected skills, and project state out of stable bytes", () => {
+    const build = (params: { channel: string; skillsPrompt: string }) =>
+      buildAgentSystemPrompt({
+        workspaceDir: "/data/.openclaw/workspace",
+        toolNames: ["exec", "message", "sessions_spawn"],
+        skillsPrompt: params.skillsPrompt,
+        contextFiles: [
+          { path: "AGENTS.md", content: "Static platform policy" },
+          { path: "TOOLS.md", content: "Static capability router" },
+        ],
+        runtimeInfo: {
+          channel: params.channel,
+          capabilities:
+            params.channel === "webchat" ? ["inlineButtons"] : ["threadbound-acp-spawn"],
+        },
+      });
+
+    const webchat = splitSystemPromptCacheBoundary(
+      build({ channel: "webchat", skillsPrompt: "SEO task-selected hint" }),
+    );
+    const slack = splitSystemPromptCacheBoundary(
+      build({ channel: "slack", skillsPrompt: "Email task-selected hint" }),
+    );
+    expect(webchat).toBeDefined();
+    expect(slack).toBeDefined();
+    expect(webchat?.stablePrefix).toBe(slack?.stablePrefix);
+    expect(webchat?.dynamicSuffix).toContain("SEO task-selected hint");
+    expect(webchat?.dynamicSuffix).toContain("Webchat may emit canonical");
+    expect(slack?.dynamicSuffix).toContain("Email task-selected hint");
+    expect(slack?.dynamicSuffix).toContain("Never emit `<json-render>`");
+
+    const stable = webchat!.stablePrefix;
+    for (const addition of [
+      "Current plan v2",
+      "Workflow list changed",
+      "Integration readiness changed",
+    ]) {
+      const composed = prependSystemPromptAdditionAfterCacheBoundary({
+        systemPrompt: build({ channel: "webchat", skillsPrompt: "SEO task-selected hint" }),
+        systemPromptAddition: addition,
+      });
+      expect(splitSystemPromptCacheBoundary(composed)?.stablePrefix).toBe(stable);
+      expect(splitSystemPromptCacheBoundary(composed)?.dynamicSuffix).toContain(addition);
+    }
   });
 });

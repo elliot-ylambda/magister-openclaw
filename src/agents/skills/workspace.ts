@@ -129,6 +129,44 @@ const DEFAULT_MAX_SKILLS_PROMPT_CHARS = 18_000;
 const DEFAULT_MAX_SKILL_FILE_BYTES = 256_000;
 const DEFAULT_MIN_RAW_ENTRIES_PER_DIRECTORY_SCAN = 1_000;
 const DEFAULT_MAX_RAW_ENTRIES_PER_DIRECTORY_SCAN = 10_000;
+const TASK_SELECTED_SKILL_LIMIT = 8;
+const TASK_SELECTED_SKILL_PROMPT_MAX_CHARS = 12_000;
+export const SKILL_INDEX_RELATIVE_PATH = ".openclaw/SKILL_INDEX.md";
+const TASK_SKILL_STOP_WORDS = new Set([
+  "about",
+  "after",
+  "agent",
+  "and",
+  "are",
+  "before",
+  "can",
+  "create",
+  "data",
+  "for",
+  "from",
+  "help",
+  "into",
+  "magister",
+  "manage",
+  "marketing",
+  "not",
+  "only",
+  "project",
+  "our",
+  "specific",
+  "task",
+  "that",
+  "their",
+  "the",
+  "this",
+  "tool",
+  "user",
+  "using",
+  "when",
+  "with",
+  "you",
+  "your",
+]);
 
 type ResolvedSkillsLimits = {
   maxCandidatesPerRoot: number;
@@ -873,6 +911,132 @@ export function formatSkillsCompact(skills: Skill[]): string {
   return lines.join("\n");
 }
 
+function taskTokens(value: string): Set<string> {
+  return new Set(
+    value
+      .toLocaleLowerCase("en")
+      .split(/[^a-z0-9]+/g)
+      .filter((token) => token.length >= 3 && !TASK_SKILL_STOP_WORDS.has(token)),
+  );
+}
+
+function normalizedSkillPhrase(value: string): string {
+  return value
+    .toLocaleLowerCase("en")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function selectSkillsForTask(
+  skills: Skill[],
+  taskText: string,
+  limit = TASK_SELECTED_SKILL_LIMIT,
+): Skill[] {
+  const boundedTask = taskText.slice(0, 20_000);
+  const promptTokens = taskTokens(boundedTask);
+  const normalizedTask = normalizedSkillPhrase(boundedTask);
+  if (promptTokens.size === 0 || !normalizedTask) {
+    return [];
+  }
+
+  return skills
+    .map((skill) => {
+      const namePhrase = normalizedSkillPhrase(skill.name);
+      const nameTokens = taskTokens(skill.name);
+      const descriptionTokens = taskTokens(skill.description ?? "");
+      let score = namePhrase && normalizedTask.includes(namePhrase) ? 100 : 0;
+      for (const token of nameTokens) {
+        if (promptTokens.has(token)) score += 12;
+      }
+      for (const token of descriptionTokens) {
+        if (promptTokens.has(token)) score += 1;
+      }
+      return { skill, score };
+    })
+    .filter((row) => row.score >= 2)
+    .toSorted(
+      (left, right) =>
+        right.score - left.score || left.skill.name.localeCompare(right.skill.name, "en"),
+    )
+    .slice(0, Math.max(0, limit))
+    .map((row) => row.skill);
+}
+
+export function renderSkillNameIndex(skills: Skill[]): string {
+  const lines = [
+    "<!-- System-managed. Generated from the current eligible runtime skills. -->",
+    "# Complete skill index",
+    "",
+    "This is the on-demand name/location index. Read the selected `SKILL.md` before use.",
+    "",
+  ];
+  for (const skill of skills.toSorted((a, b) => a.name.localeCompare(b.name, "en"))) {
+    const name = skill.name.replaceAll("`", "\\`").replaceAll("\n", " ");
+    const location = skill.filePath.replaceAll("`", "\\`").replaceAll("\n", " ");
+    lines.push(`- \`${name}\` — \`${location}\``);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+function ensureSkillNameIndex(workspaceDir: string, skills: Skill[]): string | undefined {
+  const destination = path.resolve(workspaceDir, SKILL_INDEX_RELATIVE_PATH);
+  const rendered = renderSkillNameIndex(skills);
+  try {
+    const directory = path.dirname(destination);
+    const existingDirectory = fs.existsSync(directory) ? fs.lstatSync(directory) : undefined;
+    if (existingDirectory?.isSymbolicLink()) {
+      throw new Error(`refusing symlinked skill index directory: ${directory}`);
+    }
+    fs.mkdirSync(directory, { recursive: true });
+    if (fs.existsSync(destination) && fs.lstatSync(destination).isSymbolicLink()) {
+      throw new Error(`refusing symlinked skill index: ${destination}`);
+    }
+    const current = fs.existsSync(destination) ? fs.readFileSync(destination, "utf8") : undefined;
+    if (current !== rendered) {
+      const temporary = `${destination}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, rendered, { encoding: "utf8", mode: 0o600 });
+      fs.renameSync(temporary, destination);
+    }
+    return destination;
+  } catch (error) {
+    skillsLogger.warn(`unable to refresh on-demand skill index: ${String(error)}`);
+    return undefined;
+  }
+}
+
+function renderTaskSelectedSkillsPrompt(params: {
+  skills: Skill[];
+  taskText: string;
+  workspaceDir: string;
+}): string {
+  const promptSkills = compactSkillPaths(params.skills)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "en"));
+  const indexPath = ensureSkillNameIndex(params.workspaceDir, promptSkills);
+  const candidates = selectSkillsForTask(promptSkills, params.taskText).map((skill) => ({
+    ...skill,
+    description: (skill.description ?? "").slice(0, 1_200),
+  }));
+  const selected: Skill[] = [];
+  for (const skill of candidates) {
+    const next = [...selected, skill];
+    if (formatSkillsForPrompt(next).length > TASK_SELECTED_SKILL_PROMPT_MAX_CHARS) break;
+    selected.push(skill);
+  }
+  const indexGuidance = indexPath
+    ? `The complete name-only skill index is available on demand at \`${indexPath}\`. Read it only when no task-selected hint fits.`
+    : "If no task-selected hint fits, run `openclaw skills list --json` for the complete on-demand index.";
+  return [
+    "Task-selected skill hints for the current request follow. They are routing hints, not proof that a capability is ready.",
+    formatSkillsForPrompt(selected),
+    selected.length === 0 ? "No skill description matched the current task deterministically." : "",
+    indexGuidance,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 // Budget reserved for the compact-mode warning line prepended by the caller.
 const COMPACT_WARNING_OVERHEAD = 150;
 
@@ -1031,20 +1195,43 @@ export function resolveSkillsPromptForRun(params: {
   config?: OpenClawConfig;
   workspaceDir: string;
   agentId?: string;
+  taskText?: string;
 }): string {
-  const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
-  if (snapshotPrompt) {
-    return snapshotPrompt;
+  if (params.taskText === undefined) {
+    const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
+    if (snapshotPrompt) {
+      return snapshotPrompt;
+    }
+    if (params.entries && params.entries.length > 0) {
+      const prompt = buildWorkspaceSkillsPrompt(params.workspaceDir, {
+        entries: params.entries,
+        config: params.config,
+        agentId: params.agentId,
+      });
+      return prompt.trim() ? prompt : "";
+    }
+    return "";
+  }
+  if (params.skillsSnapshot?.resolvedSkills) {
+    return renderTaskSelectedSkillsPrompt({
+      skills: params.skillsSnapshot.resolvedSkills,
+      taskText: params.taskText ?? "",
+      workspaceDir: params.workspaceDir,
+    });
   }
   if (params.entries && params.entries.length > 0) {
-    const prompt = buildWorkspaceSkillsPrompt(params.workspaceDir, {
+    const state = resolveWorkspaceSkillPromptState(params.workspaceDir, {
       entries: params.entries,
       config: params.config,
       agentId: params.agentId,
     });
-    return prompt.trim() ? prompt : "";
+    return renderTaskSelectedSkillsPrompt({
+      skills: state.resolvedSkills,
+      taskText: params.taskText ?? "",
+      workspaceDir: params.workspaceDir,
+    });
   }
-  return "";
+  return params.skillsSnapshot?.prompt?.trim() ?? "";
 }
 
 export function loadWorkspaceSkillEntries(

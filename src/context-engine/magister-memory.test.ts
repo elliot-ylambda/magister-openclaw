@@ -10,12 +10,14 @@ describe("MagisterMemoryContextEngine", () => {
   let memoryPath: string;
   let userPath: string;
   let projectPath: string;
+  let brandPath: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "mem-engine-test-"));
     memoryPath = join(dir, "MEMORY.md");
     userPath = join(dir, "USER.md");
     projectPath = join(dir, "PROJECT.md");
+    brandPath = join(dir, "BRAND.md");
   });
 
   afterEach(async () => {
@@ -27,6 +29,7 @@ describe("MagisterMemoryContextEngine", () => {
       memoryPath,
       userPath,
       projectPath,
+      brandPath,
       inner: new LegacyContextEngine(),
     });
     const res = await engine.assemble({ sessionId: "s1", messages: [] });
@@ -42,6 +45,7 @@ describe("MagisterMemoryContextEngine", () => {
       memoryPath,
       userPath,
       projectPath,
+      brandPath,
       inner: new LegacyContextEngine(),
     });
     const res = await engine.assemble({ sessionId: "s1", messages: [] });
@@ -51,6 +55,7 @@ describe("MagisterMemoryContextEngine", () => {
     expect(res.systemPromptAddition).toContain("User likes X");
     expect(res.systemPromptAddition).toContain("## Project Assignment");
     expect(res.systemPromptAddition).toContain("Acme assignment");
+    expect(res.systemPromptAddition).toContain("provenance=trusted_project_state");
   });
 
   it("freezes snapshot per session — does not re-read file after first assemble", async () => {
@@ -59,6 +64,7 @@ describe("MagisterMemoryContextEngine", () => {
       memoryPath,
       userPath,
       projectPath,
+      brandPath,
       inner: new LegacyContextEngine(),
     });
 
@@ -78,6 +84,7 @@ describe("MagisterMemoryContextEngine", () => {
       memoryPath,
       userPath,
       projectPath,
+      brandPath,
       inner: new LegacyContextEngine(),
     });
     await engine.assemble({ sessionId: "s1", messages: [] });
@@ -85,5 +92,53 @@ describe("MagisterMemoryContextEngine", () => {
     await writeFile(memoryPath, "Updated");
     const fresh = await engine.assemble({ sessionId: "s2", messages: [] });
     expect(fresh.systemPromptAddition).toContain("Updated");
+  });
+
+  it("injects bounded sourced brand claims only for relevant work", async () => {
+    await writeFile(
+      brandPath,
+      [
+        "# Brand context",
+        "",
+        "Content outside the generated markers is user-owned and takes precedence.",
+        "",
+        "Confirmed voice: precise and warm.",
+        "<!-- MAGISTER:GENERATED BRAND START -->",
+        "Audit inference: energetic tone.",
+        "<!-- MAGISTER:GENERATED BRAND END -->",
+      ].join("\n"),
+    );
+    const engine = new MagisterMemoryContextEngine({
+      memoryPath,
+      userPath,
+      projectPath,
+      brandPath,
+      inner: new LegacyContextEngine(),
+    });
+
+    const irrelevant = await engine.assemble({
+      sessionId: "s1",
+      messages: [],
+      prompt: "What is the current server uptime?",
+    });
+    expect(irrelevant.systemPromptAddition ?? "").not.toContain("Confirmed voice");
+
+    const relevant = await engine.assemble({
+      sessionId: "s1",
+      messages: [],
+      prompt: "Draft homepage copy in our brand voice",
+    });
+    expect(relevant.systemPromptAddition).toContain("Confirmed voice: precise and warm.");
+    expect(relevant.systemPromptAddition).toContain("Audit inference: energetic tone.");
+    expect(relevant.systemPromptAddition).toContain(
+      "provenance=user_authored_content source=brand_file_overrides",
+    );
+    expect(relevant.systemPromptAddition).toContain(
+      "provenance=trusted_project_state source=current_audit_inference",
+    );
+    expect(relevant.systemPromptAddition!.indexOf("Confirmed voice")).toBeLessThan(
+      relevant.systemPromptAddition!.indexOf("Audit inference"),
+    );
+    expect(relevant.systemPromptAddition!.length).toBeLessThan(6_000);
   });
 });

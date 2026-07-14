@@ -44,6 +44,9 @@ describe("MagisterWorkflowsContextEngine", () => {
 
     expect(result.systemPromptAddition).toContain("## Available Workflows");
     expect(result.systemPromptAddition).toContain("SEO Site Audit");
+    expect(result.systemPromptAddition).toContain(
+      "provenance=trusted_project_state source=workflow_summary",
+    );
     expect(result.systemPromptAddition).not.toContain("workflows changed since your last reply");
   });
 

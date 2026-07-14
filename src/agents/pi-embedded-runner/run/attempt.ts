@@ -742,6 +742,7 @@ export async function runEmbeddedAttempt(
       config: params.config,
       workspaceDir: effectiveWorkspace,
       agentId: sessionAgentId,
+      taskText: params.prompt,
     });
     prepStages.mark("skills");
 

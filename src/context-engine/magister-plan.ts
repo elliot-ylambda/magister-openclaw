@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
+import { renderMagisterContextBlock } from "./magister-provenance.js";
 import { MagisterWorkflowsContextEngine } from "./magister-workflows.js";
 import { registerContextEngine } from "./registry.js";
 import type {
@@ -122,7 +123,11 @@ export class MagisterPlanContextEngine implements ContextEngine {
     const note = changed
       ? "Note: the live marketing plan changed since your last reply. Use the current plan below as the operating source of truth.\n\n"
       : "";
-    const block = `${note}${planSummary.trimEnd()}`;
+    const block = renderMagisterContextBlock({
+      provenance: "trusted_project_state",
+      source: "live_marketing_plan",
+      content: `${note}${planSummary.trimEnd()}`,
+    });
 
     const previous = innerResult.systemPromptAddition?.trim();
     const merged = previous ? `${previous}\n\n${block}` : block;

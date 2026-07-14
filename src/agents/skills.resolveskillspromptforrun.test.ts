@@ -1,7 +1,10 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createCanonicalFixtureSkill } from "./skills.test-helpers.js";
 import type { SkillEntry } from "./skills/types.js";
-import { resolveSkillsPromptForRun } from "./skills/workspace.js";
+import { resolveSkillsPromptForRun, SKILL_INDEX_RELATIVE_PATH } from "./skills/workspace.js";
 
 describe("resolveSkillsPromptForRun", () => {
   it("prefers snapshot prompt when available", () => {
@@ -28,6 +31,44 @@ describe("resolveSkillsPromptForRun", () => {
     });
     expect(prompt).toContain("<available_skills>");
     expect(prompt).toContain("/app/skills/demo-skill/SKILL.md");
+  });
+
+  it("loads only task-selected descriptions and writes a complete on-demand index", () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "skill-selection-"));
+    const seo = createFixtureSkill({
+      name: "seo-audit",
+      description: "Audit technical SEO, keywords, and search performance",
+      filePath: "/app/skills/seo-audit/SKILL.md",
+      baseDir: "/app/skills/seo-audit",
+      source: "openclaw-workspace",
+    });
+    const gmail = createFixtureSkill({
+      name: "magister-gmail",
+      description: "Read and send Gmail messages",
+      filePath: "/app/skills/magister-gmail/SKILL.md",
+      baseDir: "/app/skills/magister-gmail",
+      source: "openclaw-workspace",
+    });
+    try {
+      const prompt = resolveSkillsPromptForRun({
+        skillsSnapshot: { prompt: "legacy 90k prompt", skills: [], resolvedSkills: [gmail, seo] },
+        workspaceDir,
+        taskText: "Audit our SEO keywords and search performance",
+      });
+
+      expect(prompt).toContain("Audit technical SEO");
+      expect(prompt).not.toContain("Read and send Gmail messages");
+      expect(prompt).not.toContain("legacy 90k prompt");
+      expect(prompt.length).toBeLessThan(12_000);
+
+      const index = readFileSync(join(workspaceDir, SKILL_INDEX_RELATIVE_PATH), "utf8");
+      expect(index).toContain("`seo-audit`");
+      expect(index).toContain("`magister-gmail`");
+      expect(index).not.toContain("Audit technical SEO");
+      expect(index).not.toContain("Read and send Gmail messages");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
   });
 
   it("keeps legacy entries with disableModelInvocation hidden when exposure metadata is absent", () => {
