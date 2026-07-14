@@ -60,21 +60,39 @@ async function recoverStaleLock(path: string): Promise<void> {
   try {
     lockStat = await stat(path);
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return;
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return;
+    }
     throw error;
   }
-  if (Date.now() - lockStat.mtimeMs <= LOCK_STALE_MS) return;
+  if (Date.now() - lockStat.mtimeMs <= LOCK_STALE_MS) {
+    return;
+  }
   const owner = await readOwner(path);
-  if (processAlive(owner?.pid)) return;
+  if (processAlive(owner?.pid)) {
+    return;
+  }
 
   const stale = `${path}.stale-${randomBytes(8).toString("hex")}`;
   try {
     await rename(path, stale);
   } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") return;
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return;
+    }
     throw error;
   }
   await rm(stale, { recursive: true, force: true });
+  await fsyncDirectory(dirname(path));
+}
+
+async function releaseContextLock(path: string, token: string): Promise<void> {
+  const owner = await readOwner(path);
+  if (owner?.token !== token) {
+    throw new Error("context lock ownership changed");
+  }
+  await unlink(join(path, "owner.json"));
+  await rmdir(path);
   await fsyncDirectory(dirname(path));
 }
 
@@ -102,22 +120,25 @@ export async function withContextLock<T>(
         await rm(lockPath, { recursive: true, force: true });
         await fsyncDirectory(dirname(lockPath));
       }
-      if (!isNodeError(error) || error.code !== "EEXIST") throw error;
+      if (!isNodeError(error) || error.code !== "EEXIST") {
+        throw error;
+      }
       await recoverStaleLock(lockPath);
-      if (Date.now() >= deadline) throw new Error("timed out waiting for context lock");
+      if (Date.now() >= deadline) {
+        throw new Error("timed out waiting for context lock", { cause: error });
+      }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
+  let result: T;
   try {
-    return await action();
-  } finally {
-    const owner = await readOwner(lockPath);
-    if (owner?.token !== token) {
-      throw new Error("context lock ownership changed");
-    }
-    await unlink(join(lockPath, "owner.json"));
-    await rmdir(lockPath);
-    await fsyncDirectory(dirname(lockPath));
+    result = await action();
+  } catch (error) {
+    // Never mask the action's error with a secondary lock-cleanup failure.
+    await releaseContextLock(lockPath, token).catch(() => {});
+    throw error;
   }
+  await releaseContextLock(lockPath, token);
+  return result;
 }
