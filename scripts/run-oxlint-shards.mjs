@@ -36,8 +36,19 @@ const shards = [
   },
 ];
 
-const results = await Promise.all(shards.map((shard) => runShard(shard)));
+const results =
+  process.env.OPENCLAW_OXLINT_SHARDS_SEQUENTIAL === "1"
+    ? await runShardsSequentially(shards)
+    : await Promise.all(shards.map((shard) => runShard(shard)));
 process.exitCode = results.find((status) => status !== 0) ?? 0;
+
+async function runShardsSequentially(pendingShards) {
+  const [shard, ...remainingShards] = pendingShards;
+  if (!shard) {
+    return [];
+  }
+  return [await runShard(shard), ...(await runShardsSequentially(remainingShards))];
+}
 
 async function runShard(shard) {
   console.error(`[oxlint:${shard.name}] starting`);
