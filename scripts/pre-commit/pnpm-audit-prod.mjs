@@ -599,6 +599,31 @@ export function filterFindingsBySeverity(advisoriesByPackage, minSeverity) {
   return findings;
 }
 
+function extractGhsa(value) {
+  const match = String(value ?? "").match(/GHSA-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+/iu);
+  return match?.[0].toUpperCase() ?? null;
+}
+
+export function filterIgnoredGhsas(findings, ignoredGhsas) {
+  const ignored = new Set([...ignoredGhsas].map((value) => extractGhsa(value)).filter(Boolean));
+  return findings.filter((finding) => {
+    const ghsa = extractGhsa(finding.id) ?? extractGhsa(finding.url);
+    return !ghsa || !ignored.has(ghsa);
+  });
+}
+
+async function readIgnoredGhsas(rootDir) {
+  const packageJson = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"));
+  const configured = packageJson?.pnpm?.auditConfig?.ignoreGhsas;
+  if (configured === undefined) {
+    return [];
+  }
+  if (!Array.isArray(configured) || configured.some((value) => typeof value !== "string")) {
+    throw new Error("package.json pnpm.auditConfig.ignoreGhsas must be an array of strings.");
+  }
+  return configured;
+}
+
 function chunkEntries(entries, size) {
   const chunks = [];
   for (let index = 0; index < entries.length; index += size) {
@@ -669,10 +694,14 @@ export async function runPnpmAuditProd({
     Object.assign(advisoryResults, chunkResults);
   }
 
-  const findings = filterFindingsBySeverity(advisoryResults, normalizedMinSeverity);
+  const ignoredGhsas = await readIgnoredGhsas(rootDir);
+  const allFindings = filterFindingsBySeverity(advisoryResults, normalizedMinSeverity);
+  const findings = filterIgnoredGhsas(allFindings, ignoredGhsas);
+  const ignoredCount = allFindings.length - findings.length;
   if (findings.length === 0) {
     stdout.write(
-      `No ${normalizedMinSeverity} or higher advisories found for production dependencies.\n`,
+      `No unignored ${normalizedMinSeverity} or higher advisories found for production dependencies` +
+        `${ignoredCount ? ` (${ignoredCount} documented backport exception${ignoredCount === 1 ? "" : "s"})` : ""}.\n`,
     );
     return 0;
   }
