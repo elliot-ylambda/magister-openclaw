@@ -8,6 +8,7 @@ import {
 } from "openclaw/plugin-sdk/core";
 import { Type } from "typebox";
 import { mirrorAudit } from "./audit-mirror.js";
+import { withContextLock } from "./context-lock.js";
 import { MemoryStore, type MemoryTarget } from "./memory-store.js";
 
 const DEFAULT_AUDIT_ENDPOINT = "http://magister-gateway.internal:8081/api/memory/audit";
@@ -97,85 +98,87 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
       const target: MemoryTarget = params.target === "user" ? "user" : "memory";
       const workspaceDir = resolveWorkspaceDir(api, ctx);
 
-      return memoryWriteQueue.enqueue(`${workspaceDir}:${target}`, async () => {
-        const store = new MemoryStore({
-          memoryDir: workspaceDir,
-          memoryCharLimit: cfg.memoryCharLimit,
-          userCharLimit: cfg.userCharLimit,
-        });
-        await store.loadFromDisk();
+      return memoryWriteQueue.enqueue(`${workspaceDir}:${target}`, async () =>
+        withContextLock(workspaceDir, async () => {
+          const store = new MemoryStore({
+            memoryDir: workspaceDir,
+            memoryCharLimit: cfg.memoryCharLimit,
+            userCharLimit: cfg.userCharLimit,
+          });
+          await store.loadFromDisk();
 
-        const gatewayToken = process.env.GATEWAY_TOKEN ?? "";
-        const auditEnabled = gatewayToken.length > 0;
-        const fireAudit = (
-          kind: "add" | "replace" | "remove" | "blocked",
-          content: string,
-          blockedReason?: string,
-        ): void => {
-          if (!auditEnabled) {
-            return;
-          }
-          void mirrorAudit(
-            { endpoint: cfg.auditEndpoint, gatewayToken },
-            { action: kind, target, content, blockedReason },
-          );
-        };
+          const gatewayToken = process.env.GATEWAY_TOKEN ?? "";
+          const auditEnabled = gatewayToken.length > 0;
+          const fireAudit = (
+            kind: "add" | "replace" | "remove" | "blocked",
+            content: string,
+            blockedReason?: string,
+          ): void => {
+            if (!auditEnabled) {
+              return;
+            }
+            void mirrorAudit(
+              { endpoint: cfg.auditEndpoint, gatewayToken },
+              { action: kind, target, content, blockedReason },
+            );
+          };
 
-        if (action === "add") {
-          if (!params.content) {
-            return jsonResult({
-              success: false,
-              target,
-              message: "content is required for add",
-            });
+          if (action === "add") {
+            if (!params.content) {
+              return jsonResult({
+                success: false,
+                target,
+                message: "content is required for add",
+              });
+            }
+            const res = await store.add(target, params.content);
+            if (res.success) {
+              fireAudit("add", params.content);
+            } else {
+              fireAudit("blocked", params.content, res.message);
+            }
+            return jsonResult(res);
           }
-          const res = await store.add(target, params.content);
-          if (res.success) {
-            fireAudit("add", params.content);
-          } else {
-            fireAudit("blocked", params.content, res.message);
-          }
-          return jsonResult(res);
-        }
 
-        if (action === "replace") {
-          if (!params.old_text || !params.content) {
-            return jsonResult({
-              success: false,
-              target,
-              message: "old_text and content are required for replace",
-            });
+          if (action === "replace") {
+            if (!params.old_text || !params.content) {
+              return jsonResult({
+                success: false,
+                target,
+                message: "old_text and content are required for replace",
+              });
+            }
+            const res = await store.replace(target, params.old_text, params.content);
+            if (res.success) {
+              fireAudit("replace", params.content);
+            } else {
+              fireAudit("blocked", params.content, res.message);
+            }
+            return jsonResult(res);
           }
-          const res = await store.replace(target, params.old_text, params.content);
-          if (res.success) {
-            fireAudit("replace", params.content);
-          } else {
-            fireAudit("blocked", params.content, res.message);
-          }
-          return jsonResult(res);
-        }
 
-        if (action === "remove") {
-          if (!params.old_text) {
-            return jsonResult({
-              success: false,
-              target,
-              message: "old_text is required for remove",
-            });
+          if (action === "remove") {
+            if (!params.old_text) {
+              return jsonResult({
+                success: false,
+                target,
+                message: "old_text is required for remove",
+              });
+            }
+            const res = await store.remove(target, params.old_text);
+            if (res.success) {
+              fireAudit("remove", params.old_text);
+            }
+            return jsonResult(res);
           }
-          const res = await store.remove(target, params.old_text);
-          if (res.success) {
-            fireAudit("remove", params.old_text);
-          }
-          return jsonResult(res);
-        }
 
-        return jsonResult({
-          success: false,
-          target,
-          message: `Unknown action: ${String(action)}`,
-        });
-      });
+          return jsonResult({
+            success: false,
+            target,
+            message: `Unknown action: ${String(action)}`,
+          });
+        }),
+      );
     },
   };
 }

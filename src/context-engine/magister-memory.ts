@@ -17,11 +17,13 @@ import type {
 
 const DEFAULT_MEMORY_PATH = "/data/.openclaw/workspace/MEMORY.md";
 const DEFAULT_USER_PATH = "/data/.openclaw/workspace/USER.md";
+const DEFAULT_PROJECT_PATH = "/data/.openclaw/workspace/PROJECT.md";
 const MAX_TRACKED_SESSIONS = 200;
 
 type Options = {
   memoryPath?: string;
   userPath?: string;
+  projectPath?: string;
   inner?: ContextEngine;
 };
 
@@ -42,18 +44,21 @@ export class MagisterMemoryContextEngine implements ContextEngine {
   readonly info: ContextEngineInfo = {
     id: "magister-memory",
     name: "Magister Memory Context Engine",
-    version: "1.0.0",
+    version: "1.1.0",
+    ownsWorkspaceBootstrapFiles: ["MEMORY.md", "USER.md", "PROJECT.md"],
   };
 
   private readonly inner: ContextEngine;
   private readonly memoryPath: string;
   private readonly userPath: string;
+  private readonly projectPath: string;
   private readonly snapshotBySession = new Map<string, string>();
 
   constructor(options: Options = {}) {
     this.inner = options.inner ?? new MagisterIntegrationsContextEngine();
     this.memoryPath = options.memoryPath ?? DEFAULT_MEMORY_PATH;
     this.userPath = options.userPath ?? DEFAULT_USER_PATH;
+    this.projectPath = options.projectPath ?? DEFAULT_PROJECT_PATH;
   }
 
   async ingest(params: {
@@ -130,9 +135,10 @@ export class MagisterMemoryContextEngine implements ContextEngine {
   }
 
   private async renderSnapshot(): Promise<string> {
-    const [memory, user] = await Promise.all([
+    const [memory, user, project] = await Promise.all([
       readTextOrEmpty(this.memoryPath),
       readTextOrEmpty(this.userPath),
+      readTextOrEmpty(this.projectPath),
     ]);
 
     const blocks: string[] = [];
@@ -141,6 +147,9 @@ export class MagisterMemoryContextEngine implements ContextEngine {
     }
     if (user) {
       blocks.push(`## User Profile\n\n${user}`);
+    }
+    if (project) {
+      blocks.push(`## Project Assignment\n\n${project}`);
     }
     return blocks.join("\n\n");
   }

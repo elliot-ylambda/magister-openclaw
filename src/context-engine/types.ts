@@ -66,6 +66,8 @@ export type ContextEngineInfo = {
   id: string;
   name: string;
   version?: string;
+  /** Workspace bootstrap basenames injected by this engine, for prompt dedupe. */
+  ownsWorkspaceBootstrapFiles?: string[];
   /** True when the engine manages its own compaction lifecycle. */
   ownsCompaction?: boolean;
   /**

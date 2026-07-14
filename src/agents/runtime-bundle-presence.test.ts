@@ -1,0 +1,136 @@
+import fs from "node:fs";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  beginPromptPresence,
+  readActiveRuntimeBundle,
+  retryPromptPresence,
+} from "./runtime-bundle-presence.js";
+import { buildWorkspaceSkillSnapshot } from "./skills/workspace.js";
+import { buildSystemPromptReport } from "./system-prompt-report.js";
+
+const releaseId = `rb_${"a".repeat(64)}`;
+const manifestSha256 = "b".repeat(64);
+const templatesSha256 = "c".repeat(64);
+const skillsSha256 = "d".repeat(64);
+
+const temporaryDirectories: string[] = [];
+
+async function activeWorkspace(): Promise<string> {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "runtime-presence-"));
+  temporaryDirectories.push(workspace);
+  const runtime = path.join(workspace, ".magister", "runtime");
+  await mkdir(runtime, { recursive: true });
+  await writeFile(
+    path.join(runtime, "applied-manifest.json"),
+    JSON.stringify({ release_id: releaseId, manifest_sha256: manifestSha256 }),
+  );
+  await writeFile(
+    path.join(runtime, "bundle-active"),
+    JSON.stringify({ release_id: releaseId, state: "active" }),
+  );
+  await writeFile(
+    path.join(runtime, "process-state.json"),
+    JSON.stringify({
+      active: {
+        release_id: releaseId,
+        manifest_sha256: manifestSha256,
+        templates_sha256: templatesSha256,
+        skills_sha256: skillsSha256,
+      },
+      boot_id: "boot-1",
+      lease: `lease-${"x".repeat(32)}`,
+      machine_id: "machine-1",
+      process_generation: "7",
+    }),
+  );
+  return workspace;
+}
+
+afterEach(async () => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  await Promise.all(
+    temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
+  );
+});
+
+describe("runtime bundle prompt presence", () => {
+  it("binds skill snapshots and prompt reports to the active release", async () => {
+    const workspace = await activeWorkspace();
+
+    expect(readActiveRuntimeBundle(workspace)).toEqual({
+      releaseId,
+      manifestSha256,
+      templatesSha256,
+      skillsSha256,
+    });
+    expect(buildWorkspaceSkillSnapshot(workspace, { entries: [] }).releaseId).toBe(releaseId);
+    expect(
+      buildSystemPromptReport({
+        source: "run",
+        generatedAt: 1,
+        workspaceDir: workspace,
+        bootstrapMaxChars: 100,
+        systemPrompt: "prompt",
+        bootstrapFiles: [],
+        injectedFiles: [],
+        skillsPrompt: "",
+        tools: [],
+      }).runtimeBundle,
+    ).toEqual({ releaseId, manifestSha256, templatesSha256, skillsSha256 });
+  });
+
+  it("records before the bounded send and retries a pending ACK after the request", async () => {
+    const workspace = await activeWorkspace();
+    vi.stubEnv("GATEWAY_TOKEN", "machine-token");
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        calls += 1;
+        const pending = path.join(workspace, ".magister", "runtime", "prompt-presence", "pending");
+        expect(fs.readdirSync(pending)).toHaveLength(1);
+        const payload = JSON.parse(String(init.body));
+        expect(payload).toMatchObject({
+          phase: "prompt_present",
+          release_id: releaseId,
+          session_id: "session-1",
+        });
+        return { ok: calls > 1 } as Response;
+      }),
+    );
+
+    const pending = await beginPromptPresence({ workspaceDir: workspace, sessionId: "session-1" });
+    expect(pending).toBeDefined();
+    expect(fs.existsSync(pending!.pendingPath)).toBe(true);
+
+    await retryPromptPresence(pending);
+
+    expect(calls).toBe(2);
+    expect(fs.existsSync(pending!.pendingPath)).toBe(false);
+    expect(JSON.parse(await readFile(pending!.sentPath, "utf8"))).toMatchObject({
+      release_id: releaseId,
+      session_id: "session-1",
+    });
+  });
+
+  it("does not report a candidate when the active marker disagrees", async () => {
+    const workspace = await activeWorkspace();
+    await writeFile(
+      path.join(workspace, ".magister", "runtime", "bundle-active"),
+      JSON.stringify({ release_id: `rb_${"e".repeat(64)}`, state: "active" }),
+    );
+    vi.stubEnv("GATEWAY_TOKEN", "machine-token");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(readActiveRuntimeBundle(workspace)).toBeUndefined();
+    expect(
+      await beginPromptPresence({ workspaceDir: workspace, sessionId: "session" }),
+    ).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

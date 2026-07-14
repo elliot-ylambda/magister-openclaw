@@ -9,11 +9,13 @@ describe("MagisterMemoryContextEngine", () => {
   let dir: string;
   let memoryPath: string;
   let userPath: string;
+  let projectPath: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "mem-engine-test-"));
     memoryPath = join(dir, "MEMORY.md");
     userPath = join(dir, "USER.md");
+    projectPath = join(dir, "PROJECT.md");
   });
 
   afterEach(async () => {
@@ -24,6 +26,7 @@ describe("MagisterMemoryContextEngine", () => {
     const engine = new MagisterMemoryContextEngine({
       memoryPath,
       userPath,
+      projectPath,
       inner: new LegacyContextEngine(),
     });
     const res = await engine.assemble({ sessionId: "s1", messages: [] });
@@ -31,12 +34,14 @@ describe("MagisterMemoryContextEngine", () => {
     expect(res.systemPromptAddition ?? "").not.toContain("## User Profile");
   });
 
-  it("folds memory + user content into system prompt addition", async () => {
+  it("folds memory, user, and project content into system prompt addition", async () => {
     await writeFile(memoryPath, "Fact 1\n§\nFact 2");
     await writeFile(userPath, "User likes X");
+    await writeFile(projectPath, "Acme assignment");
     const engine = new MagisterMemoryContextEngine({
       memoryPath,
       userPath,
+      projectPath,
       inner: new LegacyContextEngine(),
     });
     const res = await engine.assemble({ sessionId: "s1", messages: [] });
@@ -44,6 +49,8 @@ describe("MagisterMemoryContextEngine", () => {
     expect(res.systemPromptAddition).toContain("Fact 1");
     expect(res.systemPromptAddition).toContain("## User Profile");
     expect(res.systemPromptAddition).toContain("User likes X");
+    expect(res.systemPromptAddition).toContain("## Project Assignment");
+    expect(res.systemPromptAddition).toContain("Acme assignment");
   });
 
   it("freezes snapshot per session — does not re-read file after first assemble", async () => {
@@ -51,6 +58,7 @@ describe("MagisterMemoryContextEngine", () => {
     const engine = new MagisterMemoryContextEngine({
       memoryPath,
       userPath,
+      projectPath,
       inner: new LegacyContextEngine(),
     });
 
@@ -69,6 +77,7 @@ describe("MagisterMemoryContextEngine", () => {
     const engine = new MagisterMemoryContextEngine({
       memoryPath,
       userPath,
+      projectPath,
       inner: new LegacyContextEngine(),
     });
     await engine.assemble({ sessionId: "s1", messages: [] });

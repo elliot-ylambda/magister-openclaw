@@ -1,3 +1,4 @@
+import { readActiveRuntimeBundle } from "../../agents/runtime-bundle-presence.js";
 import type { SkillSnapshot } from "../../agents/skills.js";
 import { matchesSkillFilter } from "../../agents/skills/filter.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -27,9 +28,11 @@ export async function resolveCronSkillsSnapshot(params: {
   const snapshotVersion = runtime.getSkillsSnapshotVersion(params.workspaceDir);
   const skillFilter = runtime.resolveAgentSkillsFilter(params.config, params.agentId);
   const existingSnapshot = params.existingSnapshot;
+  const activeRuntimeBundleReleaseId = readActiveRuntimeBundle(params.workspaceDir)?.releaseId;
   const shouldRefresh =
     !existingSnapshot ||
     existingSnapshot.version !== snapshotVersion ||
+    existingSnapshot.releaseId !== activeRuntimeBundleReleaseId ||
     !matchesSkillFilter(existingSnapshot.skillFilter, skillFilter);
   if (!shouldRefresh) {
     return existingSnapshot;

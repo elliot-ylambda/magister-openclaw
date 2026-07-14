@@ -540,6 +540,8 @@ export type GroupKeyResolution = {
 export type SessionSkillSnapshot = {
   prompt: string;
   skills: Array<{ name: string; primaryEnv?: string; requiredEnv?: string[] }>;
+  /** Runtime bundle that supplied the persisted skill prompt. */
+  releaseId?: string;
   /** Normalized agent-level filter used to build this snapshot; undefined means unrestricted. */
   skillFilter?: string[];
   /**
@@ -576,6 +578,12 @@ export type SessionSystemPromptReport = {
   sandbox?: {
     mode?: string;
     sandboxed?: boolean;
+  };
+  runtimeBundle?: {
+    releaseId: string;
+    manifestSha256: string;
+    templatesSha256: string;
+    skillsSha256: string;
   };
   systemPrompt: {
     chars: number;

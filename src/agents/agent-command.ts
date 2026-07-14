@@ -69,6 +69,7 @@ import {
 } from "./model-selection.js";
 import { classifyEmbeddedPiRunResultForModelFallback } from "./pi-embedded-runner/result-fallback-classifier.js";
 import { resolveProviderIdForAuth } from "./provider-auth-aliases.js";
+import { readActiveRuntimeBundle } from "./runtime-bundle-presence.js";
 import { hydrateResolvedSkillsAsync } from "./skills/snapshot-hydration.js";
 import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
@@ -632,9 +633,11 @@ async function agentCommandInternal(
     const skillsSnapshotVersion = getSkillsSnapshotVersion(workspaceDir);
     const skillFilter = resolveAgentSkillsFilter(cfg, sessionAgentId);
     const currentSkillsSnapshot = sessionEntry?.skillsSnapshot;
+    const activeRuntimeBundleReleaseId = readActiveRuntimeBundle(workspaceDir)?.releaseId;
     const shouldRefreshSkillsSnapshot =
       !currentSkillsSnapshot ||
       shouldRefreshSnapshotForVersion(currentSkillsSnapshot.version, skillsSnapshotVersion) ||
+      currentSkillsSnapshot.releaseId !== activeRuntimeBundleReleaseId ||
       !matchesSkillFilter(currentSkillsSnapshot.skillFilter, skillFilter);
     const needsSkillsSnapshot = isNewSession || shouldRefreshSkillsSnapshot;
     const buildSkillsSnapshot = async () => {
