@@ -378,7 +378,7 @@ describe("buildAgentSystemPrompt", () => {
       'For requests like "do this in claude code/cursor/gemini/opencode" or similar ACP harnesses, treat it as ACP harness intent',
     );
     expect(prompt).toContain(
-      'On Discord, default ACP harness requests to thread-bound persistent sessions (`thread: true`, `mode: "session"`)',
+      'Default ACP harness requests to thread-bound persistent sessions (`thread: true`, `mode: "session"`) unless the user asks otherwise.',
     );
     expect(prompt).toContain(
       "do not route ACP harness requests through `subagents`/`agents_list` or local PTY exec flows",
@@ -402,7 +402,7 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain(
       'For requests like "do this in claude code/cursor/gemini/opencode" or similar ACP harnesses, treat it as ACP harness intent',
     );
-    expect(prompt).not.toContain("default ACP harness requests to thread-bound");
+    expect(prompt).not.toContain("Default ACP harness requests to thread-bound");
     expect(prompt).not.toContain('use `sessions_spawn` (`runtime: "acp"`, `thread: true`)');
   });
 
