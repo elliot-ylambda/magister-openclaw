@@ -35,7 +35,7 @@ function spawnDetachedGatewayProcess(): { child: ChildProcess; pid?: number } {
 
 /**
  * Attempt to restart this process with a fresh PID.
- * - supervised environments (launchd/systemd/schtasks): caller should exit and let supervisor restart
+ * - supervised environments (entrypoint/launchd/systemd/schtasks): caller exits for supervisor restart
  * - OPENCLAW_NO_RESPAWN=1: caller should keep in-process restart behavior (tests/dev)
  * - otherwise: spawn detached child with current argv/execArgv, then caller exits
  */

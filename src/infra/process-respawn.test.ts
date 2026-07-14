@@ -176,6 +176,19 @@ describe("restartGatewayProcessWithFreshPid", () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  it("lets an explicit container entrypoint own the fresh process generation", () => {
+    clearSupervisorHints();
+    setPlatform("linux");
+    process.env.OPENCLAW_ENTRYPOINT_SUPERVISED = "1";
+    isContainerEnvironmentMock.mockReturnValue(true);
+
+    const result = restartGatewayProcessWithFreshPid();
+
+    expect(result).toEqual({ mode: "supervised" });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(triggerOpenClawRestartMock).not.toHaveBeenCalled();
+  });
+
   it("returns supervised when OpenClaw gateway task markers are set on Windows", () => {
     clearSupervisorHints();
     setPlatform("win32");

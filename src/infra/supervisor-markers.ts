@@ -1,10 +1,12 @@
 const SUPERVISOR_HINTS = {
+  entrypoint: ["OPENCLAW_ENTRYPOINT_SUPERVISED"],
   launchd: ["LAUNCH_JOB_LABEL", "LAUNCH_JOB_NAME", "XPC_SERVICE_NAME", "OPENCLAW_LAUNCHD_LABEL"],
   systemd: ["OPENCLAW_SYSTEMD_UNIT", "INVOCATION_ID", "SYSTEMD_EXEC_PID", "JOURNAL_STREAM"],
   schtasks: ["OPENCLAW_WINDOWS_TASK_NAME"],
 } as const;
 
 export const SUPERVISOR_HINT_ENV_VARS = [
+  ...SUPERVISOR_HINTS.entrypoint,
   ...SUPERVISOR_HINTS.launchd,
   ...SUPERVISOR_HINTS.systemd,
   ...SUPERVISOR_HINTS.schtasks,
@@ -12,7 +14,7 @@ export const SUPERVISOR_HINT_ENV_VARS = [
   "OPENCLAW_SERVICE_KIND",
 ] as const;
 
-export type RespawnSupervisor = "launchd" | "systemd" | "schtasks";
+export type RespawnSupervisor = "entrypoint" | "launchd" | "systemd" | "schtasks";
 
 function hasAnyHint(env: NodeJS.ProcessEnv, keys: readonly string[]): boolean {
   return keys.some((key) => {
@@ -25,6 +27,9 @@ export function detectRespawnSupervisor(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): RespawnSupervisor | null {
+  if (hasAnyHint(env, SUPERVISOR_HINTS.entrypoint)) {
+    return "entrypoint";
+  }
   if (platform === "darwin") {
     return hasAnyHint(env, SUPERVISOR_HINTS.launchd) ? "launchd" : null;
   }
