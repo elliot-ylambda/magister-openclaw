@@ -145,7 +145,9 @@ describe("Magister entrypoint config round-trip", () => {
     const cfg = buildCanaryRuntimeConfig();
     const parsed = OpenClawSchema.safeParse(cfg);
     expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
+    if (!parsed.success) {
+      return;
+    }
     const data = parsed.data as Record<string, unknown>;
     // cron.completionWebhook — fork patch (Patches 3+4)
     expect((data.cron as { completionWebhook?: string }).completionWebhook).toBeTruthy();
@@ -161,7 +163,9 @@ describe("Magister entrypoint config round-trip", () => {
     const cfg = buildCanaryRuntimeConfig();
     const parsed = OpenClawSchema.safeParse(cfg);
     expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
+    if (!parsed.success) {
+      return;
+    }
     const data = parsed.data as Record<string, unknown>;
     const plugins = data.plugins as { entries?: Record<string, unknown> };
     const brave = plugins.entries?.brave as { config?: { webSearch?: Record<string, unknown> } };

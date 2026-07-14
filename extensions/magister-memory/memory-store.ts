@@ -201,9 +201,12 @@ function findUniqueMatch(entries: readonly string[], needle: string): number | s
       count++;
     }
   }
-  if (count === 0) return `No entry contains the substring '${needle}'`;
-  if (count > 1)
+  if (count === 0) {
+    return `No entry contains the substring '${needle}'`;
+  }
+  if (count > 1) {
     return `Substring '${needle}' matches ${count} entries — use a more unique substring`;
+  }
   return foundIdx;
 }
 

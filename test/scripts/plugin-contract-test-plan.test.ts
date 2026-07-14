@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createPluginContractTestShards } from "../../scripts/lib/plugin-contract-test-plan.mjs";
 
+const upstreamWorkflowIt = existsSync(".github/workflows/ci.yml") ? it : it.skip;
+
 function listContractTests(rootDir = "src/plugins/contracts"): string[] {
   if (!existsSync(rootDir)) {
     return [];
@@ -27,7 +29,7 @@ function listContractTests(rootDir = "src/plugins/contracts"): string[] {
 }
 
 describe("scripts/lib/plugin-contract-test-plan.mjs", () => {
-  it("keeps manual CI compatible with legacy target refs", () => {
+  upstreamWorkflowIt("keeps manual CI compatible with legacy target refs", () => {
     const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
 
     expect(workflow).toContain(

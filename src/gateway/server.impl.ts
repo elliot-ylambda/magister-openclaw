@@ -893,12 +893,12 @@ export async function startGatewayServer(
   // Magister fork: register subagent completion webhook hook at gateway boot.
   // Mirrors the cron.completionWebhook pattern (see server-cron-notifications.ts).
   // No-op when subagent.completionWebhook is unset.
-  registerSubagentCompletionWebhookHook();
+  registerSubagentCompletionWebhookHook(cfgAtStart);
 
   // Magister fork: Slack run completion webhook — lets the Magister gateway
   // hold the project turn slot until a Slack-triggered run finishes.
   // No-op when slackCompletion.completionWebhook is unset.
-  registerSlackCompletionWebhookHook();
+  registerSlackCompletionWebhookHook(cfgAtStart);
 
   runtimeState = createGatewayServerLiveState({
     hooksConfig: initialHooksConfig,

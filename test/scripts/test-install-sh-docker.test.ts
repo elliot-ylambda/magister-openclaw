@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const SCRIPT_PATH = "scripts/test-install-sh-docker.sh";
@@ -8,6 +8,8 @@ const BUN_GLOBAL_ASSERTIONS_PATH = "scripts/e2e/lib/bun-global-install/assertion
 const INSTALL_SMOKE_WORKFLOW_PATH = ".github/workflows/install-smoke.yml";
 const RELEASE_CHECKS_WORKFLOW_PATH = ".github/workflows/openclaw-release-checks.yml";
 const LIVE_E2E_WORKFLOW_PATH = ".github/workflows/openclaw-live-and-e2e-checks-reusable.yml";
+const installWorkflowIt = existsSync(INSTALL_SMOKE_WORKFLOW_PATH) ? it : it.skip;
+const liveE2eWorkflowIt = existsSync(LIVE_E2E_WORKFLOW_PATH) ? it : it.skip;
 
 describe("test-install-sh-docker", () => {
   it("defaults local Apple Silicon smoke runs to native arm64 while keeping CI on amd64", () => {
@@ -32,25 +34,30 @@ describe("test-install-sh-docker", () => {
     );
   });
 
-  it("uses npm latest as the update baseline and resolves it to the concrete packed version", () => {
-    const script = readFileSync(SCRIPT_PATH, "utf8");
-    const runner = readFileSync(SMOKE_RUNNER_PATH, "utf8");
-    const workflow = readFileSync(INSTALL_SMOKE_WORKFLOW_PATH, "utf8");
+  installWorkflowIt(
+    "uses npm latest as the update baseline and resolves it to the concrete packed version",
+    () => {
+      const script = readFileSync(SCRIPT_PATH, "utf8");
+      const runner = readFileSync(SMOKE_RUNNER_PATH, "utf8");
+      const workflow = readFileSync(INSTALL_SMOKE_WORKFLOW_PATH, "utf8");
 
-    expect(script).toContain(
-      'UPDATE_BASELINE_VERSION="${OPENCLAW_INSTALL_SMOKE_UPDATE_BASELINE:-latest}"',
-    );
-    expect(script).toContain('quiet_npm pack "${PACKAGE_NAME}@${UPDATE_BASELINE_VERSION}"');
-    expect(script).toContain('UPDATE_BASELINE_VERSION="$(');
-    expect(runner).toContain(
-      'UPDATE_BASELINE_VERSION="${OPENCLAW_INSTALL_UPDATE_BASELINE:-latest}"',
-    );
-    expect(runner).toContain("resolve_update_baseline_version");
-    expect(runner).toContain('quiet_npm view "${PACKAGE_NAME}@${UPDATE_BASELINE_VERSION}" version');
-    expect(workflow).toContain(
-      "OPENCLAW_INSTALL_SMOKE_UPDATE_BASELINE: ${{ inputs.update_baseline_version || 'latest' }}",
-    );
-  });
+      expect(script).toContain(
+        'UPDATE_BASELINE_VERSION="${OPENCLAW_INSTALL_SMOKE_UPDATE_BASELINE:-latest}"',
+      );
+      expect(script).toContain('quiet_npm pack "${PACKAGE_NAME}@${UPDATE_BASELINE_VERSION}"');
+      expect(script).toContain('UPDATE_BASELINE_VERSION="$(');
+      expect(runner).toContain(
+        'UPDATE_BASELINE_VERSION="${OPENCLAW_INSTALL_UPDATE_BASELINE:-latest}"',
+      );
+      expect(runner).toContain("resolve_update_baseline_version");
+      expect(runner).toContain(
+        'quiet_npm view "${PACKAGE_NAME}@${UPDATE_BASELINE_VERSION}" version',
+      );
+      expect(workflow).toContain(
+        "OPENCLAW_INSTALL_SMOKE_UPDATE_BASELINE: ${{ inputs.update_baseline_version || 'latest' }}",
+      );
+    },
+  );
 
   it("can reuse dist from the already-built root Docker smoke image", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
@@ -68,15 +75,20 @@ describe("test-install-sh-docker", () => {
     expect(dockerfile).toContain("node scripts/check-package-dist-imports.mjs /app");
   });
 
-  it("allows repository branch history and release tags for secret-backed Docker release checks", () => {
-    const workflow = readFileSync(LIVE_E2E_WORKFLOW_PATH, "utf8");
+  liveE2eWorkflowIt(
+    "allows repository branch history and release tags for secret-backed Docker release checks",
+    () => {
+      const workflow = readFileSync(LIVE_E2E_WORKFLOW_PATH, "utf8");
 
-    expect(workflow).toContain("git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'");
-    expect(workflow).toContain('git rev-parse --verify "${INPUT_REF}^{commit}"');
-    expect(workflow).toContain("repository-branch-history");
-    expect(workflow).toContain("git tag --points-at \"$selected_sha\" | grep -Eq '^v'");
-    expect(workflow).toContain("reachable from an OpenClaw branch or release tag");
-  });
+      expect(workflow).toContain(
+        "git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'",
+      );
+      expect(workflow).toContain('git rev-parse --verify "${INPUT_REF}^{commit}"');
+      expect(workflow).toContain("repository-branch-history");
+      expect(workflow).toContain("git tag --points-at \"$selected_sha\" | grep -Eq '^v'");
+      expect(workflow).toContain("reachable from an OpenClaw branch or release tag");
+    },
+  );
 
   it("prints package size audits for release smoke tarballs", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
@@ -166,7 +178,7 @@ describe("bun global install smoke", () => {
     expect(script).toContain("OPENCLAW_BUN_GLOBAL_SMOKE_DIST_IMAGE");
   });
 
-  it("gates workflow Bun install smoke to scheduled and release-check runs", () => {
+  installWorkflowIt("gates workflow Bun install smoke to scheduled and release-check runs", () => {
     const workflow = readFileSync(INSTALL_SMOKE_WORKFLOW_PATH, "utf8");
     const releaseChecks = readFileSync(RELEASE_CHECKS_WORKFLOW_PATH, "utf8");
 
