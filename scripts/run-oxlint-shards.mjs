@@ -3,6 +3,7 @@ import path from "node:path";
 
 const extraArgs = process.argv.slice(2);
 const runner = path.resolve("scripts", "run-oxlint.mjs");
+const PROGRESS_INTERVAL_MS = 60_000;
 
 const prepareResult = spawnSync(
   process.execPath,
@@ -50,11 +51,18 @@ async function runShard(shard) {
   });
 
   return await new Promise((resolve) => {
+    const progressTimer = setInterval(() => {
+      console.error(`[oxlint:${shard.name}] still running`);
+    }, PROGRESS_INTERVAL_MS);
+    progressTimer.unref();
+
     child.once("error", (error) => {
+      clearInterval(progressTimer);
       console.error(error);
       resolve(1);
     });
     child.once("close", (status) => {
+      clearInterval(progressTimer);
       console.error(`[oxlint:${shard.name}] finished`);
       resolve(status ?? 1);
     });
