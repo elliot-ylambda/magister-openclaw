@@ -927,6 +927,85 @@ function normalizedSkillPhrase(value: string): string {
     .trim();
 }
 
+function hasAnyTaskToken(tokens: Set<string>, values: readonly string[]): boolean {
+  return values.some((value) => tokens.has(value));
+}
+
+function isSkillExplicitlyNegated(skill: Skill, normalizedTask: string): boolean {
+  const nameTokens = taskTokens(skill.name);
+  for (const token of nameTokens) {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `(?:do not|don t|never|without|instead of|rather than)(?: [a-z0-9]+){0,4} ${escaped}(?: |$)`,
+    );
+    if (pattern.test(` ${normalizedTask} `)) return true;
+  }
+  return false;
+}
+
+function conflictsWithTaskIntent(params: {
+  skill: Skill;
+  promptTokens: Set<string>;
+  normalizedTask: string;
+}): boolean {
+  const name = normalizedSkillPhrase(params.skill.name);
+  const workflowAuthoringIntent = hasAnyTaskToken(params.promptTokens, [
+    "author",
+    "configure",
+    "daily",
+    "fork",
+    "monday",
+    "monthly",
+    "recurring",
+    "schedule",
+    "scheduled",
+    "weekly",
+  ]);
+  const workflowExecutionIntent = hasAnyTaskToken(params.promptTokens, [
+    "execute",
+    "existing",
+    "monitor",
+    "now",
+    "pause",
+    "resume",
+    "run",
+    "start",
+    "uuid",
+  ]);
+  if (name === "magister workflows" && workflowExecutionIntent && !workflowAuthoringIntent) {
+    return true;
+  }
+  if (name === "magister workflow runtime" && workflowAuthoringIntent && !workflowExecutionIntent) {
+    return true;
+  }
+
+  const aeoIntent =
+    params.promptTokens.has("aeo") || params.normalizedTask.includes("answer engine");
+  const trackingIntent =
+    hasAnyTaskToken(params.promptTokens, [
+      "monitor",
+      "monitoring",
+      "track",
+      "tracker",
+      "tracking",
+    ]) ||
+    params.normalizedTask.includes("over time") ||
+    params.normalizedTask.includes("time series");
+  if (name === "magister aeo audit") {
+    if (trackingIntent && !aeoIntent) return true;
+    if (params.promptTokens.has("seo") && !aeoIntent) return true;
+  }
+  if (
+    name === "magister ai visibility" &&
+    aeoIntent &&
+    !trackingIntent &&
+    hasAnyTaskToken(params.promptTokens, ["audit", "one", "probe", "standalone"])
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function selectSkillsForTask(
   skills: Skill[],
   taskText: string,
@@ -940,6 +1019,11 @@ export function selectSkillsForTask(
   }
 
   return skills
+    .filter(
+      (skill) =>
+        !isSkillExplicitlyNegated(skill, normalizedTask) &&
+        !conflictsWithTaskIntent({ skill, promptTokens, normalizedTask }),
+    )
     .map((skill) => {
       const namePhrase = normalizedSkillPhrase(skill.name);
       const nameTokens = taskTokens(skill.name);
