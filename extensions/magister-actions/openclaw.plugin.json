@@ -42,7 +42,8 @@
       "magister_open_pull_request",
       "magister_create_product",
       "magister_publish_content",
-      "magister_merge_pull_request"
+      "magister_merge_pull_request",
+      "magister_submit_workflow_completion"
     ]
   },
   "configSchema": {

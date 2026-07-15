@@ -86,6 +86,43 @@ describe("typed gateway execution", () => {
     expect(JSON.parse(String(request?.init?.body))).toEqual({ arguments: {} });
   });
 
+  it("forwards trusted workflow context without exposing it in tool arguments", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      { sessionKey: "workflow_run:00000000-0000-4000-8000-000000000001" },
+    );
+
+    await tool.execute("call-workflow", {});
+    expect(request?.init?.headers).toMatchObject({
+      "x-magister-session-key": "workflow_run:00000000-0000-4000-8000-000000000001",
+    });
+    expect(JSON.parse(String(request?.init?.body))).toEqual({ arguments: {} });
+  });
+
+  it("does not forward ordinary chat session keys", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      { sessionKey: "agent:main:webchat:session-1" },
+    );
+
+    await tool.execute("call-chat", {});
+    expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
+  });
+
   it("fails closed without a machine token", async () => {
     const tool = createMagisterActionTool(api(), action, async () => {
       throw new Error("fetch must not run");

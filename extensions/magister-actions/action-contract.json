@@ -1021,8 +1021,134 @@
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
       "tool_name": "magister_merge_pull_request"
+    },
+    {
+      "action": "submit_workflow_completion",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Submit final persisted evidence for the active plan-task workflow. Call exactly once after every step and asynchronous operation is terminal.",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "CompletionArtifact": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "default": "file",
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              }
+            },
+            "required": ["path", "sha256"],
+            "type": "object"
+          },
+          "CompletionBlocker": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "maxLength": 80,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_:-]*$",
+                "type": "string"
+              },
+              "reason": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "retryable": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "required": ["code", "reason"],
+            "type": "object"
+          },
+          "CompletionVerification": {
+            "additionalProperties": false,
+            "properties": {
+              "evidence_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "requirement": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              "status": {
+                "enum": ["passed", "failed"],
+                "type": "string"
+              }
+            },
+            "required": ["requirement", "status", "evidence_refs"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/$defs/CompletionArtifact"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "blocker": {
+            "$ref": "#/$defs/CompletionBlocker"
+          },
+          "finding_headline": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "key_metrics": {
+            "additionalProperties": true,
+            "maxProperties": 30,
+            "type": "object"
+          },
+          "verification": {
+            "items": {
+              "$ref": "#/$defs/CompletionVerification"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "version": {
+            "const": 1,
+            "default": 1,
+            "type": "integer"
+          }
+        },
+        "required": ["idempotency_key", "verification"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "tool_name": "magister_submit_workflow_completion"
     }
   ],
-  "registry_revision": "eb6d4564b0a570d4aef3a25cc8ce73f0a4d0d293e5b9133303394184406c7342",
+  "registry_revision": "26604117fda24116c47d5939ae280e34574eed50482c0c781468a51766bc8d8b",
   "schema_version": 1
 }

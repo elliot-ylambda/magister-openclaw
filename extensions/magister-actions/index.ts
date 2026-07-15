@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { definePluginEntry, jsonResult, type OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import {
+  definePluginEntry,
+  jsonResult,
+  type OpenClawPluginApi,
+  type OpenClawPluginToolContext,
+} from "openclaw/plugin-sdk/core";
 import type { TSchema } from "typebox";
 import contractJson from "./action-contract.json" with { type: "json" };
 
@@ -227,6 +232,7 @@ export function createMagisterActionTool(
   api: OpenClawPluginApi,
   action: ActionContract,
   fetchImpl: FetchLike = fetch,
+  context: OpenClawPluginToolContext = {},
 ) {
   return {
     name: action.tool_name,
@@ -260,12 +266,16 @@ export function createMagisterActionTool(
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+      const workflowSessionKey = context.sessionKey?.startsWith("workflow_run:")
+        ? context.sessionKey
+        : undefined;
       try {
         const response = await fetchImpl(`${config.endpoint}/${action.action}`, {
           method: "POST",
           headers: {
             authorization: `Bearer ${gatewayToken}`,
             "content-type": "application/json",
+            ...(workflowSessionKey ? { "x-magister-session-key": workflowSessionKey } : {}),
           },
           body: JSON.stringify({ arguments: rawParams }),
           signal: controller.signal,
@@ -340,7 +350,9 @@ export default definePluginEntry({
   description: "Typed project-scoped actions executed by the Magister gateway.",
   register(api) {
     for (const action of contract.actions) {
-      api.registerTool(createMagisterActionTool(api, action), { name: action.tool_name });
+      api.registerTool((context) => createMagisterActionTool(api, action, fetch, context), {
+        name: action.tool_name,
+      });
     }
   },
 });
