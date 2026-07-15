@@ -7,9 +7,11 @@ import { createManagedTaskFlow, resetTaskFlowRegistryForTests } from "./task-flo
 import {
   createTaskRecord,
   deleteTaskRecordById,
+  finalizeTaskRunByRunId,
   findTaskByRunId,
   markTaskLostById,
   maybeDeliverTaskStateChangeUpdate,
+  recordTaskCheckpointById,
   resetTaskRegistryForTests,
 } from "./task-registry.js";
 import { resolveTaskRegistryDir, resolveTaskRegistrySqlitePath } from "./task-registry.paths.js";
@@ -276,6 +278,52 @@ describe("task-registry store runtime", () => {
       taskId: created.taskId,
       taskKind: "video_generation",
       runId: "run-task-kind-restore",
+    });
+  });
+
+  it("persists attempt checkpoints and terminal outbox intent atomically", () => {
+    const created = createTaskRecord({
+      runtime: "subagent",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey: "agent:main:subagent:phase4",
+      runId: "run-phase4-durable",
+      task: "Durable callback task",
+      status: "running",
+      deliveryStatus: "pending",
+      notifyPolicy: "done_only",
+    });
+    recordTaskCheckpointById({
+      taskId: created.taskId,
+      attempt: 1,
+      checkpoint: { page: 3 },
+      cursor: "page:3",
+      leaseHeartbeatAt: 200,
+      leaseExpiresAt: 300,
+    });
+    finalizeTaskRunByRunId({
+      runId: "run-phase4-durable",
+      runtime: "subagent",
+      sessionKey: "agent:main:subagent:phase4",
+      status: "succeeded",
+      endedAt: 400,
+      eventId: "subagent:run-phase4-durable",
+      outboxEventType: "subagent_completion",
+      outboxRequired: true,
+      terminalPayload: { run_id: "run-phase4-durable", outcome: "ok" },
+    });
+
+    resetTaskRegistryForTests({ persist: false });
+
+    expect(findTaskByRunId("run-phase4-durable")).toMatchObject({
+      taskId: created.taskId,
+      attempt: 1,
+      checkpoint: { page: 3 },
+      cursor: "page:3",
+      eventId: "subagent:run-phase4-durable",
+      outboxEventType: "subagent_completion",
+      outboxRequired: true,
+      terminalPayload: { run_id: "run-phase4-durable", outcome: "ok" },
     });
   });
 

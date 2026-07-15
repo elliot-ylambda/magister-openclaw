@@ -1,5 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isSlackSessionKey, sendSlackCompletionWebhook } from "./slack-completion-webhook.js";
+
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function stateDir(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "slack-webhook-test-"));
+  temporaryRoots.push(root);
+  return root;
+}
 
 describe("isSlackSessionKey", () => {
   it("matches only agent-qualified slack session keys", () => {
@@ -27,6 +44,7 @@ describe("sendSlackCompletionWebhook", () => {
         duration_ms: 4200,
       },
       fetchImpl: fetchSpy as unknown as typeof fetch,
+      stateDir: stateDir(),
     });
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
@@ -37,6 +55,7 @@ describe("sendSlackCompletionWebhook", () => {
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
     expect(body.openclaw_session_key).toBe("agent:main:slack:channel:c123");
     expect(body.success).toBe(true);
+    expect(body.event_id).toBe("slack:r1");
   });
 
   it("logs and swallows non-2xx responses (best-effort)", async () => {
@@ -47,6 +66,7 @@ describe("sendSlackCompletionWebhook", () => {
         token: "tok-1",
         payload: { openclaw_session_key: "k", run_id: "r1", success: false, error: "boom" },
         fetchImpl: fetchSpy as unknown as typeof fetch,
+        stateDir: stateDir(),
       }),
     ).resolves.toBeUndefined();
   });
@@ -58,6 +78,7 @@ describe("sendSlackCompletionWebhook", () => {
       token: "tok-1",
       payload: { openclaw_session_key: "k", run_id: "r1", success: true },
       fetchImpl: fetchSpy as unknown as typeof fetch,
+      stateDir: stateDir(),
     });
     expect(fetchSpy).not.toHaveBeenCalled();
   });

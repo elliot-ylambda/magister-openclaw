@@ -10,8 +10,8 @@ import { Type } from "typebox";
 import { mirrorAudit } from "./audit-mirror.js";
 import { withContextLock } from "./context-lock.js";
 import { MemoryStore, type MemoryTarget } from "./memory-store.js";
+import { memoryOperationId, withHostMutationBoundary } from "./mutation-boundary.js";
 
-const DEFAULT_AUDIT_ENDPOINT = "http://magister-gateway.internal:8081/api/memory/audit";
 const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
 const DEFAULT_USER_CHAR_LIMIT = 1375;
 
@@ -61,11 +61,14 @@ function resolveConfig(api: OpenClawPluginApi): {
   enabled: boolean;
 } {
   const cfg = (api.pluginConfig ?? {}) as MemoryPluginConfig;
+  const gateway = (
+    process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081"
+  ).replace(/\/+$/, "");
   return {
     enabled: cfg.enabled !== false,
     memoryCharLimit: cfg.memoryCharLimit ?? DEFAULT_MEMORY_CHAR_LIMIT,
     userCharLimit: cfg.userCharLimit ?? DEFAULT_USER_CHAR_LIMIT,
-    auditEndpoint: cfg.auditEndpoint ?? DEFAULT_AUDIT_ENDPOINT,
+    auditEndpoint: cfg.auditEndpoint ?? `${gateway}/api/memory/audit`,
   };
 }
 
@@ -92,7 +95,7 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
         }),
       ),
     }),
-    async execute(_callId: string, rawParams: Record<string, unknown>) {
+    async execute(callId: string, rawParams: Record<string, unknown>) {
       const params = rawParams as MemoryToolParams;
       const action = params.action;
       const target: MemoryTarget = params.target === "user" ? "user" : "memory";
@@ -104,6 +107,15 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
             memoryDir: workspaceDir,
             memoryCharLimit: cfg.memoryCharLimit,
             userCharLimit: cfg.userCharLimit,
+            mutationBoundary: (writeTarget, content, write) =>
+              withHostMutationBoundary(
+                {
+                  operationId: memoryOperationId(callId, String(action), writeTarget),
+                  target: writeTarget,
+                  content,
+                },
+                write,
+              ),
           });
           await store.loadFromDisk();
 

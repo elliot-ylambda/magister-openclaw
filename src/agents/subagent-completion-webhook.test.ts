@@ -1,8 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   normalizeSubagentCompletionWebhookOutcome,
   sendSubagentCompletionWebhook,
 } from "./subagent-completion-webhook.js";
+
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function stateDir(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagent-webhook-test-"));
+  temporaryRoots.push(root);
+  return root;
+}
 
 describe("normalizeSubagentCompletionWebhookOutcome", () => {
   it("does not report terminated subagents as successful completions", () => {
@@ -33,6 +50,7 @@ describe("sendSubagentCompletionWebhook", () => {
         runtime_ms: 1234,
       },
       fetchImpl: fetchSpy as unknown as typeof fetch,
+      stateDir: stateDir(),
     });
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
@@ -45,6 +63,7 @@ describe("sendSubagentCompletionWebhook", () => {
     expect(body.outcome).toBe("ok");
     expect(body.run_id).toBe("r1");
     expect(body.openclaw_session_key).toBe("agent:marketing:abc");
+    expect(body.event_id).toBe("subagent:r1");
   });
 
   it("logs and swallows non-2xx responses (best-effort)", async () => {
@@ -62,6 +81,7 @@ describe("sendSubagentCompletionWebhook", () => {
           runtime_ms: 1,
         },
         fetchImpl: fetchSpy as unknown as typeof fetch,
+        stateDir: stateDir(),
       }),
     ).resolves.toBeUndefined();
     expect(fetchSpy).toHaveBeenCalledOnce();
@@ -81,6 +101,7 @@ describe("sendSubagentCompletionWebhook", () => {
         runtime_ms: 1,
       },
       fetchImpl: fetchSpy as unknown as typeof fetch,
+      stateDir: stateDir(),
     });
     expect(fetchSpy).not.toHaveBeenCalled();
   });

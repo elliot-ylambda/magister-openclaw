@@ -8,11 +8,17 @@ import { magisterSlackRelayToken, slackGatewayRelayBearerOk } from "./provider-s
 
 describe("magisterSlackRelayToken", () => {
   const original = process.env.GATEWAY_TOKEN;
+  const originalRelay = process.env.MAGISTER_GATEWAY_RELAY_TOKEN;
   afterEach(() => {
     if (original === undefined) {
       delete process.env.GATEWAY_TOKEN;
     } else {
       process.env.GATEWAY_TOKEN = original;
+    }
+    if (originalRelay === undefined) {
+      delete process.env.MAGISTER_GATEWAY_RELAY_TOKEN;
+    } else {
+      process.env.MAGISTER_GATEWAY_RELAY_TOKEN = originalRelay;
     }
   });
 
@@ -29,6 +35,12 @@ describe("magisterSlackRelayToken", () => {
   it("returns undefined when GATEWAY_TOKEN is empty", () => {
     process.env.GATEWAY_TOKEN = "";
     expect(magisterSlackRelayToken()).toBeUndefined();
+  });
+
+  it("prefers the broker-safe inbound relay token", () => {
+    process.env.GATEWAY_TOKEN = "legacy-broad-token";
+    process.env.MAGISTER_GATEWAY_RELAY_TOKEN = "relay-only-token";
+    expect(magisterSlackRelayToken()).toBe("relay-only-token");
   });
 });
 

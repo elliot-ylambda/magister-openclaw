@@ -14,6 +14,8 @@ import { normalizeHttpWebhookUrl } from "../cron/webhook-url.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
 import { SsrFBlockedError } from "../infra/net/ssrf.js";
+import { enqueueAndDeliverDurableWebhook } from "../infra/outbound/durable-webhook-outbox.js";
+import { persistCompletionOutboxIntent } from "../infra/outbound/task-outbox-reconciliation.js";
 import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
@@ -131,6 +133,83 @@ async function postCronWebhook(params: {
     }
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export function resolveCronCompletionEventId(evt: CronEvent): string | null {
+  if (typeof evt.runAtMs === "number" && Number.isFinite(evt.runAtMs)) {
+    return `cron:${evt.jobId}:${evt.runAtMs}`;
+  }
+  const runId = evt.runId?.trim();
+  return runId ? `cron:${evt.jobId}:${runId}` : null;
+}
+
+async function postDurableCronCompletion(params: {
+  evt: CronEvent;
+  webhookUrl: string;
+  webhookToken?: string;
+  logger: CronLogger;
+}): Promise<void> {
+  const eventId = resolveCronCompletionEventId(params.evt);
+  if (!eventId) {
+    params.logger.warn(
+      { jobId: params.evt.jobId },
+      "cron: completion missing stable occurrence identity; refusing delivery",
+    );
+    return;
+  }
+  try {
+    const payload = { ...params.evt };
+    try {
+      persistCompletionOutboxIntent({
+        eventId,
+        eventType: "cron_completion",
+        payload,
+        runId: params.evt.runId,
+        runtime: "cron",
+        ...(typeof params.evt.runAtMs === "number"
+          ? { cronOccurrence: { jobId: params.evt.jobId, runAtMs: params.evt.runAtMs } }
+          : {}),
+      });
+    } catch (err) {
+      params.logger.warn(
+        { jobId: params.evt.jobId, eventId, err: formatErrorMessage(err) },
+        "cron: task outbox intent persistence failed",
+      );
+    }
+    const delivered = await enqueueAndDeliverDurableWebhook({
+      eventId,
+      eventType: "cron_completion",
+      url: params.webhookUrl,
+      token: params.webhookToken ?? "",
+      payload,
+      fetchImpl: async (input, init) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const result = await fetchWithSsrFGuard({
+          url,
+          init,
+          policy: { dangerouslyAllowPrivateNetwork: true },
+        });
+        try {
+          return result.response;
+        } finally {
+          await result.release();
+        }
+      },
+      timeoutMs: CRON_WEBHOOK_TIMEOUT_MS,
+    });
+    if (!delivered) {
+      params.logger.warn(
+        { jobId: params.evt.jobId, eventId },
+        "cron: durable completion delivery queued for retry",
+      );
+    }
+  } catch (err) {
+    params.logger.warn(
+      { jobId: params.evt.jobId, eventId, err: formatErrorMessage(err) },
+      "cron: durable completion enqueue failed",
+    );
   }
 }
 
@@ -277,15 +356,11 @@ export function dispatchGatewayCronFinishedNotifications(params: {
   // native dispatch above would already have fired.
   if (completionWebhook && webhookTarget?.url !== completionWebhook) {
     void (async () => {
-      await postCronWebhook({
+      await postDurableCronCompletion({
+        evt: params.evt,
         webhookUrl: completionWebhook,
         webhookToken,
-        payload: params.evt,
-        logContext: { jobId: params.evt.jobId },
-        blockedLog: "cron: completion webhook blocked by SSRF guard",
-        failedLog: "cron: completion webhook delivery failed",
         logger: params.logger,
-        allowPrivateNetwork: true,
       });
     })();
   }

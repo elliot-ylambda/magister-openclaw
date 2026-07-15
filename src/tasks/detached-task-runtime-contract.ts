@@ -64,6 +64,10 @@ export type DetachedTaskCompleteParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 };
 
 export type DetachedTaskFailParams = {
@@ -89,6 +93,10 @@ export type DetachedTaskFinalizeParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 };
 
 export type DetachedTaskDeliveryStatusParams = {

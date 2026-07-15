@@ -14,6 +14,7 @@ import { normalizeOptionalString } from "../shared/string-coerce.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { resolveAgentDir } from "./agent-scope-config.js";
 import type { BootstrapContextMode } from "./bootstrap-files.js";
+import { resolveMagisterResourceAdmission } from "./magister-resource-admission.js";
 import {
   mapToolContextToSpawnedRunMetadata,
   normalizeSpawnedRunMetadata,
@@ -767,6 +768,14 @@ export async function spawnSubagentDirect(
     return {
       status: "forbidden",
       error: `sessions_spawn has reached max active children for this session (${activeChildren}/${maxChildren})`,
+    };
+  }
+
+  const resourceAdmission = await resolveMagisterResourceAdmission();
+  if (!resourceAdmission.allowChild) {
+    return {
+      status: "forbidden",
+      error: `sessions_spawn is temporarily paused by resource admission (${resourceAdmission.reason ?? "machine_memory_high"})`,
     };
   }
 

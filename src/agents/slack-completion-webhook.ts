@@ -6,6 +6,7 @@
 // `cron.completionWebhook` (src/gateway/server-cron.ts).
 
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { enqueueAndDeliverDurableWebhook } from "../infra/outbound/durable-webhook-outbox.js";
 import { getGlobalPluginRegistry } from "../plugins/hook-runner-global.js";
 import type { PluginHookHandlerMap } from "../plugins/types.js";
 
@@ -30,9 +31,8 @@ export type SlackCompletionWebhookPayload = {
 };
 
 /**
- * POST a Slack-run completion payload to the gateway. Best-effort: a delivery
- * failure logs and swallows — the gateway's hold loop fail-opens on timeout,
- * so a lost webhook can delay but never wedge the project queue.
+ * Persist then POST a Slack-run completion payload. Transport is at-least-once;
+ * the gateway deduplicates the stable run event before applying its effect.
  */
 export async function sendSlackCompletionWebhook(params: {
   url: string;
@@ -40,32 +40,29 @@ export async function sendSlackCompletionWebhook(params: {
   payload: SlackCompletionWebhookPayload;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  stateDir?: string;
 }): Promise<void> {
   if (!params.url || !params.token) {
     return;
   }
-  const fetchImpl = params.fetchImpl ?? fetch;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), params.timeoutMs ?? 5_000);
   try {
-    const res = await fetchImpl(params.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${params.token}`,
-      },
-      body: JSON.stringify(params.payload),
-      signal: controller.signal,
+    const delivered = await enqueueAndDeliverDurableWebhook({
+      eventId: `slack:${params.payload.run_id}`,
+      eventType: "slack_completion",
+      url: params.url,
+      token: params.token,
+      payload: { ...params.payload },
+      fetchImpl: params.fetchImpl,
+      timeoutMs: params.timeoutMs ?? 5_000,
+      stateDir: params.stateDir,
     });
-    if (!res.ok) {
+    if (!delivered) {
       console.warn(
-        `[slack-completion-webhook] non-2xx response status=${res.status} run=${params.payload.run_id}`,
+        `[slack-completion-webhook] delivery queued for retry run=${params.payload.run_id}`,
       );
     }
   } catch (err) {
-    console.warn("[slack-completion-webhook] delivery failed:", err);
-  } finally {
-    clearTimeout(timer);
+    console.warn("[slack-completion-webhook] durable enqueue failed:", err);
   }
 }
 

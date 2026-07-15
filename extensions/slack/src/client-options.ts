@@ -78,9 +78,15 @@ function resolveSlackProxyAgent(): HttpsProxyAgent<string> | undefined {
   }
 }
 
+function resolveMagisterSlackApiUrl(): string | undefined {
+  const value = process.env.MAGISTER_SLACK_API_URL?.trim();
+  return value === "http://127.0.0.1:18796/slack/api/" ? value : undefined;
+}
+
 export function resolveSlackWebClientOptions(options: WebClientOptions = {}): WebClientOptions {
   return {
     ...options,
+    slackApiUrl: options.slackApiUrl ?? resolveMagisterSlackApiUrl(),
     agent: options.agent ?? resolveSlackProxyAgent(),
     retryConfig: options.retryConfig ?? SLACK_DEFAULT_RETRY_OPTIONS,
   };
@@ -89,6 +95,7 @@ export function resolveSlackWebClientOptions(options: WebClientOptions = {}): We
 export function resolveSlackWriteClientOptions(options: WebClientOptions = {}): WebClientOptions {
   return {
     ...options,
+    slackApiUrl: options.slackApiUrl ?? resolveMagisterSlackApiUrl(),
     agent: options.agent ?? resolveSlackProxyAgent(),
     retryConfig: options.retryConfig ?? SLACK_WRITE_RETRY_OPTIONS,
     maxRequestConcurrency: options.maxRequestConcurrency ?? 1,

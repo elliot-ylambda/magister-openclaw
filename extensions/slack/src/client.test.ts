@@ -45,6 +45,16 @@ beforeEach(() => {
 });
 
 describe("slack web client config", () => {
+  const originalSlackApiUrl = process.env.MAGISTER_SLACK_API_URL;
+
+  afterEach(() => {
+    if (originalSlackApiUrl === undefined) {
+      delete process.env.MAGISTER_SLACK_API_URL;
+    } else {
+      process.env.MAGISTER_SLACK_API_URL = originalSlackApiUrl;
+    }
+  });
+
   it("applies the default retry config when none is provided", () => {
     const options = resolveSlackWebClientOptions();
 
@@ -56,6 +66,14 @@ describe("slack web client config", () => {
     const options = resolveSlackWebClientOptions({ retryConfig: customRetry });
 
     expect(options.retryConfig).toBe(customRetry);
+  });
+
+  it("uses only the fixed loopback broker Slack API URL", () => {
+    process.env.MAGISTER_SLACK_API_URL = "http://127.0.0.1:18796/slack/api/";
+    expect(resolveSlackWebClientOptions().slackApiUrl).toBe("http://127.0.0.1:18796/slack/api/");
+
+    process.env.MAGISTER_SLACK_API_URL = "http://attacker.invalid/slack/api/";
+    expect(resolveSlackWebClientOptions().slackApiUrl).toBeUndefined();
   });
 
   it("passes merged options into WebClient", () => {

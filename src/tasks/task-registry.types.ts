@@ -23,6 +23,7 @@ export type TaskNotifyPolicy = "done_only" | "state_changes" | "silent";
 
 export type TaskTerminalOutcome = "succeeded" | "blocked";
 export type TaskScopeKind = "session" | "system";
+export type TaskOutboxEventType = "cron_completion" | "slack_completion" | "subagent_completion";
 
 export type TaskStatusCounts = Record<TaskStatus, number>;
 export type TaskRuntimeCounts = Record<TaskRuntime, number>;
@@ -77,6 +78,19 @@ export type TaskRecord = {
   progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;
+  /** Stable local execution-attempt state used for crash recovery. */
+  attempt?: number;
+  leaseHeartbeatAt?: number;
+  leaseExpiresAt?: number;
+  checkpoint?: Record<string, unknown>;
+  cursor?: string;
+  nextAttemptAt?: number;
+  deadLetteredAt?: number;
+  /** Completion intent committed with the terminal transition. */
+  eventId?: string;
+  outboxEventType?: TaskOutboxEventType;
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 };
 
 export type TaskRegistrySnapshot = {

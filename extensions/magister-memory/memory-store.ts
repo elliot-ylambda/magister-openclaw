@@ -15,6 +15,11 @@ export type MemoryStoreOptions = {
   memoryDir: string;
   memoryCharLimit?: number;
   userCharLimit?: number;
+  mutationBoundary?: (
+    target: MemoryTarget,
+    content: string,
+    write: () => Promise<void>,
+  ) => Promise<void>;
 };
 
 const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
@@ -35,6 +40,7 @@ export class MemoryStore {
   private readonly memoryDir: string;
   private readonly limits: Record<MemoryTarget, number>;
   private entries: Record<MemoryTarget, string[]> = { memory: [], user: [] };
+  private readonly mutationBoundary?: MemoryStoreOptions["mutationBoundary"];
 
   constructor(opts: MemoryStoreOptions) {
     this.memoryDir = opts.memoryDir;
@@ -42,6 +48,7 @@ export class MemoryStore {
       memory: opts.memoryCharLimit ?? DEFAULT_MEMORY_CHAR_LIMIT,
       user: opts.userCharLimit ?? DEFAULT_USER_CHAR_LIMIT,
     };
+    this.mutationBoundary = opts.mutationBoundary;
   }
 
   async loadFromDisk(): Promise<void> {
@@ -141,7 +148,11 @@ export class MemoryStore {
   private async persist(target: MemoryTarget): Promise<void> {
     const path = join(this.memoryDir, target === "memory" ? "MEMORY.md" : "USER.md");
     const content = this.entries[target].join(ENTRY_DELIMITER);
-    await atomicWrite(path, content);
+    if (this.mutationBoundary) {
+      await this.mutationBoundary(target, content, () => atomicWrite(path, content));
+    } else {
+      await atomicWrite(path, content);
+    }
   }
 }
 
