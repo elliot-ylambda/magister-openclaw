@@ -41,6 +41,20 @@ function resultJson(
   return JSON.parse(content?.text ?? "null") as Record<string, unknown>;
 }
 
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  return input instanceof URL ? input.href : input.url;
+}
+
+function requestBody(init?: RequestInit): Record<string, unknown> {
+  if (typeof init?.body !== "string") {
+    throw new Error("expected a string request body");
+  }
+  return JSON.parse(init.body) as Record<string, unknown>;
+}
+
 afterEach(() => {
   delete process.env.GATEWAY_TOKEN;
 });
@@ -68,7 +82,7 @@ describe("typed gateway execution", () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     let request: { input: string; init?: RequestInit } | undefined;
     const tool = createMagisterActionTool(api(), action, async (input, init) => {
-      request = { input: String(input), init };
+      request = { input: requestUrl(input), init };
       return new Response(JSON.stringify(envelope()), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -83,7 +97,7 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).toMatchObject({
       authorization: "Bearer secret-machine-token",
     });
-    expect(JSON.parse(String(request?.init?.body))).toEqual({ arguments: {} });
+    expect(requestBody(request?.init)).toEqual({ arguments: {} });
   });
 
   it("forwards trusted workflow context without exposing it in tool arguments", async () => {
@@ -103,7 +117,7 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).toMatchObject({
       "x-magister-session-key": "workflow_run:00000000-0000-4000-8000-000000000001",
     });
-    expect(JSON.parse(String(request?.init?.body))).toEqual({ arguments: {} });
+    expect(requestBody(request?.init)).toEqual({ arguments: {} });
   });
 
   it("does not forward ordinary chat session keys", async () => {
