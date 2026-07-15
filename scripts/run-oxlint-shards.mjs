@@ -3,6 +3,7 @@ import path from "node:path";
 
 const extraArgs = process.argv.slice(2);
 const runner = path.resolve("scripts", "run-oxlint.mjs");
+const PROGRESS_INTERVAL_MS = 60_000;
 
 const prepareResult = spawnSync(
   process.execPath,
@@ -35,8 +36,19 @@ const shards = [
   },
 ];
 
-const results = await Promise.all(shards.map((shard) => runShard(shard)));
+const results =
+  process.env.OPENCLAW_OXLINT_SHARDS_SEQUENTIAL === "1"
+    ? await runShardsSequentially(shards)
+    : await Promise.all(shards.map((shard) => runShard(shard)));
 process.exitCode = results.find((status) => status !== 0) ?? 0;
+
+async function runShardsSequentially(pendingShards) {
+  const [shard, ...remainingShards] = pendingShards;
+  if (!shard) {
+    return [];
+  }
+  return [await runShard(shard), ...(await runShardsSequentially(remainingShards))];
+}
 
 async function runShard(shard) {
   console.error(`[oxlint:${shard.name}] starting`);
@@ -50,11 +62,18 @@ async function runShard(shard) {
   });
 
   return await new Promise((resolve) => {
+    const progressTimer = setInterval(() => {
+      console.error(`[oxlint:${shard.name}] still running`);
+    }, PROGRESS_INTERVAL_MS);
+    progressTimer.unref();
+
     child.once("error", (error) => {
+      clearInterval(progressTimer);
       console.error(error);
       resolve(1);
     });
     child.once("close", (status) => {
+      clearInterval(progressTimer);
       console.error(`[oxlint:${shard.name}] finished`);
       resolve(status ?? 1);
     });

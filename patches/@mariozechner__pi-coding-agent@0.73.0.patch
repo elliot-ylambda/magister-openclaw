@@ -1,0 +1,278 @@
+diff --git a/dist/core/auth-storage.js b/dist/core/auth-storage.js
+index a10d4125e14e4cf35104e8b393b6e3af9a61d39d..9f945ba2fe16b7c612d8eab7ed718ff88f0da973 100644
+--- a/dist/core/auth-storage.js
++++ b/dist/core/auth-storage.js
+@@ -12,6 +12,7 @@ import { dirname, join } from "path";
+ import lockfile from "proper-lockfile";
+ import { getAgentDir } from "../config.js";
+ import { resolveConfigValue } from "./resolve-config-value.js";
++const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 };
+ export class FileAuthStorageBackend {
+     authPath;
+     constructor(authPath = join(getAgentDir(), "auth.json")) {
+@@ -25,7 +26,7 @@ export class FileAuthStorageBackend {
+     }
+     ensureFileExists() {
+         if (!existsSync(this.authPath)) {
+-            writeFileSync(this.authPath, "{}", "utf-8");
++            writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
+             chmodSync(this.authPath, 0o600);
+         }
+     }
+@@ -62,7 +63,7 @@ export class FileAuthStorageBackend {
+             const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+             const { result, next } = fn(current);
+             if (next !== undefined) {
+-                writeFileSync(this.authPath, next, "utf-8");
++                writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+                 chmodSync(this.authPath, 0o600);
+             }
+             return result;
+@@ -104,7 +105,7 @@ export class FileAuthStorageBackend {
+             const { result, next } = await fn(current);
+             throwIfCompromised();
+             if (next !== undefined) {
+-                writeFileSync(this.authPath, next, "utf-8");
++                writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+                 chmodSync(this.authPath, 0o600);
+             }
+             throwIfCompromised();
+diff --git a/dist/core/export-html/template.js b/dist/core/export-html/template.js
+index 844f1eb3fba96b667909ccc8a6f64b5108957088..004cd66220261cd37dea5730643ed84142c953d1 100644
+--- a/dist/core/export-html/template.js
++++ b/dist/core/export-html/template.js
+@@ -594,6 +594,18 @@
+         return div.innerHTML;
+       }
+ 
++      function sanitizeMarkdownUrl(value) {
++        const href = String(value || '').trim().replace(/[\x00-\x1f\x7f]/g, '');
++        if (!href) return href;
++
++        const scheme = href.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
++        if (scheme && !/^(https?|mailto|tel|ftp)$/i.test(scheme[1])) {
++          return null;
++        }
++
++        return href;
++      }
++
+       /**
+        * Truncate string to maxLen chars, append "..." if truncated.
+        */
+@@ -1491,10 +1503,11 @@
+           }
+         },
+         renderer: {
+-          // Sanitize link URLs to prevent javascript:/vbscript:/data: XSS
++          // Sanitize link URLs with a scheme allow-list after stripping the C0
++          // controls that browsers normalize before navigation.
+           link(token) {
+-            const href = (token.href || '').trim();
+-            if (/^\s*(javascript|vbscript|data):/i.test(href)) {
++            const href = sanitizeMarkdownUrl(token.href);
++            if (href === null) {
+               return this.parser.parseInline(token.tokens);
+             }
+             let out = '<a href="' + escapeHtml(href) + '"';
+@@ -1504,10 +1517,10 @@
+             out += '>' + this.parser.parseInline(token.tokens) + '</a>';
+             return out;
+           },
+-          // Sanitize image src URLs
++          // Sanitize image src URLs with the same scheme allow-list.
+           image(token) {
+-            const href = (token.href || '').trim();
+-            if (/^\s*(javascript|vbscript|data):/i.test(href)) {
++            const href = sanitizeMarkdownUrl(token.href);
++            if (href === null) {
+               return escapeHtml(token.text || '');
+             }
+             let out = '<img src="' + escapeHtml(href) + '" alt="' + escapeHtml(token.text || '') + '"';
+diff --git a/dist/core/package-manager.js b/dist/core/package-manager.js
+index 6e98001c4241bc490ba4f2967eef951d870a4d41..a5e2057818d8535df0aa447c5cda50ff7e057a93 100644
+--- a/dist/core/package-manager.js
++++ b/dist/core/package-manager.js
+@@ -1,7 +1,7 @@
+ import { spawn, spawnSync } from "node:child_process";
+ import { createHash } from "node:crypto";
+-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+-import { homedir, tmpdir } from "node:os";
++import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
++import { homedir } from "node:os";
+ function getEnv() {
+     if (process.platform !== "linux" || Object.keys(process.env).length > 0) {
+         return process.env;
+@@ -71,6 +71,12 @@ function toPosixPath(p) {
+ function getHomeDir() {
+     return process.env.HOME || homedir();
+ }
++function getExtensionTempFolder(agentDir) {
++    const tempFolder = join(agentDir, "tmp", "extensions");
++    mkdirSync(tempFolder, { recursive: true, mode: 0o700 });
++    chmodSync(tempFolder, 0o700);
++    return tempFolder;
++}
+ function prefixIgnorePattern(line, prefix) {
+     const trimmed = line.trim();
+     if (!trimmed)
+@@ -1547,10 +1553,11 @@ export class DefaultPackageManager {
+         if (scope === "temporary") {
+             return this.getTemporaryDir(`git-${source.host}`, source.path);
+         }
+-        if (scope === "project") {
+-            return join(this.cwd, CONFIG_DIR_NAME, "git", source.host, source.path);
++        const installRoot = this.getGitInstallRoot(scope);
++        if (!installRoot) {
++            throw new Error("Missing git install root");
+         }
+-        return join(this.agentDir, "git", source.host, source.path);
++        return this.resolveManagedPath(installRoot, source.host, source.path);
+     }
+     getGitInstallRoot(scope) {
+         if (scope === "temporary") {
+@@ -1562,11 +1569,20 @@ export class DefaultPackageManager {
+         return join(this.agentDir, "git");
+     }
+     getTemporaryDir(prefix, suffix) {
++        const root = this.resolveManagedPath(getExtensionTempFolder(this.agentDir), prefix);
+         const hash = createHash("sha256")
+             .update(`${prefix}-${suffix ?? ""}`)
+             .digest("hex")
+             .slice(0, 8);
+-        return join(tmpdir(), "pi-extensions", prefix, hash, suffix ?? "");
++        return this.resolveManagedPath(root, hash, suffix ?? "");
++    }
++    resolveManagedPath(root, ...parts) {
++        const resolvedRoot = resolve(root);
++        const resolvedPath = resolve(resolvedRoot, ...parts);
++        if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${sep}`)) {
++            throw new Error(`Refusing to use path outside package install root: ${resolvedPath}`);
++        }
++        return resolvedPath;
+     }
+     getBaseDirForScope(scope) {
+         if (scope === "project") {
+diff --git a/dist/utils/git.js b/dist/utils/git.js
+index c236a939e6abd77219939afe4b41e63f0b39158a..d00ccb167bc083108ce31ec4617612dddda83717 100644
+--- a/dist/utils/git.js
++++ b/dist/utils/git.js
+@@ -56,6 +56,52 @@ function splitRef(url) {
+         ref,
+     };
+ }
++function decodeForValidation(value) {
++    try {
++        return decodeURIComponent(value);
++    }
++    catch {
++        return null;
++    }
++}
++function hasUnsafeGitInstallPart(value, allowSlash) {
++    const decoded = decodeForValidation(value);
++    if (decoded === null) {
++        return true;
++    }
++    for (const candidate of [value, decoded]) {
++        if (candidate.includes("\0") || candidate.includes("\\") || candidate.startsWith("/")) {
++            return true;
++        }
++        if (!allowSlash && candidate.includes("/")) {
++            return true;
++        }
++        if (candidate.split("/").includes("..")) {
++            return true;
++        }
++    }
++    return false;
++}
++function buildGitSource(args) {
++    if (args.path.startsWith("/")) {
++        return null;
++    }
++    const normalizedPath = args.path.replace(/\.git$/, "").replace(/^\/+/, "");
++    if (!args.host || !normalizedPath || normalizedPath.split("/").length < 2) {
++        return null;
++    }
++    if (hasUnsafeGitInstallPart(args.host, false) || hasUnsafeGitInstallPart(normalizedPath, true)) {
++        return null;
++    }
++    return {
++        type: "git",
++        repo: args.repo,
++        host: args.host,
++        path: normalizedPath,
++        ref: args.ref,
++        pinned: Boolean(args.ref),
++    };
++}
+ function parseGenericGitUrl(url) {
+     const { repo: repoWithoutRef, ref } = splitRef(url);
+     let repo = repoWithoutRef;
+@@ -91,18 +137,7 @@ function parseGenericGitUrl(url) {
+         }
+         repo = `https://${repoWithoutRef}`;
+     }
+-    const normalizedPath = path.replace(/\.git$/, "").replace(/^\/+/, "");
+-    if (!host || !normalizedPath || normalizedPath.split("/").length < 2) {
+-        return null;
+-    }
+-    return {
+-        type: "git",
+-        repo,
+-        host,
+-        path: normalizedPath,
+-        ref,
+-        pinned: Boolean(ref),
+-    };
++    return buildGitSource({ repo, host, path, ref });
+ }
+ /**
+  * Parse git source into a GitSource.
+@@ -113,6 +148,9 @@ function parseGenericGitUrl(url) {
+  */
+ export function parseGitUrl(source) {
+     const trimmed = source.trim();
++    if (trimmed.includes("\0") || trimmed.includes("\\")) {
++        return null;
++    }
+     const hasGitPrefix = trimmed.startsWith("git:");
+     const url = hasGitPrefix ? trimmed.slice(4).trim() : trimmed;
+     if (!hasGitPrefix && !/^(https?|ssh|git):\/\//i.test(url)) {
+@@ -131,14 +169,12 @@ export function parseGitUrl(source) {
+                 !split.repo.startsWith("ssh://") &&
+                 !split.repo.startsWith("git://") &&
+                 !split.repo.startsWith("git@");
+-            return {
+-                type: "git",
++            return buildGitSource({
+                 repo: useHttpsPrefix ? `https://${split.repo}` : split.repo,
+                 host: info.domain || "",
+-                path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
++                path: `${info.user}/${info.project}`,
+                 ref: info.committish || split.ref || undefined,
+-                pinned: Boolean(info.committish || split.ref),
+-            };
++            });
+         }
+     }
+     const httpsCandidates = [split.ref ? `https://${split.repo}#${split.ref}` : undefined, `https://${url}`].filter((value) => Boolean(value));
+@@ -148,14 +184,12 @@ export function parseGitUrl(source) {
+             if (split.ref && info.project?.includes("@")) {
+                 continue;
+             }
+-            return {
+-                type: "git",
++            return buildGitSource({
+                 repo: `https://${split.repo}`,
+                 host: info.domain || "",
+-                path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
++                path: `${info.user}/${info.project}`,
+                 ref: info.committish || split.ref || undefined,
+-                pinned: Boolean(info.committish || split.ref),
+-            };
++            });
+         }
+     }
+     return parseGenericGitUrl(url);
