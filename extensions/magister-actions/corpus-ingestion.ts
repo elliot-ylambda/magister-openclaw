@@ -247,6 +247,7 @@ export async function ingestOne(params: {
   let observedHash: string | undefined;
   let observedSize: number | undefined;
   let observedMime: string | undefined;
+  let commitAttested = false;
   try {
     await params.writeStaging(stagingPath);
     const { sha256, byteSize, head } = await hashFile(stagingPath);
@@ -303,7 +304,10 @@ export async function ingestOne(params: {
     ) {
       throw new IngestionError("upload destination changed during ingestion", 409);
     }
+    await observation?.attestCommit();
+    commitAttested = observation !== undefined && params.mutationContext?.mode === "enforce";
     observation?.lockPromotion();
+    observation?.assertCommitCurrent();
     if (currentDestination) {
       await fs.promises.rename(params.destination, backupPath);
       backupCreated = true;
@@ -327,6 +331,10 @@ export async function ingestOne(params: {
     } finally {
       store.close();
     }
+    if (commitAttested) {
+      await observation?.completeCommit();
+      commitAttested = false;
+    }
     observation?.finish("promoted");
     if (backupCreated) {
       await fs.promises.rm(backupPath, { force: true });
@@ -344,7 +352,6 @@ export async function ingestOne(params: {
       source_revision: source.sourceRevision,
     };
   } catch (error) {
-    observation?.finish("failed", error instanceof Error ? error.name : "unknown");
     if (promoted) {
       await fs.promises.rm(params.destination, { force: true });
       promoted = false;
@@ -373,6 +380,11 @@ export async function ingestOne(params: {
         // Preserve the original rejection; readiness surfaces a corpus DB failure separately.
       }
     }
+    if (commitAttested) {
+      await observation?.completeCommit().catch(() => {});
+      commitAttested = false;
+    }
+    observation?.finish("failed", error instanceof Error ? error.name : "unknown");
     throw error;
   } finally {
     if (!promoted) {

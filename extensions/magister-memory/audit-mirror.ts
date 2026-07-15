@@ -11,9 +11,8 @@ export type AuditMirrorOptions = {
   /** Audit endpoint, e.g. "http://magister-gateway.internal:8081/api/memory/audit". */
   endpoint: string;
   /**
-   * The machine's GATEWAY_TOKEN. The gateway derives project_id + team_id from
-   * the token hash — there is no X-Project-Id header (the machine doesn't know
-   * its project_id; that mapping lives server-side).
+   * The local gateway credential. In enforced mode this is the broker-local
+   * sentinel and the loopback broker injects a scoped runtime:write token.
    */
   gatewayToken: string;
   timeoutMs?: number;
@@ -25,7 +24,7 @@ export type AuditMirrorOptions = {
  * NOT want a flaky gateway POST to surface as a tool error.
  *
  * Auth model: same as every other machine→gateway call. Bearer GATEWAY_TOKEN
- * only. The gateway derives project_id + team_id from the token hash.
+ * only; enforced machines reach this path through the loopback broker.
  */
 export async function mirrorAudit(opts: AuditMirrorOptions, payload: AuditPayload): Promise<void> {
   const body = {
@@ -37,7 +36,7 @@ export async function mirrorAudit(opts: AuditMirrorOptions, payload: AuditPayloa
   };
 
   try {
-    await fetch(opts.endpoint, {
+    const response = await fetch(opts.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -46,6 +45,9 @@ export async function mirrorAudit(opts: AuditMirrorOptions, payload: AuditPayloa
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 5000),
     });
+    if (!response.ok) {
+      throw new Error(`audit mirror rejected: HTTP ${response.status}`);
+    }
   } catch (err) {
     console.error("[magister-memory] audit mirror failed:", err);
   }

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMagisterActionTool, nativeActionContract, parseActionEnvelope } from "./index.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
@@ -82,7 +82,9 @@ function requestBody(init?: RequestInit): Record<string, unknown> {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   delete process.env.GATEWAY_TOKEN;
+  delete process.env.GATEWAY_INTERNAL_URL;
   delete process.env.MAGISTER_BROKER_BASE_URL;
   delete process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT;
   delete process.env.OPENCLAW_STATE_DIR;
@@ -195,6 +197,32 @@ describe("typed gateway execution", () => {
     temporaryDirectories.push(stateDir);
     process.env.OPENCLAW_STATE_DIR = stateDir;
     process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = "1";
+    process.env.GATEWAY_INTERNAL_URL = "http://127.0.0.1:18796";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = requestUrl(input);
+        if (url.endsWith("/acquire")) {
+          return new Response(
+            JSON.stringify({
+              project_id: "00000000-0000-4000-8000-000000000001",
+              operation_id: "host-heartbeat-test",
+              owner_id: "gateway-host-owner",
+              project_fence: 8,
+              mode: "enforce",
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/attest")) {
+          return new Response(
+            JSON.stringify({ commit_expires_at: new Date(Date.now() + 60_000).toISOString() }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+      }),
+    );
     const occurrenceId = "heartbeat-v1:2026-07-14";
     const response = envelope({
       side_effect: "internal_write",

@@ -11,6 +11,76 @@ export type LocalMutationContext = {
   mode: "observe" | "enforce";
 };
 
+type HostMutationResourceClass = "host:memory" | "host:user" | "host:heartbeat_note";
+
+function mutationEndpoint(pathname: string): string {
+  const raw = (process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081").replace(
+    /\/+$/,
+    "",
+  );
+  const url = new URL(raw);
+  const trusted =
+    url.protocol === "http:" &&
+    (url.hostname === "magister-gateway.internal" ||
+      (url.hostname === "127.0.0.1" && url.port === "18796"));
+  if (!trusted || (url.pathname !== "/" && url.pathname !== "")) {
+    throw new Error("local mutation gateway endpoint is not trusted");
+  }
+  return `${raw}/api/runtime/mutations/${pathname}`;
+}
+
+async function postMutation(pathname: string, body: unknown): Promise<Record<string, unknown>> {
+  const token = process.env.GATEWAY_TOKEN ?? "";
+  if (!token) {
+    throw new Error("local mutation gateway credential is unavailable");
+  }
+  const response = await fetch(mutationEndpoint(pathname), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) {
+    throw new Error(`local mutation gateway rejected ${pathname}: HTTP ${response.status}`);
+  }
+  const value: unknown = await response.json();
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("local mutation gateway returned an invalid response");
+  }
+  return value as Record<string, unknown>;
+}
+
+export async function acquireHostMutationContext(
+  operationId: string,
+  resourceClass: HostMutationResourceClass,
+): Promise<LocalMutationContext | undefined> {
+  if (process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT !== "1") {
+    return undefined;
+  }
+  const context = parseLocalMutationContext(
+    await postMutation("acquire", {
+      operation_id: operationId.slice(0, 500),
+      resource_class: resourceClass,
+    }),
+  );
+  if (!context || context.mode !== "enforce") {
+    throw new Error("host mutation lease response is invalid");
+  }
+  return context;
+}
+
+export async function releaseHostMutationContext(
+  context: LocalMutationContext | undefined,
+): Promise<void> {
+  if (!context) {
+    return;
+  }
+  await postMutation("release", { context });
+}
+
 export function parseLocalMutationContext(value: unknown): LocalMutationContext | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -49,6 +119,8 @@ export class LocalMutationObservation {
   private readonly db: DatabaseSync;
   private finished = false;
   private promotionLocked = false;
+  private commitDeadline = 0;
+  private commitAttested = false;
 
   constructor(
     workspace: string,
@@ -177,6 +249,9 @@ export class LocalMutationObservation {
       if (fence > 0 && resource && fence < resource.latest_fence) {
         throw new Error("stale local mutation fence");
       }
+      if (this.context.mode === "enforce") {
+        this.assertCommitCurrent();
+      }
       this.db
         .prepare(`
           UPDATE mutation_observations SET state = 'promoting', failure_code = NULL
@@ -188,6 +263,49 @@ export class LocalMutationObservation {
       this.db.exec("ROLLBACK;");
       throw error;
     }
+  }
+
+  async attestCommit(): Promise<void> {
+    if (this.finished || this.commitAttested) {
+      throw new Error("local mutation observation is not attestable");
+    }
+    if (this.context.mode !== "enforce") {
+      return;
+    }
+    const row = await postMutation("attest", {
+      context: this.context,
+      resource: this.resource,
+      content_hash: this.contentHash,
+    });
+    const rawDeadline = row.commit_expires_at;
+    const deadline = typeof rawDeadline === "string" ? Date.parse(rawDeadline) : Number.NaN;
+    if (!Number.isFinite(deadline) || deadline <= Date.now()) {
+      throw new Error("local mutation commit attestation is already expired");
+    }
+    this.commitDeadline = deadline;
+    this.commitAttested = true;
+  }
+
+  assertCommitCurrent(): void {
+    if (this.context.mode !== "enforce") {
+      return;
+    }
+    if (!this.commitAttested || this.commitDeadline <= Date.now()) {
+      throw new Error("local mutation commit attestation expired before commit");
+    }
+  }
+
+  async completeCommit(): Promise<void> {
+    if (this.context.mode !== "enforce" || !this.commitAttested) {
+      return;
+    }
+    await postMutation("complete", {
+      context: this.context,
+      resource: this.resource,
+      content_hash: this.contentHash,
+    });
+    this.commitAttested = false;
+    this.commitDeadline = 0;
   }
 
   finish(state: "promoted" | "failed", failureCode?: string): void {

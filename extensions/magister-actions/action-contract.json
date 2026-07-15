@@ -1362,6 +1362,7 @@
             "type": "string"
           },
           "staged_path": {
+            "description": "Path relative to the attempt directory; it must be under promote/ (the sandbox exposes this directory as MAGISTER_PROMOTION_DIR).",
             "maxLength": 1000,
             "minLength": 1,
             "type": "string"
@@ -1376,6 +1377,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "1cf97ca23f42aafdd0338df48ff97d10fd8a4329824f5798229b6d52bf2cebbc",
+  "registry_revision": "5ef16da13c38206bc97e429487f5dba7a8cfb8a622dd91ef6cc4ef0f0a87caa5",
   "schema_version": 1
 }

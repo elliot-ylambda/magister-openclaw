@@ -2,21 +2,49 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPromotionError, promoteArtifact } from "./artifact-promotion.js";
 
 const roots: string[] = [];
 const previousEnforcement = process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT;
+const previousGatewayToken = process.env.GATEWAY_TOKEN;
+const previousGatewayUrl = process.env.GATEWAY_INTERNAL_URL;
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   if (previousEnforcement === undefined) {
     delete process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT;
   } else {
     process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = previousEnforcement;
   }
+  if (previousGatewayToken === undefined) {
+    delete process.env.GATEWAY_TOKEN;
+  } else {
+    process.env.GATEWAY_TOKEN = previousGatewayToken;
+  }
+  if (previousGatewayUrl === undefined) {
+    delete process.env.GATEWAY_INTERNAL_URL;
+  } else {
+    process.env.GATEWAY_INTERNAL_URL = previousGatewayUrl;
+  }
   for (const root of roots.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+beforeEach(() => {
+  process.env.GATEWAY_TOKEN = "broker-local";
+  process.env.GATEWAY_INTERNAL_URL = "http://127.0.0.1:18796";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const body = url.endsWith("/attest")
+        ? { commit_expires_at: new Date(Date.now() + 60_000).toISOString() }
+        : { status: "ok" };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }),
+  );
 });
 
 function fixture(content = "bounded artifact") {
@@ -25,8 +53,8 @@ function fixture(content = "bounded artifact") {
   const workspace = path.join(root, "workspace");
   const attempt = "attempt-1";
   const attemptRoot = path.join(workspace, ".magister", "tmp", "attempts", attempt);
-  fs.mkdirSync(attemptRoot, { recursive: true });
-  const staged = path.join(attemptRoot, "report.txt");
+  fs.mkdirSync(path.join(attemptRoot, "promote"), { recursive: true });
+  const staged = path.join(attemptRoot, "promote", "report.txt");
   fs.writeFileSync(staged, content);
   return {
     workspace,
@@ -39,7 +67,7 @@ function fixture(content = "bounded artifact") {
 function request(row: ReturnType<typeof fixture>) {
   return {
     attempt_id: row.attempt,
-    staged_path: "report.txt",
+    staged_path: "promote/report.txt",
     destination_path: "deliverables/report.txt",
     sha256: row.sha256,
     mutation_context: {
@@ -69,6 +97,7 @@ describe("artifact promotion", () => {
     expect(fs.readFileSync(path.join(row.workspace, "deliverables", "report.txt"), "utf8")).toBe(
       "bounded artifact",
     );
+    expect(fs.existsSync(row.staged)).toBe(false);
   });
 
   it("rejects missing fences and platform-managed destinations", async () => {

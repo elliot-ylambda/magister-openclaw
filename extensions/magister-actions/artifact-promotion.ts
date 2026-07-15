@@ -111,14 +111,43 @@ function parseRequest(value: unknown): PromotionRequest {
   ) {
     throw new ArtifactPromotionError("replace_sha256 is invalid");
   }
+  const stagedPath = normalizedRelative(row.staged_path, "staged_path");
+  if (stagedPath !== "promote" && !stagedPath.startsWith(`promote${path.sep}`)) {
+    throw new ArtifactPromotionError("staged_path must be under the promotion staging directory");
+  }
   return {
     attempt_id: row.attempt_id,
-    staged_path: normalizedRelative(row.staged_path, "staged_path"),
+    staged_path: stagedPath,
     destination_path: destinationRelative(row.destination_path),
     sha256: row.sha256,
     ...(typeof row.replace_sha256 === "string" ? { replace_sha256: row.replace_sha256 } : {}),
     ...(row.mutation_context !== undefined ? { mutation_context: row.mutation_context } : {}),
   };
+}
+
+async function removePromotedStaging(staged: string, attemptRoot: string): Promise<void> {
+  await fs.promises.rm(staged, { force: true });
+  let current = path.dirname(staged);
+  while (current !== attemptRoot && current.startsWith(`${attemptRoot}${path.sep}`)) {
+    try {
+      await fs.promises.rmdir(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOTEMPTY") {
+        break;
+      }
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    current = path.dirname(current);
+  }
+  try {
+    await fs.promises.rmdir(attemptRoot);
+  } catch (error) {
+    if (!["ENOENT", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+      throw error;
+    }
+  }
 }
 
 async function assertComponents(
@@ -257,8 +286,8 @@ export async function promoteArtifact(
     ? new LocalMutationObservation(workspace, context, request.destination_path, request.sha256)
     : undefined;
   let temporary: string | undefined;
+  let commitAttested = false;
   try {
-    observation?.lockPromotion();
     const initialState = await destinationState(
       destination,
       request.sha256,
@@ -266,6 +295,7 @@ export async function promoteArtifact(
     );
     if (initialState === "current") {
       observation?.finish("promoted");
+      await removePromotedStaging(staged, attemptRoot);
       return {
         status: "already_current",
         destination_path: request.destination_path,
@@ -299,11 +329,32 @@ export async function promoteArtifact(
       await fs.promises.rm(temporary, { force: true });
       temporary = undefined;
     } else {
-      await fs.promises.rename(temporary, destination);
-      temporary = undefined;
-      await fsyncDirectory(parent);
+      await observation?.attestCommit();
+      commitAttested = observation !== undefined && context?.mode === "enforce";
+      observation?.lockPromotion();
+      // Re-read after the live gateway attestation and local transaction lock;
+      // this is the last check before the atomic rename.
+      const attestedState = await destinationState(
+        destination,
+        request.sha256,
+        request.replace_sha256,
+      );
+      if (attestedState === "current") {
+        await fs.promises.rm(temporary, { force: true });
+        temporary = undefined;
+      } else {
+        observation?.assertCommitCurrent();
+        await fs.promises.rename(temporary, destination);
+        temporary = undefined;
+        await fsyncDirectory(parent);
+      }
+    }
+    if (commitAttested) {
+      await observation?.completeCommit();
+      commitAttested = false;
     }
     observation?.finish("promoted");
+    await removePromotedStaging(staged, attemptRoot);
     return {
       status: "promoted",
       destination_path: request.destination_path,
@@ -312,6 +363,10 @@ export async function promoteArtifact(
       project_fence: context?.project_fence,
     };
   } catch (error) {
+    if (commitAttested) {
+      await observation?.completeCommit().catch(() => {});
+      commitAttested = false;
+    }
     observation?.finish("failed", error instanceof Error ? error.name : "unknown");
     throw error;
   } finally {

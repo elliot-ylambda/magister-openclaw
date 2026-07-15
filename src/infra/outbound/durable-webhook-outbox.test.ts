@@ -26,7 +26,10 @@ function stateDir(): string {
 describe("durable webhook outbox", () => {
   it("fsyncs an event before delivery and removes it only after acknowledgement", async () => {
     const root = stateDir();
-    const fetchImpl = vi.fn(async () => new Response("ok", { status: 200 }));
+    const fetchImpl = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response("ok", { status: 200 }),
+    );
     expect(
       await enqueueAndDeliverDurableWebhook({
         eventId: "slack:run-1",
@@ -41,7 +44,10 @@ describe("durable webhook outbox", () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
     const request = fetchImpl.mock.calls[0]?.[1];
     expect(request?.headers).toMatchObject({ Authorization: "Bearer current-token" });
-    const sent = JSON.parse(String(request?.body)) as Record<string, unknown>;
+    if (typeof request?.body !== "string") {
+      throw new Error("expected a JSON request body");
+    }
+    const sent = JSON.parse(request.body) as Record<string, unknown>;
     expect(sent).toMatchObject({
       event_id: "slack:run-1",
       event_type: "slack_completion",

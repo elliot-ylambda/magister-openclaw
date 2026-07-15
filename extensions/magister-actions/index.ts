@@ -21,7 +21,12 @@ import {
   searchCorpus,
 } from "./corpus-index.js";
 import { handleCorpusIngestion } from "./corpus.js";
-import { LocalMutationObservation, parseLocalMutationContext } from "./mutation-observer.js";
+import {
+  acquireHostMutationContext,
+  LocalMutationObservation,
+  parseLocalMutationContext,
+  releaseHostMutationContext,
+} from "./mutation-observer.js";
 
 const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/actions";
 const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
@@ -280,7 +285,7 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
   return undefined;
 }
 
-function mirrorHeartbeatNote(envelope: ActionEnvelope): void {
+async function mirrorHeartbeatNote(envelope: ActionEnvelope): Promise<void> {
   const notePath = envelope.receipt.note_path;
   const noteEntry = envelope.receipt.note_entry;
   const occurrenceId = envelope.receipt.occurrence_id;
@@ -301,16 +306,22 @@ function mirrorHeartbeatNote(envelope: ActionEnvelope): void {
   const notesDirectory = path.join(workspace, "notes");
   const destination = path.join(notesDirectory, "heartbeat.md");
   const payload = `${noteEntry.trim()}\n`;
-  const observation = mutationContext
+  const operationId = `host-heartbeat-${createHash("sha256")
+    .update(occurrenceId)
+    .digest("hex")
+    .slice(0, 32)}`;
+  const freshContext = await acquireHostMutationContext(operationId, "host:heartbeat_note");
+  const localContext = freshContext ?? mutationContext;
+  const observation = localContext
     ? new LocalMutationObservation(
         workspace,
-        mutationContext,
+        localContext,
         "notes/heartbeat.md",
         createHash("sha256").update(payload).digest("hex"),
       )
     : undefined;
+  let commitAttested = false;
   try {
-    observation?.lockPromotion();
     fs.mkdirSync(notesDirectory, { recursive: true, mode: 0o700 });
     if (fs.lstatSync(notesDirectory).isSymbolicLink()) {
       throw new Error("heartbeat notes directory is a symlink");
@@ -326,6 +337,10 @@ function mirrorHeartbeatNote(envelope: ActionEnvelope): void {
         return;
       }
     }
+    await observation?.attestCommit();
+    commitAttested = observation !== undefined && localContext?.mode === "enforce";
+    observation?.lockPromotion();
+    observation?.assertCommitCurrent();
     const descriptor = fs.openSync(
       destination,
       fs.constants.O_WRONLY |
@@ -349,10 +364,20 @@ function mirrorHeartbeatNote(envelope: ActionEnvelope): void {
     } finally {
       fs.closeSync(directoryDescriptor);
     }
+    if (commitAttested) {
+      await observation?.completeCommit();
+      commitAttested = false;
+    }
     observation?.finish("promoted");
   } catch (error) {
+    if (commitAttested) {
+      await observation?.completeCommit().catch(() => {});
+      commitAttested = false;
+    }
     observation?.finish("failed", error instanceof Error ? error.name : "unknown");
     throw error;
+  } finally {
+    await releaseHostMutationContext(freshContext);
   }
 }
 
@@ -767,7 +792,7 @@ export function createMagisterActionTool(
         }
         if (envelope.ok && action.action === "record_heartbeat_escalation") {
           try {
-            mirrorHeartbeatNote(envelope);
+            await mirrorHeartbeatNote(envelope);
             envelope.receipt.local_note_mirrored = true;
           } catch {
             return jsonResult(

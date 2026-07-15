@@ -28,6 +28,8 @@ const previousSandboxLauncher = process.env.MAGISTER_TOOL_SANDBOX_LAUNCHER;
 const previousResourceAdmission = process.env.MAGISTER_RESOURCE_ADMISSION_ENABLED;
 const previousCgroupRoot = process.env.MAGISTER_CGROUP_ROOT;
 const previousReservedHeadroom = process.env.MAGISTER_CORPUS_RESERVED_HEADROOM_BYTES;
+const previousGatewayToken = process.env.GATEWAY_TOKEN;
+const previousGatewayUrl = process.env.GATEWAY_INTERNAL_URL;
 
 beforeEach(() => {
   vi.spyOn(fs.promises, "statfs").mockResolvedValue({
@@ -39,10 +41,37 @@ beforeEach(() => {
     files: 100,
     ffree: 50,
   });
+  process.env.GATEWAY_TOKEN = "broker-local";
+  process.env.GATEWAY_INTERNAL_URL = "http://127.0.0.1:18796";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      return new Response(
+        JSON.stringify(
+          url.endsWith("/attest")
+            ? { commit_expires_at: new Date(Date.now() + 60_000).toISOString() }
+            : { status: "ok" },
+        ),
+        { status: 200 },
+      );
+    }),
+  );
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  if (previousGatewayToken === undefined) {
+    delete process.env.GATEWAY_TOKEN;
+  } else {
+    process.env.GATEWAY_TOKEN = previousGatewayToken;
+  }
+  if (previousGatewayUrl === undefined) {
+    delete process.env.GATEWAY_INTERNAL_URL;
+  } else {
+    process.env.GATEWAY_INTERNAL_URL = previousGatewayUrl;
+  }
   if (previousWorkspace === undefined) {
     delete process.env.OPENCLAW_WORKSPACE_DIR;
   } else {
