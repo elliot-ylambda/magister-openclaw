@@ -96,7 +96,7 @@ describe("runtime bundle prompt presence", () => {
         const pending = path.join(workspace, ".magister", "runtime", "prompt-presence", "pending");
         expect(fs.readdirSync(pending)).toHaveLength(1);
         if (typeof init.body !== "string") {
-          throw new TypeError("expected a JSON string request body");
+          throw new TypeError("expected JSON request body");
         }
         const payload = JSON.parse(init.body);
         expect(payload).toMatchObject({
@@ -147,7 +147,7 @@ describe("runtime bundle prompt presence", () => {
       "fetch",
       vi.fn(async (_url: string, init: RequestInit) => {
         if (typeof init.body !== "string") {
-          throw new TypeError("expected a JSON string request body");
+          throw new TypeError("expected JSON request body");
         }
         payloads.push(JSON.parse(init.body));
         return { ok: true } as Response;

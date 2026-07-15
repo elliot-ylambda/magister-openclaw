@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 type PackageJson = {
   name?: string;
@@ -171,7 +172,7 @@ export function syncPluginVersions(
   };
 }
 
-if (import.meta.main) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const check = process.argv.includes("--check");
   const summary = syncPluginVersions(resolve("."), { write: !check });
   console.log(

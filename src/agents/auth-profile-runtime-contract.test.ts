@@ -45,7 +45,7 @@ vi.mock("../plugins/plugin-registry.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../plugins/plugin-registry.js")>();
   return {
     ...actual,
-    loadPluginRegistrySnapshot: () => ({ plugins: [] }),
+    loadPluginRegistrySnapshot: () => ({ plugins: [], diagnostics: [] }),
   };
 });
 

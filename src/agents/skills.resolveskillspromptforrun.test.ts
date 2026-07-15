@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createCanonicalFixtureSkill } from "./skills.test-helpers.js";
 import type { SkillEntry } from "./skills/types.js";
-import { resolveSkillsPromptForRun, SKILL_INDEX_RELATIVE_PATH } from "./skills/workspace.js";
+import {
+  resolveSkillsPromptForRun,
+  selectSkillsForTask,
+  SKILL_INDEX_RELATIVE_PATH,
+} from "./skills/workspace.js";
 
 describe("resolveSkillsPromptForRun", () => {
   it("prefers snapshot prompt when available", () => {
@@ -69,6 +73,93 @@ describe("resolveSkillsPromptForRun", () => {
     } finally {
       rmSync(workspaceDir, { recursive: true, force: true });
     }
+  });
+
+  it("honors explicit skill negation", () => {
+    const gmail = createFixtureSkill({
+      name: "magister-gmail",
+      description: "Send email from a connected Gmail identity",
+      filePath: "/app/skills/magister-gmail/SKILL.md",
+      baseDir: "/app/skills/magister-gmail",
+      source: "openclaw-workspace",
+    });
+    const platformEmail = createFixtureSkill({
+      name: "magister-email",
+      description: "Send email from the platform domain",
+      filePath: "/app/skills/magister-email/SKILL.md",
+      baseDir: "/app/skills/magister-email",
+      source: "openclaw-workspace",
+    });
+
+    const selected = selectSkillsForTask(
+      [gmail, platformEmail],
+      "Email the report from the agent domain; do not use my Gmail identity.",
+    ).map((skill) => skill.name);
+
+    expect(selected).toContain("magister-email");
+    expect(selected).not.toContain("magister-gmail");
+  });
+
+  it("disambiguates AEO probes from SEO audits and visibility tracking", () => {
+    const aeo = createFixtureSkill({
+      name: "magister-aeo-audit",
+      description: "One-time AEO site audit with prioritized fixes for ChatGPT visibility",
+      filePath: "/app/skills/magister-aeo-audit/SKILL.md",
+      baseDir: "/app/skills/magister-aeo-audit",
+      source: "openclaw-workspace",
+    });
+    const visibility = createFixtureSkill({
+      name: "magister-ai-visibility",
+      description: "Track brand appearances in ChatGPT and Gemini over time",
+      filePath: "/app/skills/magister-ai-visibility/SKILL.md",
+      baseDir: "/app/skills/magister-ai-visibility",
+      source: "openclaw-workspace",
+    });
+
+    expect(
+      selectSkillsForTask([aeo, visibility], "Audit our site for SEO problems").map(
+        (skill) => skill.name,
+      ),
+    ).not.toContain("magister-aeo-audit");
+    expect(
+      selectSkillsForTask(
+        [aeo, visibility],
+        "Track how our brand appears in ChatGPT and Gemini over time",
+      ).map((skill) => skill.name),
+    ).toEqual(["magister-ai-visibility"]);
+    expect(
+      selectSkillsForTask([aeo, visibility], "Run a one-time standalone AEO probe").map(
+        (skill) => skill.name,
+      ),
+    ).toEqual(["magister-aeo-audit"]);
+  });
+
+  it("disambiguates workflow authoring from an existing workflow run", () => {
+    const authoring = createFixtureSkill({
+      name: "magister-workflows",
+      description: "Schedule recurring daily or weekly workflows",
+      filePath: "/app/skills/magister-workflows/SKILL.md",
+      baseDir: "/app/skills/magister-workflows",
+      source: "openclaw-workspace",
+    });
+    const runtime = createFixtureSkill({
+      name: "magister-workflow-runtime",
+      description: "Run an existing workflow now by UUID",
+      filePath: "/app/skills/magister-workflow-runtime/SKILL.md",
+      baseDir: "/app/skills/magister-workflow-runtime",
+      source: "openclaw-workspace",
+    });
+
+    expect(
+      selectSkillsForTask([authoring, runtime], "Schedule a weekly report every Monday").map(
+        (skill) => skill.name,
+      ),
+    ).toEqual(["magister-workflows"]);
+    expect(
+      selectSkillsForTask([authoring, runtime], "Run my existing workflow now by UUID").map(
+        (skill) => skill.name,
+      ),
+    ).toEqual(["magister-workflow-runtime"]);
   });
 
   it("keeps legacy entries with disableModelInvocation hidden when exposure metadata is absent", () => {

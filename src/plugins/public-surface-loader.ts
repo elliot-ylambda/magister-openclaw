@@ -47,6 +47,7 @@ function canUseSourceArtifactRequire(params: { modulePath: string; tryNative: bo
   return (
     !params.tryNative &&
     isSourceArtifactPath(params.modulePath) &&
+    !process.features.typescript &&
     typeof sourceArtifactRequire.extensions?.[".ts"] === "function"
   );
 }

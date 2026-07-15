@@ -86,14 +86,14 @@ async function recoverStaleLock(path: string): Promise<void> {
   await fsyncDirectory(dirname(path));
 }
 
-async function releaseContextLock(path: string, token: string): Promise<void> {
-  const owner = await readOwner(path);
+async function releaseContextLock(lockPath: string, token: string): Promise<void> {
+  const owner = await readOwner(lockPath);
   if (owner?.token !== token) {
     throw new Error("context lock ownership changed");
   }
-  await unlink(join(path, "owner.json"));
-  await rmdir(path);
-  await fsyncDirectory(dirname(path));
+  await unlink(join(lockPath, "owner.json"));
+  await rmdir(lockPath);
+  await fsyncDirectory(dirname(lockPath));
 }
 
 export async function withContextLock<T>(
@@ -131,14 +131,31 @@ export async function withContextLock<T>(
     }
   }
 
-  let result: T;
+  let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   try {
-    result = await action();
+    outcome = { ok: true, value: await action() };
   } catch (error) {
-    // Never mask the action's error with a secondary lock-cleanup failure.
-    await releaseContextLock(lockPath, token).catch(() => {});
-    throw error;
+    outcome = { ok: false, error };
   }
-  await releaseContextLock(lockPath, token);
-  return result;
+
+  let releaseFailure: { error: unknown } | undefined;
+  try {
+    await releaseContextLock(lockPath, token);
+  } catch (error) {
+    releaseFailure = { error };
+  }
+
+  if (!outcome.ok) {
+    if (releaseFailure) {
+      throw new AggregateError(
+        [outcome.error, releaseFailure.error],
+        "context action and lock release both failed",
+      );
+    }
+    throw outcome.error;
+  }
+  if (releaseFailure) {
+    throw releaseFailure.error;
+  }
+  return outcome.value;
 }

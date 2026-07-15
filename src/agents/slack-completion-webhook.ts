@@ -5,7 +5,7 @@
 // web chat. Mirrors `subagent-completion-webhook.ts` and
 // `cron.completionWebhook` (src/gateway/server-cron.ts).
 
-import { loadConfig } from "../config/config.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getGlobalPluginRegistry } from "../plugins/hook-runner-global.js";
 import type { PluginHookHandlerMap } from "../plugins/types.js";
 
@@ -75,13 +75,7 @@ export async function sendSlackCompletionWebhook(params: {
  * `webhookToken` supports inline string tokens only, matching how
  * `subagent.webhookToken` is consumed.
  */
-export function registerSlackCompletionWebhookHook(): void {
-  let cfg;
-  try {
-    cfg = loadConfig();
-  } catch {
-    return;
-  }
+export function registerSlackCompletionWebhookHook(cfg: OpenClawConfig): void {
   const url = cfg.slackCompletion?.completionWebhook?.trim();
   const rawToken = cfg.slackCompletion?.webhookToken;
   const token = typeof rawToken === "string" ? rawToken.trim() : undefined;

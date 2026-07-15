@@ -7,7 +7,7 @@
 // from the hook ctx). The gateway resolves it to `chat_sessions.id` via the
 // `openclaw_session_key` column, avoiding any brittle UUID-extraction regex.
 
-import { loadConfig } from "../config/config.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getGlobalPluginRegistry } from "../plugins/hook-runner-global.js";
 import type {
   PluginHookHandlerMap,
@@ -131,13 +131,7 @@ export async function sendSubagentCompletionWebhook(params: {
  * `event.targetSessionKey`. Token usage / startedAt are not exposed by the
  * registry's public reader API, so we omit them — runtime_ms defaults to 0.
  */
-export function registerSubagentCompletionWebhookHook(): void {
-  let cfg;
-  try {
-    cfg = loadConfig();
-  } catch {
-    return;
-  }
+export function registerSubagentCompletionWebhookHook(cfg: OpenClawConfig): void {
   const url = trimToOptionalString(cfg.subagent?.completionWebhook);
   // webhookToken is SecretInput (string | SecretRef). Only inline string tokens
   // are supported here, matching how `cron.webhookToken` is consumed in

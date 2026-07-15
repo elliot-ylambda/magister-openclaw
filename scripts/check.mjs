@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import { pathToFileURL } from "node:url";
 import { printTimingSummary } from "./lib/check-timing-summary.mjs";
 
 export async function main(argv = process.argv.slice(2)) {
@@ -134,6 +135,6 @@ function printSummary(timings) {
   printTimingSummary("check", timings);
 }
 
-if (import.meta.main) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }

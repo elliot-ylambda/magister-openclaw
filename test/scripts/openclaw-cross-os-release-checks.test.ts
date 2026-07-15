@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -72,6 +73,12 @@ import {
   verifyPackagedUpgradeUpdateResult,
   writePackageDistInventoryForCandidate,
 } from "../../scripts/openclaw-cross-os-release-checks.ts";
+
+const upstreamWorkflowIt = existsSync(
+  ".github/workflows/openclaw-cross-os-release-checks-reusable.yml",
+)
+  ? it
+  : it.skip;
 
 describe("scripts/openclaw-cross-os-release-checks", () => {
   it("keeps dashboard smoke patient enough for cold packaged gateway startup", () => {
@@ -205,7 +212,7 @@ describe("scripts/openclaw-cross-os-release-checks", () => {
     expect(resolveProviderConfig("openai", {})?.model).toBe("openai/gpt-5.4");
   });
 
-  it("keeps release cross-OS OpenAI smoke on GPT-5.4", () => {
+  upstreamWorkflowIt("keeps release cross-OS OpenAI smoke on GPT-5.4", () => {
     const workflow = readFileSync(
       ".github/workflows/openclaw-cross-os-release-checks-reusable.yml",
       "utf8",

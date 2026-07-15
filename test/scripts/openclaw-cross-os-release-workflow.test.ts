@@ -1,12 +1,16 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const WORKFLOW_PATH = ".github/workflows/openclaw-cross-os-release-checks-reusable.yml";
 const WRAPPER_PATH = "scripts/github/run-openclaw-cross-os-release-checks.sh";
 const HARNESS = "bash workflow/scripts/github/run-openclaw-cross-os-release-checks.sh";
+// The Magister fork intentionally omits upstream workflow files because its
+// synchronization token does not have GitHub's workflow scope.
+const HAS_UPSTREAM_WORKFLOW = existsSync(WORKFLOW_PATH);
+const upstreamWorkflowIt = HAS_UPSTREAM_WORKFLOW ? it : it.skip;
 
 describe("cross-OS release checks workflow", () => {
-  it("runs the TypeScript release harness through the Windows-safe wrapper", () => {
+  upstreamWorkflowIt("runs the TypeScript release harness through the Windows-safe wrapper", () => {
     const workflow = readFileSync(WORKFLOW_PATH, "utf8");
 
     expect(workflow).toContain(HARNESS);
