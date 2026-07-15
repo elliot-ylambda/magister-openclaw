@@ -85,6 +85,11 @@ describe("Magister action manifest contract", () => {
   it("uses strict schemas and never exposes project_id", () => {
     for (const row of nativeActionContract.actions) {
       expect(row.input_schema.additionalProperties).toBe(false);
+      const properties = new Set(Object.keys(row.input_schema.properties ?? {}));
+      const requiredFields = (row.input_schema.required ?? []) as string[];
+      for (const required of requiredFields) {
+        expect(properties.has(required)).toBe(true);
+      }
       expect(JSON.stringify(row.input_schema)).not.toContain("project_id");
     }
   });
