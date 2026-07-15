@@ -890,6 +890,11 @@
             },
             "maxItems": 100,
             "type": "array"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": ["idempotency_key", "service", "title", "body_markdown"],
@@ -935,6 +940,10 @@
           },
           "site_id": {
             "maxLength": 160,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 500,
             "type": "string"
           }
         },
@@ -1001,6 +1010,11 @@
             "minLength": 3,
             "pattern": "^[^/\\s]+/[^/\\s]+$",
             "type": "string"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": ["idempotency_key", "repo", "title", "body", "changes"],
@@ -1033,6 +1047,11 @@
           },
           "price": {
             "maxLength": 100,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 500,
+            "minLength": 1,
             "type": "string"
           }
         },
@@ -1252,6 +1271,6 @@
       "tool_name": "magister_submit_workflow_completion"
     }
   ],
-  "registry_revision": "619e83b556a7792f2f7c8a45be82c989513477c27da615585e2bee3806541e08",
+  "registry_revision": "17e420c8c613655d5cc50d88ca7bffaad3f5e6d69b17929a53bd197803e6af51",
   "schema_version": 1
 }
