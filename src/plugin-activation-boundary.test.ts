@@ -117,19 +117,40 @@ describe("plugin activation boundary", () => {
   it("keeps generic boundaries cold and loads only narrow browser helper surfaces on use", () => {
     loadBundledPluginPublicSurfaceModuleSync.mockReset();
 
-    expect(isStaticallyChannelConfigured({}, "telegram", { TELEGRAM_BOT_TOKEN: "token" })).toBe(
-      true,
-    );
-    expect(isStaticallyChannelConfigured({}, "discord", { DISCORD_BOT_TOKEN: "token" })).toBe(true);
-    expect(isStaticallyChannelConfigured({}, "slack", { SLACK_BOT_TOKEN: "xoxb-test" })).toBe(true);
+    const configuredChannels = {
+      channels: {
+        telegram: { botToken: "token" },
+        discord: { token: "token" },
+        slack: { botToken: "xoxb-test" },
+        irc: { host: "irc.example.com", nick: "openclaw" },
+      },
+    } as Parameters<typeof isStaticallyChannelConfigured>[0];
     expect(
-      isStaticallyChannelConfigured({}, "irc", {
+      isStaticallyChannelConfigured(configuredChannels, "telegram", {
+        TELEGRAM_BOT_TOKEN: "token",
+      }),
+    ).toBe(true);
+    expect(
+      isStaticallyChannelConfigured(configuredChannels, "discord", {
+        DISCORD_BOT_TOKEN: "token",
+      }),
+    ).toBe(true);
+    expect(
+      isStaticallyChannelConfigured(configuredChannels, "slack", {
+        SLACK_BOT_TOKEN: "xoxb-test",
+      }),
+    ).toBe(true);
+    expect(
+      isStaticallyChannelConfigured(configuredChannels, "irc", {
         IRC_HOST: "irc.example.com",
         IRC_NICK: "openclaw",
       }),
     ).toBe(true);
-    expect(isStaticallyChannelConfigured({}, "whatsapp", {})).toBe(false);
-    const staticNormalize = { allowPluginNormalization: false };
+    expect(isStaticallyChannelConfigured(configuredChannels, "whatsapp", {})).toBe(false);
+    const staticNormalize = {
+      allowPluginNormalization: false,
+      manifestPlugins: loadPluginManifestRegistryForPluginRegistry().plugins,
+    };
     expect(normalizeModelRef("google", "gemini-3.1-pro", staticNormalize)).toEqual({
       provider: "google",
       model: "gemini-3.1-pro-preview",

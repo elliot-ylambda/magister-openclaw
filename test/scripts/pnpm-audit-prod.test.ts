@@ -6,6 +6,7 @@ import {
   collectProdResolvedPackagesFromLockfile,
   createBulkAdvisoryPayload,
   filterFindingsBySeverity,
+  filterIgnoredGhsas,
   parseSnapshotKey,
   runPnpmAuditProd,
   stripVersionDecorators,
@@ -166,6 +167,29 @@ snapshots:
     ]);
   });
 
+  it("ignores only explicitly configured GHSA identifiers", () => {
+    const findings = [
+      {
+        id: 1121076,
+        packageName: "patched-package",
+        severity: "high",
+        title: "backported issue",
+        url: "https://github.com/advisories/GHSA-jfgx-wxx8-mp94",
+        vulnerableVersions: "<=0.73.1",
+      },
+      {
+        id: "GHSA-new1-new2-new3",
+        packageName: "unpatched-package",
+        severity: "high",
+        title: "new issue",
+        url: null,
+        vulnerableVersions: "<=1.0.0",
+      },
+    ];
+
+    expect(filterIgnoredGhsas(findings, ["GHSA-JFGX-WXX8-MP94"])).toEqual([findings[1]]);
+  });
+
   it("returns a failing exit code when bulk advisories include high severity findings", async () => {
     const tempDir = await mkdtemp(path.join(tmpdir(), "openclaw-audit-prod-"));
     await writeFile(
@@ -183,6 +207,7 @@ snapshots:
 `,
       "utf8",
     );
+    await writeFile(path.join(tempDir, "package.json"), "{}\n", "utf8");
 
     try {
       const stdoutChunks: string[] = [];
