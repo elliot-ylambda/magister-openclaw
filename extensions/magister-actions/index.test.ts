@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,6 +22,19 @@ const completionAction = nativeActionContract.actions.find(
 if (!completionAction) {
   throw new Error("submit_workflow_completion contract missing");
 }
+const heartbeatAction = nativeActionContract.actions.find(
+  (row) => row.action === "record_heartbeat_escalation",
+);
+if (!heartbeatAction) {
+  throw new Error("record_heartbeat_escalation contract missing");
+}
+const integrationsAction = nativeActionContract.actions.find(
+  (row) => row.action === "list_integrations",
+);
+if (!integrationsAction) {
+  throw new Error("list_integrations contract missing");
+}
+const temporaryDirectories: string[] = [];
 
 function api(config: Record<string, unknown> = {}) {
   return { pluginConfig: config } as unknown as Parameters<typeof createMagisterActionTool>[0];
@@ -70,6 +83,14 @@ function requestBody(init?: RequestInit): Record<string, unknown> {
 
 afterEach(() => {
   delete process.env.GATEWAY_TOKEN;
+  delete process.env.MAGISTER_BROKER_BASE_URL;
+  delete process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT;
+  delete process.env.OPENCLAW_STATE_DIR;
+  delete process.env.OPENCLAW_WORKSPACE_DIR;
+  delete process.env.FLY_APP_NAME;
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 describe("Magister action manifest contract", () => {
@@ -150,6 +171,64 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
   });
 
+  it("forwards only a structurally valid heartbeat runtime session", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const sessionKey = "agent:heartbeat:heartbeat:00000000-0000-4000-8000-000000000002:7";
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      { sessionKey },
+    );
+
+    await tool.execute("call-heartbeat", {});
+    expect(request?.init?.headers).toMatchObject({ "x-magister-session-key": sessionKey });
+  });
+
+  it("mirrors a validated occurrence-keyed heartbeat note exactly once", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const stateDir = mkdtempSync(join(tmpdir(), "magister-heartbeat-"));
+    temporaryDirectories.push(stateDir);
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = "1";
+    const occurrenceId = "heartbeat-v1:2026-07-14";
+    const response = envelope({
+      side_effect: "internal_write",
+      receipt: {
+        status: "recorded",
+        finding_id: "00000000-0000-4000-8000-000000000003",
+        occurrence_id: occurrenceId,
+        note_path: "notes/heartbeat.md",
+        note_entry: `<!-- heartbeat:${occurrenceId} -->\n- 2026-07-14: Reconnect analytics`,
+        mutation_context: {
+          project_id: "00000000-0000-4000-8000-000000000001",
+          operation_id: "heartbeat-note-2026-07-14",
+          owner_id: "gateway-owner",
+          project_fence: 7,
+          mode: "enforce",
+        },
+      },
+    });
+    const tool = createMagisterActionTool(
+      api(),
+      heartbeatAction,
+      async () => new Response(JSON.stringify(response), { status: 200 }),
+      {
+        sessionKey: "agent:heartbeat:heartbeat:00000000-0000-4000-8000-000000000002:7",
+      },
+    );
+
+    expect(resultJson(await tool.execute("call-note-1", {})).ok).toBe(true);
+    expect(resultJson(await tool.execute("call-note-2", {})).ok).toBe(true);
+    const note = readFileSync(join(stateDir, "workspace", "notes", "heartbeat.md"), "utf8");
+    expect(note.match(/<!-- heartbeat:/g)).toHaveLength(1);
+    expect(note).toContain("Reconnect analytics");
+  });
+
   it("fails closed without a machine token", async () => {
     const tool = createMagisterActionTool(api(), action, async () => {
       throw new Error("fetch must not run");
@@ -157,6 +236,48 @@ describe("typed gateway execution", () => {
     const output = resultJson(await tool.execute("call-2", {}));
     expect(output.ok).toBe(false);
     expect((output.error as { code: string }).code).toBe("not_authorized");
+  });
+
+  it("uses the fixed local broker without exposing a gateway credential", async () => {
+    process.env.MAGISTER_BROKER_BASE_URL = "http://127.0.0.1:18796";
+    let request: { input: string; init?: RequestInit } | undefined;
+    const tool = createMagisterActionTool(api(), action, async (input, init) => {
+      request = { input: requestUrl(input), init };
+      return new Response(JSON.stringify(envelope()), { status: 200 });
+    });
+
+    const output = resultJson(await tool.execute("call-broker", {}));
+
+    expect(output.ok).toBe(true);
+    expect(request?.input).toBe("http://127.0.0.1:18796/api/agent/actions/get_brand");
+    expect(request?.init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
+  });
+
+  it("reuses only freshness-valid cached integration reads", async () => {
+    process.env.GATEWAY_TOKEN = "token";
+    const workspace = mkdtempSync(join(tmpdir(), "magister-read-cache-"));
+    temporaryDirectories.push(workspace);
+    process.env.OPENCLAW_WORKSPACE_DIR = workspace;
+    process.env.FLY_APP_NAME = "project-app-1";
+    let fetches = 0;
+    const tool = createMagisterActionTool(api(), integrationsAction, async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify(envelope({ receipt: { integrations: [{ service: "ga4" }] } })),
+        { status: 200 },
+      );
+    });
+
+    const first = resultJson(await tool.execute("call-cache-1", {}));
+    const second = resultJson(await tool.execute("call-cache-2", {}));
+
+    expect(fetches).toBe(1);
+    expect((first.receipt as Record<string, unknown>).cache_freshness).toMatchObject({
+      cached: false,
+    });
+    expect((second.receipt as Record<string, unknown>).cache_freshness).toMatchObject({
+      cached: true,
+    });
   });
 
   it("rejects a raw legacy result instead of inferring success", async () => {
@@ -265,6 +386,41 @@ describe("typed gateway execution", () => {
       expect(request?.init?.headers).toMatchObject({
         "x-magister-artifact-attestation": `v1=${expected}`,
       });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves completion attestation to the credential broker", async () => {
+    process.env.MAGISTER_BROKER_BASE_URL = "http://127.0.0.1:18796";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-broker-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const content = "brokered report\n";
+      await writeFile(join(workspace, "resources", "report.md"), content);
+      const sha256 = createHash("sha256").update(content).digest("hex");
+      const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
+      let request: { init?: RequestInit } | undefined;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async (_input, init) => {
+          request = { init };
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey },
+      );
+      const artifacts = [{ path: "resources/report.md", sha256, kind: "file" }];
+
+      const output = resultJson(await tool.execute("completion-broker", { artifacts }));
+
+      expect(output.ok).toBe(true);
+      expect(requestBody(request?.init)).toEqual({ arguments: { artifacts } });
+      expect(request?.init?.headers).toMatchObject({
+        authorization: "Bearer broker-local",
+        "x-magister-session-key": sessionKey,
+      });
+      expect(request?.init?.headers).not.toHaveProperty("x-magister-artifact-attestation");
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

@@ -551,6 +551,33 @@ export function buildExecRuntimeErrorOutcome(params: {
   };
 }
 
+const MAGISTER_TOOL_SANDBOX_LAUNCHER = "/usr/local/bin/magister-tool-sandbox";
+
+export function magisterToolSandboxLauncher(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  return env.MAGISTER_TOOL_SANDBOX_LAUNCHER === MAGISTER_TOOL_SANDBOX_LAUNCHER
+    ? MAGISTER_TOOL_SANDBOX_LAUNCHER
+    : undefined;
+}
+
+export function buildMagisterToolSandboxArgv(params: {
+  launcher: string;
+  workspace: string;
+  attemptId: string;
+  childArgv: string[];
+}): string[] {
+  return [
+    params.launcher,
+    "--workspace",
+    params.workspace,
+    "--attempt",
+    params.attemptId,
+    "--",
+    ...params.childArgv,
+  ];
+}
+
 export async function runExecProcess(opts: {
   command: string;
   // Execute this instead of `command` (which is kept for display/session/logging).
@@ -725,6 +752,20 @@ export async function runExecProcess(opts: {
     }
     const { shell, args: shellArgs } = getShellConfig();
     const childArgv = [shell, ...shellArgs, execCommand];
+    const magisterLauncher = magisterToolSandboxLauncher();
+    if (magisterLauncher) {
+      return {
+        mode: "child" as const,
+        argv: buildMagisterToolSandboxArgv({
+          launcher: magisterLauncher,
+          workspace: opts.workdir,
+          attemptId: sessionId,
+          childArgv,
+        }),
+        env: shellRuntimeEnv,
+        stdinMode: "pipe-closed" as const,
+      };
+    }
     if (opts.usePty) {
       return {
         mode: "pty" as const,

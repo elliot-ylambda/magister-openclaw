@@ -169,6 +169,63 @@ function recoverPendingOutboundDeliveries(params: {
   })().catch((err) => params.log.error(`Delivery recovery failed: ${String(err)}`));
 }
 
+function inlineSecret(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function recoverDurableCompletionWebhooks(params: {
+  cfg: OpenClawConfig;
+  log: GatewayRuntimeServiceLogger;
+}): () => void {
+  let stopped = false;
+  let running = false;
+  const runPass = async () => {
+    if (stopped || running) {
+      return;
+    }
+    running = true;
+    try {
+      const { recoverDurableWebhookOutbox } =
+        await import("../infra/outbound/durable-webhook-outbox.js");
+      const { reconstructTaskCompletionOutbox } =
+        await import("../infra/outbound/task-outbox-reconciliation.js");
+      const cronToken = inlineSecret(params.cfg.cron?.webhookToken);
+      const subagentToken = inlineSecret(params.cfg.subagent?.webhookToken);
+      const slackToken = inlineSecret(params.cfg.slackCompletion?.webhookToken);
+      const reconstructed = await reconstructTaskCompletionOutbox({ cfg: params.cfg });
+      const result = await recoverDurableWebhookOutbox({
+        tokens: {
+          ...(cronToken ? { cron_completion: cronToken } : {}),
+          ...(subagentToken ? { subagent_completion: subagentToken } : {}),
+          ...(slackToken ? { slack_completion: slackToken } : {}),
+        },
+      });
+      const recoveryLog = params.log.child("durable-webhook-recovery");
+      recoveryLog.info(
+        `reconstructed=${reconstructed.reconstructed} invalid=${reconstructed.invalid} recovered=${result.delivered} deferred=${result.deferred} unavailable=${result.unavailable + reconstructed.unavailable}`,
+      );
+    } finally {
+      running = false;
+    }
+  };
+  const trigger = () => {
+    void runPass().catch((err) =>
+      params.log.error(`Durable webhook recovery failed: ${String(err)}`),
+    );
+  };
+  trigger();
+  const timer = setInterval(trigger, 30_000);
+  timer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 function recoverPendingSessionDeliveries(params: {
   deps: import("../cli/deps.types.js").CliDeps;
   log: GatewayRuntimeServiceLogger;
@@ -267,6 +324,10 @@ export function activateGatewayScheduledServices(params: {
     cfg: params.cfgAtStart,
     log: params.log,
   });
+  const stopDurableCompletionRecovery = recoverDurableCompletionWebhooks({
+    cfg: params.cfgAtStart,
+    log: params.log,
+  });
   recoverPendingSessionDeliveries({
     deps: params.deps,
     log: params.log,
@@ -279,5 +340,11 @@ export function activateGatewayScheduledServices(params: {
         log: params.log,
       })
     : () => {};
-  return { heartbeatRunner, stopModelPricingRefresh };
+  return {
+    heartbeatRunner,
+    stopModelPricingRefresh: () => {
+      stopDurableCompletionRecovery();
+      stopModelPricingRefresh();
+    },
+  };
 }

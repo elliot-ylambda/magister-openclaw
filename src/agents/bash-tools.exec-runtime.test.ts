@@ -22,9 +22,11 @@ vi.mock("../process/supervisor/index.js", () => ({
 
 let markBackgrounded: typeof import("./bash-process-registry.js").markBackgrounded;
 let buildExecExitOutcome: typeof import("./bash-tools.exec-runtime.js").buildExecExitOutcome;
+let buildMagisterToolSandboxArgv: typeof import("./bash-tools.exec-runtime.js").buildMagisterToolSandboxArgv;
 let detectCursorKeyMode: typeof import("./bash-tools.exec-runtime.js").detectCursorKeyMode;
 let emitExecSystemEvent: typeof import("./bash-tools.exec-runtime.js").emitExecSystemEvent;
 let formatExecFailureReason: typeof import("./bash-tools.exec-runtime.js").formatExecFailureReason;
+let magisterToolSandboxLauncher: typeof import("./bash-tools.exec-runtime.js").magisterToolSandboxLauncher;
 let renderExecUpdateText: typeof import("./bash-tools.exec-runtime.js").renderExecUpdateText;
 let resolveExecTarget: typeof import("./bash-tools.exec-runtime.js").resolveExecTarget;
 let runExecProcess: typeof import("./bash-tools.exec-runtime.js").runExecProcess;
@@ -33,9 +35,11 @@ beforeAll(async () => {
   ({ markBackgrounded } = await import("./bash-process-registry.js"));
   ({
     buildExecExitOutcome,
+    buildMagisterToolSandboxArgv,
     detectCursorKeyMode,
     emitExecSystemEvent,
     formatExecFailureReason,
+    magisterToolSandboxLauncher,
     renderExecUpdateText,
     resolveExecTarget,
     runExecProcess,
@@ -73,6 +77,40 @@ describe("detectCursorKeyMode", () => {
     expect(detectCursorKeyMode("\x1b[?1l\x1b[?1h")).toBe("application");
     // Multiple toggles - last one wins
     expect(detectCursorKeyMode("\x1b[?1h\x1b[?1l\x1b[?1h")).toBe("application");
+  });
+});
+
+describe("Magister tool subprocess launcher", () => {
+  it("accepts only the immutable image launcher path", () => {
+    expect(
+      magisterToolSandboxLauncher({
+        MAGISTER_TOOL_SANDBOX_LAUNCHER: "/usr/local/bin/magister-tool-sandbox",
+      }),
+    ).toBe("/usr/local/bin/magister-tool-sandbox");
+    expect(
+      magisterToolSandboxLauncher({ MAGISTER_TOOL_SANDBOX_LAUNCHER: "/tmp/attacker" }),
+    ).toBeUndefined();
+  });
+
+  it("passes command text as one argv value after fixed launcher options", () => {
+    expect(
+      buildMagisterToolSandboxArgv({
+        launcher: "/usr/local/bin/magister-tool-sandbox",
+        workspace: "/data/.openclaw/workspace",
+        attemptId: "attempt-1",
+        childArgv: ["/bin/bash", "-lc", "echo $TOKEN; rm -rf /"],
+      }),
+    ).toEqual([
+      "/usr/local/bin/magister-tool-sandbox",
+      "--workspace",
+      "/data/.openclaw/workspace",
+      "--attempt",
+      "attempt-1",
+      "--",
+      "/bin/bash",
+      "-lc",
+      "echo $TOKEN; rm -rf /",
+    ]);
   });
 });
 

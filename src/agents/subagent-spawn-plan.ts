@@ -28,15 +28,23 @@ export function splitModelRef(ref?: string) {
 export function resolveConfiguredSubagentRunTimeoutSeconds(params: {
   cfg: OpenClawConfig;
   runTimeoutSeconds?: number;
+  env?: NodeJS.ProcessEnv;
 }) {
   const cfgSubagentTimeout =
     typeof params.cfg?.agents?.defaults?.subagents?.runTimeoutSeconds === "number" &&
     Number.isFinite(params.cfg.agents.defaults.subagents.runTimeoutSeconds)
       ? Math.max(0, Math.floor(params.cfg.agents.defaults.subagents.runTimeoutSeconds))
       : 0;
-  return typeof params.runTimeoutSeconds === "number" && Number.isFinite(params.runTimeoutSeconds)
-    ? Math.max(0, Math.floor(params.runTimeoutSeconds))
-    : cfgSubagentTimeout;
+  const resolved =
+    typeof params.runTimeoutSeconds === "number" && Number.isFinite(params.runTimeoutSeconds)
+      ? Math.max(0, Math.floor(params.runTimeoutSeconds))
+      : cfgSubagentTimeout;
+  const capRaw = (params.env ?? process.env).MAGISTER_SUBAGENT_TIMEOUT_CAP_SECONDS;
+  const cap = typeof capRaw === "string" && /^\d+$/.test(capRaw) ? Number(capRaw) : 0;
+  if (!Number.isSafeInteger(cap) || cap <= 0) {
+    return resolved;
+  }
+  return resolved > 0 ? Math.min(resolved, cap) : cap;
 }
 
 export function resolveSubagentModelAndThinkingPlan(params: {

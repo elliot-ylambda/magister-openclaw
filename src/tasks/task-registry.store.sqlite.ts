@@ -34,6 +34,17 @@ type TaskRegistryRow = {
   progress_summary: string | null;
   terminal_summary: string | null;
   terminal_outcome: TaskRecord["terminalOutcome"] | null;
+  attempt: number | bigint | null;
+  lease_heartbeat_at: number | bigint | null;
+  lease_expires_at: number | bigint | null;
+  checkpoint_json: string | null;
+  cursor: string | null;
+  next_attempt_at: number | bigint | null;
+  dead_lettered_at: number | bigint | null;
+  event_id: string | null;
+  outbox_event_type: TaskRecord["outboxEventType"] | null;
+  outbox_required: number | bigint | null;
+  terminal_payload_json: string | null;
 };
 
 type TaskDeliveryStateRow = {
@@ -97,6 +108,13 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
   const endedAt = normalizeNumber(row.ended_at);
   const lastEventAt = normalizeNumber(row.last_event_at);
   const cleanupAfter = normalizeNumber(row.cleanup_after);
+  const attempt = normalizeNumber(row.attempt);
+  const leaseHeartbeatAt = normalizeNumber(row.lease_heartbeat_at);
+  const leaseExpiresAt = normalizeNumber(row.lease_expires_at);
+  const nextAttemptAt = normalizeNumber(row.next_attempt_at);
+  const deadLetteredAt = normalizeNumber(row.dead_lettered_at);
+  const checkpoint = parseJsonValue<Record<string, unknown>>(row.checkpoint_json);
+  const terminalPayload = parseJsonValue<Record<string, unknown>>(row.terminal_payload_json);
   const requesterSessionKey =
     row.scope_kind === "system" ? "" : row.requester_session_key?.trim() || row.owner_key;
   return {
@@ -126,6 +144,17 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
     ...(row.progress_summary ? { progressSummary: row.progress_summary } : {}),
     ...(row.terminal_summary ? { terminalSummary: row.terminal_summary } : {}),
     ...(row.terminal_outcome ? { terminalOutcome: row.terminal_outcome } : {}),
+    ...(attempt != null ? { attempt } : {}),
+    ...(leaseHeartbeatAt != null ? { leaseHeartbeatAt } : {}),
+    ...(leaseExpiresAt != null ? { leaseExpiresAt } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
+    ...(row.cursor ? { cursor: row.cursor } : {}),
+    ...(nextAttemptAt != null ? { nextAttemptAt } : {}),
+    ...(deadLetteredAt != null ? { deadLetteredAt } : {}),
+    ...(row.event_id ? { eventId: row.event_id } : {}),
+    ...(row.outbox_event_type ? { outboxEventType: row.outbox_event_type } : {}),
+    ...(row.outbox_required != null ? { outboxRequired: Number(row.outbox_required) === 1 } : {}),
+    ...(terminalPayload ? { terminalPayload } : {}),
   };
 }
 
@@ -167,6 +196,17 @@ function bindTaskRecordBase(record: TaskRecord) {
     progress_summary: record.progressSummary ?? null,
     terminal_summary: record.terminalSummary ?? null,
     terminal_outcome: record.terminalOutcome ?? null,
+    attempt: record.attempt ?? null,
+    lease_heartbeat_at: record.leaseHeartbeatAt ?? null,
+    lease_expires_at: record.leaseExpiresAt ?? null,
+    checkpoint_json: serializeJson(record.checkpoint),
+    cursor: record.cursor ?? null,
+    next_attempt_at: record.nextAttemptAt ?? null,
+    dead_lettered_at: record.deadLetteredAt ?? null,
+    event_id: record.eventId ?? null,
+    outbox_event_type: record.outboxEventType ?? null,
+    outbox_required: record.outboxRequired == null ? null : record.outboxRequired ? 1 : 0,
+    terminal_payload_json: serializeJson(record.terminalPayload),
   };
 }
 
@@ -207,7 +247,18 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         error,
         progress_summary,
         terminal_summary,
-        terminal_outcome
+        terminal_outcome,
+        attempt,
+        lease_heartbeat_at,
+        lease_expires_at,
+        checkpoint_json,
+        cursor,
+        next_attempt_at,
+        dead_lettered_at,
+        event_id,
+        outbox_event_type,
+        outbox_required,
+        terminal_payload_json
       FROM task_runs
       ORDER BY created_at ASC, task_id ASC
     `),
@@ -246,7 +297,18 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         error,
         progress_summary,
         terminal_summary,
-        terminal_outcome
+        terminal_outcome,
+        attempt,
+        lease_heartbeat_at,
+        lease_expires_at,
+        checkpoint_json,
+        cursor,
+        next_attempt_at,
+        dead_lettered_at,
+        event_id,
+        outbox_event_type,
+        outbox_required,
+        terminal_payload_json
       ) VALUES (
         @task_id,
         @runtime,
@@ -273,7 +335,18 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         @error,
         @progress_summary,
         @terminal_summary,
-        @terminal_outcome
+        @terminal_outcome,
+        @attempt,
+        @lease_heartbeat_at,
+        @lease_expires_at,
+        @checkpoint_json,
+        @cursor,
+        @next_attempt_at,
+        @dead_lettered_at,
+        @event_id,
+        @outbox_event_type,
+        @outbox_required,
+        @terminal_payload_json
       )
       ON CONFLICT(task_id) DO UPDATE SET
         runtime = excluded.runtime,
@@ -300,7 +373,18 @@ function createStatements(db: DatabaseSync): TaskRegistryStatements {
         error = excluded.error,
         progress_summary = excluded.progress_summary,
         terminal_summary = excluded.terminal_summary,
-        terminal_outcome = excluded.terminal_outcome
+        terminal_outcome = excluded.terminal_outcome,
+        attempt = excluded.attempt,
+        lease_heartbeat_at = excluded.lease_heartbeat_at,
+        lease_expires_at = excluded.lease_expires_at,
+        checkpoint_json = excluded.checkpoint_json,
+        cursor = excluded.cursor,
+        next_attempt_at = excluded.next_attempt_at,
+        dead_lettered_at = excluded.dead_lettered_at,
+        event_id = excluded.event_id,
+        outbox_event_type = excluded.outbox_event_type,
+        outbox_required = excluded.outbox_required,
+        terminal_payload_json = excluded.terminal_payload_json
     `),
     replaceDeliveryState: db.prepare(`
       INSERT OR REPLACE INTO task_delivery_state (
@@ -395,7 +479,18 @@ function ensureSchema(db: DatabaseSync) {
       error TEXT,
       progress_summary TEXT,
       terminal_summary TEXT,
-      terminal_outcome TEXT
+      terminal_outcome TEXT,
+      attempt INTEGER,
+      lease_heartbeat_at INTEGER,
+      lease_expires_at INTEGER,
+      checkpoint_json TEXT,
+      cursor TEXT,
+      next_attempt_at INTEGER,
+      dead_lettered_at INTEGER,
+      event_id TEXT,
+      outbox_event_type TEXT,
+      outbox_required INTEGER,
+      terminal_payload_json TEXT
     );
   `);
   migrateLegacyOwnerColumns(db);
@@ -404,6 +499,24 @@ function ensureSchema(db: DatabaseSync) {
   }
   if (!hasTaskRunsColumn(db, "parent_flow_id")) {
     db.exec(`ALTER TABLE task_runs ADD COLUMN parent_flow_id TEXT;`);
+  }
+  const phase4Columns = [
+    ["attempt", "INTEGER"],
+    ["lease_heartbeat_at", "INTEGER"],
+    ["lease_expires_at", "INTEGER"],
+    ["checkpoint_json", "TEXT"],
+    ["cursor", "TEXT"],
+    ["next_attempt_at", "INTEGER"],
+    ["dead_lettered_at", "INTEGER"],
+    ["event_id", "TEXT"],
+    ["outbox_event_type", "TEXT"],
+    ["outbox_required", "INTEGER"],
+    ["terminal_payload_json", "TEXT"],
+  ] as const;
+  for (const [column, type] of phase4Columns) {
+    if (!hasTaskRunsColumn(db, column)) {
+      db.exec(`ALTER TABLE task_runs ADD COLUMN ${column} ${type};`);
+    }
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_delivery_state (
@@ -419,6 +532,10 @@ function ensureSchema(db: DatabaseSync) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_last_event_at ON task_runs(last_event_at);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_owner_key ON task_runs(owner_key);`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_parent_flow_id ON task_runs(parent_flow_id);`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_task_runs_event_id ON task_runs(event_id);`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_task_runs_outbox_required ON task_runs(outbox_required, status);`,
+  );
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_task_runs_child_session_key ON task_runs(child_session_key);`,
   );

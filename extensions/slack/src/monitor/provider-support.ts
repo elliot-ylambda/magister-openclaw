@@ -210,8 +210,8 @@ export function shouldSkipOpenClawSlackSelfEvent(args: SlackSelfFilterArgs): boo
 
 /**
  * Magister fork signal. On gateway-managed machines the per-project
- * GATEWAY_TOKEN is always present in the environment (set as a Fly secret at
- * provision time); upstream OpenClaw installs never set it. We use its presence
+ * A gateway-managed relay token is present in the environment; upstream
+ * OpenClaw installs never set one. We use its presence
  * to switch Slack HTTP inbound auth away from Bolt's app-global signing-secret
  * verification (which would require shipping that global secret to every
  * machine) and over to per-machine GATEWAY_TOKEN bearer auth on the gateway
@@ -219,7 +219,7 @@ export function shouldSkipOpenClawSlackSelfEvent(args: SlackSelfFilterArgs): boo
  * verifies Slack's real signature with the global secret at the edge.
  */
 export function magisterSlackRelayToken(): string | undefined {
-  const token = process.env.GATEWAY_TOKEN;
+  const token = process.env.MAGISTER_GATEWAY_RELAY_TOKEN ?? process.env.GATEWAY_TOKEN;
   return token && token.length > 0 ? token : undefined;
 }
 

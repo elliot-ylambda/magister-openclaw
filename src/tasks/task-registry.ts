@@ -177,7 +177,24 @@ function assertParentFlowLinkAllowed(params: {
 }
 
 function cloneTaskRecord(record: TaskRecord): TaskRecord {
-  return { ...record };
+  return {
+    ...record,
+    ...(record.checkpoint ? { checkpoint: structuredClone(record.checkpoint) } : {}),
+    ...(record.terminalPayload ? { terminalPayload: structuredClone(record.terminalPayload) } : {}),
+  };
+}
+
+function normalizeTerminalPayload(
+  payload: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!payload) {
+    return undefined;
+  }
+  const encoded = JSON.stringify(payload);
+  if (Buffer.byteLength(encoded) > 512 * 1024) {
+    throw new Error("Task terminal payload exceeds 512 KiB.");
+  }
+  return JSON.parse(encoded) as Record<string, unknown>;
 }
 
 function normalizeTaskTimestamps(task: TaskRecord): TaskRecord {
@@ -1500,6 +1517,16 @@ export function createTaskRecord(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  attempt?: number;
+  leaseHeartbeatAt?: number;
+  leaseExpiresAt?: number;
+  checkpoint?: Record<string, unknown>;
+  cursor?: string;
+  nextAttemptAt?: number;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 }): TaskRecord {
   ensureTaskRegistryReady();
   const requesterSessionKey = resolveTaskRequesterSessionKey(params);
@@ -1582,6 +1609,16 @@ export function createTaskRecord(params: {
       status,
       terminalOutcome: params.terminalOutcome,
     }),
+    attempt: Math.max(1, Math.floor(params.attempt ?? 1)),
+    leaseHeartbeatAt: params.leaseHeartbeatAt,
+    leaseExpiresAt: params.leaseExpiresAt,
+    checkpoint: params.checkpoint ? structuredClone(params.checkpoint) : undefined,
+    cursor: normalizeOptionalString(params.cursor),
+    nextAttemptAt: params.nextAttemptAt,
+    eventId: normalizeOptionalString(params.eventId),
+    outboxEventType: params.outboxEventType,
+    outboxRequired: params.outboxRequired,
+    terminalPayload: normalizeTerminalPayload(params.terminalPayload),
   });
   if (isTerminalTaskStatus(record.status) && typeof record.cleanupAfter !== "number") {
     record.cleanupAfter =
@@ -1629,6 +1666,10 @@ function updateTaskStateByRunId(params: {
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
   eventSummary?: string | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 }) {
   ensureTaskRegistryReady();
   const matches = getTasksByRunScope(params);
@@ -1675,6 +1716,18 @@ function updateTaskStateByRunId(params: {
         status: nextStatus,
         terminalOutcome: params.terminalOutcome,
       });
+    }
+    if (params.eventId !== undefined) {
+      patch.eventId = normalizeOptionalString(params.eventId);
+    }
+    if (params.outboxEventType !== undefined) {
+      patch.outboxEventType = params.outboxEventType;
+    }
+    if (params.outboxRequired !== undefined) {
+      patch.outboxRequired = params.outboxRequired;
+    }
+    if (params.terminalPayload !== undefined) {
+      patch.terminalPayload = normalizeTerminalPayload(params.terminalPayload);
     }
     const eventSummary =
       normalizeTaskSummary(params.eventSummary) ??
@@ -1779,6 +1832,10 @@ export function markTaskTerminalByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 }) {
   return finalizeTaskRunByRunId(params);
 }
@@ -1795,6 +1852,10 @@ export function finalizeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 }) {
   return updateTaskStateByRunId({
     runId: params.runId,
@@ -1808,7 +1869,68 @@ export function finalizeTaskRunByRunId(params: {
     progressSummary: params.progressSummary,
     terminalSummary: params.terminalSummary,
     terminalOutcome: params.terminalOutcome,
+    eventId: params.eventId,
+    outboxEventType: params.outboxEventType,
+    outboxRequired: params.outboxRequired,
+    terminalPayload: params.terminalPayload,
   });
+}
+
+export function setTaskOutboxIntentByRunId(params: {
+  runId: string;
+  runtime?: TaskRuntime;
+  sessionKey?: string;
+  eventId: string;
+  eventType: NonNullable<TaskRecord["outboxEventType"]>;
+  payload: Record<string, unknown>;
+}): TaskRecord[] {
+  ensureTaskRegistryReady();
+  const eventId = normalizeOptionalString(params.eventId);
+  if (!eventId) {
+    throw new Error("Task outbox event ID is required.");
+  }
+  const payload = normalizeTerminalPayload(params.payload);
+  return updateTasksByRunId({
+    runId: params.runId,
+    runtime: params.runtime,
+    sessionKey: params.sessionKey,
+    patch: {
+      eventId,
+      outboxEventType: params.eventType,
+      outboxRequired: true,
+      terminalPayload: payload,
+    },
+  });
+}
+
+export function setTaskOutboxIntentById(params: {
+  taskId: string;
+  eventId: string;
+  eventType: NonNullable<TaskRecord["outboxEventType"]>;
+  payload: Record<string, unknown>;
+}): TaskRecord {
+  ensureTaskRegistryReady();
+  const current = tasks.get(params.taskId.trim());
+  if (!current) {
+    throw new Error("Task not found.");
+  }
+  if (!isTerminalTaskStatus(current.status)) {
+    throw new Error("Outbox intent requires a terminal task.");
+  }
+  const eventId = normalizeOptionalString(params.eventId);
+  if (!eventId) {
+    throw new Error("Task outbox event ID is required.");
+  }
+  const updated = updateTask(current.taskId, {
+    eventId,
+    outboxEventType: params.eventType,
+    outboxRequired: true,
+    terminalPayload: normalizeTerminalPayload(params.payload),
+  });
+  if (!updated) {
+    throw new Error("Task disappeared while recording outbox intent.");
+  }
+  return updated;
 }
 
 export function setTaskRunDeliveryStatusByRunId(params: {
@@ -1819,6 +1941,73 @@ export function setTaskRunDeliveryStatusByRunId(params: {
   error?: string;
 }) {
   return updateTaskDeliveryByRunId(params);
+}
+
+export function recordTaskCheckpointById(params: {
+  taskId: string;
+  attempt: number;
+  checkpoint: Record<string, unknown>;
+  cursor?: string;
+  leaseHeartbeatAt: number;
+  leaseExpiresAt: number;
+}): TaskRecord {
+  ensureTaskRegistryReady();
+  const current = tasks.get(params.taskId.trim());
+  if (!current) {
+    throw new Error("Task not found.");
+  }
+  if (!isActiveTaskStatus(current.status)) {
+    throw new Error("Cannot checkpoint a terminal task.");
+  }
+  if ((current.attempt ?? 1) !== params.attempt) {
+    throw new Error("Stale task attempt fence.");
+  }
+  if (params.leaseExpiresAt <= params.leaseHeartbeatAt) {
+    throw new Error("Task attempt lease must expire after its heartbeat.");
+  }
+  const updated = updateTask(current.taskId, {
+    checkpoint: structuredClone(params.checkpoint),
+    cursor: normalizeOptionalString(params.cursor),
+    leaseHeartbeatAt: params.leaseHeartbeatAt,
+    leaseExpiresAt: params.leaseExpiresAt,
+    lastEventAt: params.leaseHeartbeatAt,
+  });
+  if (!updated) {
+    throw new Error("Task disappeared during checkpoint.");
+  }
+  return updated;
+}
+
+export function takeOverExpiredTaskAttemptById(params: {
+  taskId: string;
+  now: number;
+  leaseExpiresAt: number;
+}): TaskRecord {
+  ensureTaskRegistryReady();
+  const current = tasks.get(params.taskId.trim());
+  if (!current) {
+    throw new Error("Task not found.");
+  }
+  if (!isActiveTaskStatus(current.status)) {
+    throw new Error("Cannot take over a terminal task.");
+  }
+  if (typeof current.leaseExpiresAt === "number" && current.leaseExpiresAt > params.now) {
+    throw new Error("Task attempt lease has not expired.");
+  }
+  if (params.leaseExpiresAt <= params.now) {
+    throw new Error("Replacement task lease must expire in the future.");
+  }
+  const updated = updateTask(current.taskId, {
+    attempt: (current.attempt ?? 1) + 1,
+    leaseHeartbeatAt: params.now,
+    leaseExpiresAt: params.leaseExpiresAt,
+    nextAttemptAt: undefined,
+    lastEventAt: params.now,
+  });
+  if (!updated) {
+    throw new Error("Task disappeared during takeover.");
+  }
+  return updated;
 }
 
 export function updateTaskNotifyPolicyById(params: {

@@ -5,6 +5,8 @@
   "description": "Typed project-scoped Magister gateway actions",
   "type": "module",
   "dependencies": {
+    "pdfjs-dist": "^5.7.284",
+    "sharp": "^0.34.5",
     "typebox": "1.1.37"
   },
   "devDependencies": {

@@ -28,6 +28,12 @@ function buildCanaryRuntimeConfig() {
       ],
       defaults: {
         maxConcurrent: 4,
+        subagents: {
+          maxConcurrent: 2,
+          maxSpawnDepth: 1,
+          maxChildrenPerAgent: 2,
+          runTimeoutSeconds: 900,
+        },
         sandbox: { mode: "off" },
         model: { primary: "magister-gateway/anthropic/claude-sonnet-4-6" },
         heartbeat: {
@@ -117,6 +123,44 @@ function buildCanaryRuntimeConfig() {
     // Magister API. See openclaw-image/entrypoint.sh line 118-122.
     tools: {
       deny: ["cron"],
+      subagents: {
+        tools: {
+          allow: [
+            "read",
+            "exec",
+            "process",
+            "code_execution",
+            "web_search",
+            "web_fetch",
+            "x_search",
+            "memory_search",
+            "memory_get",
+            "image",
+            "search_project_corpus",
+            "magister_get_brand",
+            "magister_list_integrations",
+            "magister_get_marketing_plan",
+            "magister_list_workflow_status",
+            "magister_list_firehose_matches",
+            "magister_get_compile_run",
+            "magister_get_audit_health",
+            "magister_list_skills",
+            "magister_get_skill",
+            "magister_list_aeo_audits",
+            "magister_get_aeo_audit",
+            "magister_list_ai_visibility_sets",
+            "magister_get_ai_visibility_set",
+            "magister_keyword_research",
+            "magister_discover_influencers",
+            "magister_list_social_accounts",
+            "magister_list_social_posts",
+            "magister_get_social_analytics",
+            "magister_list_ad_campaigns",
+            "magister_get_ad_analytics",
+            "magister_get_action_approval",
+          ],
+        },
+      },
     },
     subagent: {
       completionWebhook: "http://magister-gateway.internal:8081/api/subagent-webhook",

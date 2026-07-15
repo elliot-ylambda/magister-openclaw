@@ -1,0 +1,124 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  enqueueAndDeliverDurableWebhook,
+  enqueueDurableWebhook,
+  loadPendingDurableWebhooks,
+  recoverDurableWebhookOutbox,
+} from "./durable-webhook-outbox.js";
+
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of temporaryRoots.splice(0)) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function stateDir(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "webhook-outbox-test-"));
+  temporaryRoots.push(root);
+  return root;
+}
+
+describe("durable webhook outbox", () => {
+  it("fsyncs an event before delivery and removes it only after acknowledgement", async () => {
+    const root = stateDir();
+    const fetchImpl = vi.fn(async () => new Response("ok", { status: 200 }));
+    expect(
+      await enqueueAndDeliverDurableWebhook({
+        eventId: "slack:run-1",
+        eventType: "slack_completion",
+        url: "http://gateway.internal/slack",
+        payload: { run_id: "run-1", success: true },
+        token: "current-token",
+        fetchImpl,
+        stateDir: root,
+      }),
+    ).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const request = fetchImpl.mock.calls[0]?.[1];
+    expect(request?.headers).toMatchObject({ Authorization: "Bearer current-token" });
+    const sent = JSON.parse(String(request?.body)) as Record<string, unknown>;
+    expect(sent).toMatchObject({
+      event_id: "slack:run-1",
+      event_type: "slack_completion",
+      run_id: "run-1",
+    });
+    expect(await loadPendingDurableWebhooks(root)).toEqual([]);
+  });
+
+  it("reconstructs pending delivery after a dropped response without persisting a token", async () => {
+    const root = stateDir();
+    await enqueueAndDeliverDurableWebhook({
+      eventId: "subagent:run-2",
+      eventType: "subagent_completion",
+      url: "http://gateway.internal/subagent",
+      payload: { run_id: "run-2" },
+      token: "must-not-persist",
+      fetchImpl: vi.fn(async () => {
+        throw new Error("response dropped");
+      }),
+      stateDir: root,
+    });
+    const pending = await loadPendingDurableWebhooks(root);
+    expect(pending).toHaveLength(1);
+    expect(JSON.stringify(pending)).not.toContain("must-not-persist");
+
+    const retry = vi.fn(async () => new Response("ok", { status: 200 }));
+    const result = await recoverDurableWebhookOutbox({
+      tokens: { subagent_completion: "rotated-token" },
+      fetchImpl: retry,
+      stateDir: root,
+      now: Number.MAX_SAFE_INTEGER,
+    });
+    expect(result.delivered).toBe(1);
+    expect(await loadPendingDurableWebhooks(root)).toEqual([]);
+  });
+
+  it("uses stable event identity and rejects a conflicting payload replay", async () => {
+    const root = stateDir();
+    await enqueueDurableWebhook({
+      eventId: "cron:job-1:1234",
+      eventType: "cron_completion",
+      url: "http://gateway.internal/cron",
+      payload: { jobId: "job-1", runAtMs: 1234 },
+      stateDir: root,
+    });
+    await expect(
+      enqueueDurableWebhook({
+        eventId: "cron:job-1:1234",
+        eventType: "cron_completion",
+        url: "http://gateway.internal/cron",
+        payload: { jobId: "job-1", runAtMs: 9999 },
+        stateDir: root,
+      }),
+    ).rejects.toThrow("conflicting durable webhook event replay");
+  });
+
+  it("retains a content-free delivery receipt so task reconstruction cannot resend", async () => {
+    const root = stateDir();
+    const first = vi.fn(async () => new Response("ok", { status: 200 }));
+    const params = {
+      eventId: "cron:job-2:5678",
+      eventType: "cron_completion" as const,
+      url: "http://gateway.internal/cron",
+      payload: { jobId: "job-2", runAtMs: 5678, summary: "private output" },
+      token: "token",
+      stateDir: root,
+    };
+    expect(await enqueueAndDeliverDurableWebhook({ ...params, fetchImpl: first })).toBe(true);
+
+    const second = vi.fn(async () => new Response("ok", { status: 200 }));
+    expect(await enqueueAndDeliverDurableWebhook({ ...params, fetchImpl: second })).toBe(true);
+    expect(second).not.toHaveBeenCalled();
+    const files = fs.readdirSync(path.join(root, "durable-webhook-outbox"));
+    const receipt = files.find((name) => name.endsWith(".delivered"));
+    expect(receipt).toBeTruthy();
+    expect(
+      fs.readFileSync(path.join(root, "durable-webhook-outbox", receipt ?? ""), "utf8"),
+    ).not.toContain("private output");
+  });
+});

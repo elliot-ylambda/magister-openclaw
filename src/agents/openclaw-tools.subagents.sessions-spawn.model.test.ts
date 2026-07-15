@@ -170,4 +170,23 @@ describe("subagent spawn model + thinking plan", () => {
       }),
     ).toBe(0);
   });
+
+  it("enforces the Magister machine timeout cap even when a caller requests more", () => {
+    expect(
+      resolveConfiguredSubagentRunTimeoutSeconds({
+        cfg: createConfig({
+          agents: { defaults: { subagents: { runTimeoutSeconds: 900 } } },
+        }),
+        runTimeoutSeconds: 3600,
+        env: { MAGISTER_SUBAGENT_TIMEOUT_CAP_SECONDS: "900" },
+      }),
+    ).toBe(900);
+    expect(
+      resolveConfiguredSubagentRunTimeoutSeconds({
+        cfg: createConfig(),
+        runTimeoutSeconds: 0,
+        env: { MAGISTER_SUBAGENT_TIMEOUT_CAP_SECONDS: "900" },
+      }),
+    ).toBe(900);
+  });
 });

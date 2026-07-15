@@ -8,6 +8,8 @@
 // `openclaw_session_key` column, avoiding any brittle UUID-extraction regex.
 
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { enqueueAndDeliverDurableWebhook } from "../infra/outbound/durable-webhook-outbox.js";
+import { persistCompletionOutboxIntent } from "../infra/outbound/task-outbox-reconciliation.js";
 import { getGlobalPluginRegistry } from "../plugins/hook-runner-global.js";
 import type {
   PluginHookHandlerMap,
@@ -79,8 +81,8 @@ function resolveSubagentCompletionWebhookError(
 }
 
 /**
- * POST a sub-agent completion payload to the gateway. Best-effort: a delivery
- * failure logs and swallows so the lifecycle hook chain doesn't crash.
+ * Persist then POST a sub-agent completion payload. A failed send remains in
+ * the local outbox and is retried after restart with the current token.
  */
 export async function sendSubagentCompletionWebhook(params: {
   url: string;
@@ -88,34 +90,41 @@ export async function sendSubagentCompletionWebhook(params: {
   payload: SubagentCompletionWebhookPayload;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  stateDir?: string;
 }): Promise<void> {
   if (!params.url || !params.token) {
     return;
   }
-  const fetchImpl = params.fetchImpl ?? fetch;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), params.timeoutMs ?? 5_000);
   try {
-    const res = await fetchImpl(params.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${params.token}`,
-      },
-      body: JSON.stringify(params.payload),
-      signal: controller.signal,
+    try {
+      persistCompletionOutboxIntent({
+        eventId: `subagent:${params.payload.run_id}`,
+        eventType: "subagent_completion",
+        payload: { ...params.payload },
+        runId: params.payload.run_id,
+        runtime: "subagent",
+        sessionKey: params.payload.child_session_key,
+      });
+    } catch (err) {
+      console.warn("[subagent-completion-webhook] task intent persistence failed:", err);
+    }
+    const delivered = await enqueueAndDeliverDurableWebhook({
+      eventId: `subagent:${params.payload.run_id}`,
+      eventType: "subagent_completion",
+      url: params.url,
+      token: params.token,
+      payload: { ...params.payload },
+      fetchImpl: params.fetchImpl,
+      timeoutMs: params.timeoutMs ?? 5_000,
+      stateDir: params.stateDir,
     });
-    if (!res.ok) {
-      // Best-effort: log + swallow. The user can still see results via the
-      // existing on-load `agent_turns` poll if delivery fails entirely.
+    if (!delivered) {
       console.warn(
-        `[subagent-completion-webhook] non-2xx response status=${res.status} run=${params.payload.run_id}`,
+        `[subagent-completion-webhook] delivery queued for retry run=${params.payload.run_id}`,
       );
     }
   } catch (err) {
-    console.warn("[subagent-completion-webhook] delivery failed:", err);
-  } finally {
-    clearTimeout(timer);
+    console.warn("[subagent-completion-webhook] durable enqueue failed:", err);
   }
 }
 

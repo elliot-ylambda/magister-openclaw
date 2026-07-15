@@ -168,6 +168,10 @@ export function completeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 }) {
   return finalizeTaskRunByRunId({
     ...params,
@@ -189,6 +193,10 @@ export function failTaskRunByRunId(params: {
   error?: string;
   progressSummary?: string | null;
   terminalSummary?: string | null;
+  eventId?: string;
+  outboxEventType?: TaskRecord["outboxEventType"];
+  outboxRequired?: boolean;
+  terminalPayload?: Record<string, unknown>;
 }) {
   return finalizeTaskRunByRunId({
     ...params,
