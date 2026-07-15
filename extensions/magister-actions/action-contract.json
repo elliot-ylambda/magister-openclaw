@@ -5,6 +5,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Read the current sourced brand profile for this project.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -13,6 +14,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_brand"
     },
     {
@@ -20,6 +22,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List canonical capability readiness and connection guidance for this project.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -28,6 +31,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_integrations"
     },
     {
@@ -35,6 +39,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Read the active live marketing plan, sections, and executable items.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -43,6 +48,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_marketing_plan"
     },
     {
@@ -50,6 +56,7 @@
       "approval_policy": "none",
       "async_status_adapter": "compile_run",
       "description": "Enqueue a live-plan recompile, then poll magister_get_compile_run until terminal.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -70,6 +77,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "internal_write",
+      "spend_limited": true,
       "tool_name": "magister_recompile_marketing_plan"
     },
     {
@@ -77,6 +85,7 @@
       "approval_policy": "none",
       "async_status_adapter": "compile_run",
       "description": "Poll one live-plan compile run and return normalized terminal status.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -92,6 +101,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_compile_run"
     },
     {
@@ -99,6 +109,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Read persisted audit health and channel evidence for an audit plan.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -114,6 +125,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_audit_health"
     },
     {
@@ -121,6 +133,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List the complete active Magister skill index without loading skill bodies.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -129,6 +142,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_skills"
     },
     {
@@ -136,6 +150,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Load one active Magister SKILL.md body by exact catalog name.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -151,6 +166,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_skill"
     },
     {
@@ -158,6 +174,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List recent answer-engine optimization audits for this project.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -173,6 +190,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_aeo_audits"
     },
     {
@@ -180,6 +198,7 @@
       "approval_policy": "none",
       "async_status_adapter": "aeo_audit",
       "description": "Start an AEO audit and poll magister_get_aeo_audit until terminal.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -201,6 +220,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "internal_write",
+      "spend_limited": true,
       "tool_name": "magister_run_aeo_audit"
     },
     {
@@ -208,6 +228,7 @@
       "approval_policy": "none",
       "async_status_adapter": "aeo_audit",
       "description": "Read one AEO audit with normalized terminal status.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -223,6 +244,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_aeo_audit"
     },
     {
@@ -230,6 +252,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List this project's tracked AI-visibility prompt sets.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -238,6 +261,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_ai_visibility_sets"
     },
     {
@@ -245,6 +269,7 @@
       "approval_policy": "none",
       "async_status_adapter": "ai_visibility_round",
       "description": "Read one AI-visibility set, members, rounds, scores, and terminal status.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -260,6 +285,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_ai_visibility_set"
     },
     {
@@ -267,6 +293,7 @@
       "approval_policy": "none",
       "async_status_adapter": "ai_visibility_round",
       "description": "Start a scoring round and poll magister_get_ai_visibility_set until terminal.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -288,6 +315,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "internal_write",
+      "spend_limited": true,
       "tool_name": "magister_run_ai_visibility_set"
     },
     {
@@ -295,6 +323,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Research keyword ideas plus current domain rankings through DataForSEO.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -315,6 +344,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": true,
       "tool_name": "magister_keyword_research"
     },
     {
@@ -322,6 +352,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Find and rank relevant creators with public contact evidence where available.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -347,6 +378,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": true,
       "tool_name": "magister_discover_influencers"
     },
     {
@@ -354,6 +386,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List connected social and advertising accounts for this project.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -362,6 +395,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_social_accounts"
     },
     {
@@ -369,6 +403,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List project social posts, optionally filtered by status.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -383,6 +418,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_social_posts"
     },
     {
@@ -390,6 +426,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Read post, follower, daily, and best-time social analytics.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -409,6 +446,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_social_analytics"
     },
     {
@@ -416,6 +454,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "List this project's advertising campaigns without changing spend.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -424,6 +463,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_list_ad_campaigns"
     },
     {
@@ -431,6 +471,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Read performance analytics for one project-owned advertisement.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -447,6 +488,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_ad_analytics"
     },
     {
@@ -454,6 +496,7 @@
       "approval_policy": "none",
       "async_status_adapter": "action_approval",
       "description": "Poll a payload-bound approval operation until it is terminal.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -470,6 +513,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "none",
+      "spend_limited": false,
       "tool_name": "magister_get_action_approval"
     },
     {
@@ -477,6 +521,7 @@
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
       "description": "Request one-time human approval to send this exact email payload.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -530,6 +575,7 @@
       },
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
+      "spend_limited": false,
       "tool_name": "magister_send_email"
     },
     {
@@ -537,6 +583,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Create an unpublished social draft; scheduling and publishing are separate approvals.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "$defs": {
@@ -586,6 +633,7 @@
       },
       "retry_policy": "none",
       "side_effect": "draft",
+      "spend_limited": false,
       "tool_name": "magister_create_social_draft"
     },
     {
@@ -593,6 +641,7 @@
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
       "description": "Request approval to schedule an existing draft at the exact supplied time.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -620,6 +669,7 @@
       },
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
+      "spend_limited": false,
       "tool_name": "magister_schedule_social_post"
     },
     {
@@ -627,6 +677,7 @@
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
       "description": "Request approval to publish one exact project-owned social post now.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -649,6 +700,7 @@
       },
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
+      "spend_limited": false,
       "tool_name": "magister_publish_social_post"
     },
     {
@@ -656,6 +708,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Create a project-owned advertising campaign in a forced paused state.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -727,6 +780,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "draft",
+      "spend_limited": true,
       "tool_name": "magister_create_ad_campaign"
     },
     {
@@ -734,6 +788,7 @@
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
       "description": "Request approval to activate one exact campaign and begin spending.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -756,6 +811,7 @@
       },
       "retry_policy": "read_after_timeout",
       "side_effect": "spend",
+      "spend_limited": true,
       "tool_name": "magister_activate_ad_campaign"
     },
     {
@@ -763,6 +819,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Pause a project-owned campaign to stop spend; this protective action needs no approval.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -785,6 +842,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "external_write",
+      "spend_limited": false,
       "tool_name": "magister_pause_ad_campaign"
     },
     {
@@ -792,6 +850,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Create an unpublished CMS blog draft.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -826,6 +885,7 @@
       },
       "retry_policy": "none",
       "side_effect": "draft",
+      "spend_limited": false,
       "tool_name": "magister_create_blog_post"
     },
     {
@@ -833,6 +893,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Update an existing CMS draft while forcing it to remain unpublished.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -864,6 +925,7 @@
       },
       "retry_policy": "none",
       "side_effect": "draft",
+      "spend_limited": false,
       "tool_name": "magister_update_blog_post"
     },
     {
@@ -871,6 +933,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Create a branch and pull request without merging the default branch.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "$defs": {
@@ -921,6 +984,7 @@
       },
       "retry_policy": "backoff",
       "side_effect": "draft",
+      "spend_limited": false,
       "tool_name": "magister_open_pull_request"
     },
     {
@@ -928,6 +992,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Create a Shopify product in draft state.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "safe_retry",
       "input_schema": {
         "additionalProperties": false,
@@ -946,6 +1011,7 @@
       },
       "retry_policy": "none",
       "side_effect": "draft",
+      "spend_limited": false,
       "tool_name": "magister_create_product"
     },
     {
@@ -953,6 +1019,7 @@
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
       "description": "Request approval to publish one exact CMS or Shopify draft.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -986,6 +1053,7 @@
       },
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
+      "spend_limited": false,
       "tool_name": "magister_publish_content"
     },
     {
@@ -993,6 +1061,7 @@
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
       "description": "Request approval to merge one exact GitHub pull request.",
+      "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "additionalProperties": false,
@@ -1020,6 +1089,7 @@
       },
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
+      "spend_limited": false,
       "tool_name": "magister_merge_pull_request"
     },
     {
@@ -1027,6 +1097,7 @@
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
       "description": "Submit final persisted evidence for the active plan-task workflow. Call exactly once after every step and asynchronous operation is terminal.",
+      "idempotency_enforcement": "handler",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
         "$defs": {
@@ -1037,6 +1108,7 @@
                 "default": "file",
                 "maxLength": 80,
                 "minLength": 1,
+                "pattern": "^[A-Za-z0-9._:-]+$",
                 "type": "string"
               },
               "path": {
@@ -1146,9 +1218,10 @@
       },
       "retry_policy": "backoff",
       "side_effect": "internal_write",
+      "spend_limited": false,
       "tool_name": "magister_submit_workflow_completion"
     }
   ],
-  "registry_revision": "26604117fda24116c47d5939ae280e34574eed50482c0c781468a51766bc8d8b",
+  "registry_revision": "7bc7faefecc539647c5b9d1349ff91a00e957978c317164cfa2a683cc644b1ae",
   "schema_version": 1
 }

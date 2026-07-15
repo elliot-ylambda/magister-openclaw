@@ -1,4 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve } from "node:path";
 import {
   definePluginEntry,
   jsonResult,
@@ -11,6 +13,8 @@ import contractJson from "./action-contract.json" with { type: "json" };
 const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/actions";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
+const DEFAULT_WORKSPACE_DIR = "/data/.openclaw/workspace";
+const MAX_COMPLETION_ARTIFACT_BYTES = 16 * 1024 * 1024;
 
 const ERROR_CODES = new Set([
   "validation_error",
@@ -49,6 +53,7 @@ type PluginConfig = {
   endpoint?: string;
   timeoutMs?: number;
   maxResponseBytes?: number;
+  workspaceDir?: string;
 };
 
 type ActionEnvelope = {
@@ -193,7 +198,103 @@ function resolveConfig(api: OpenClawPluginApi): Required<PluginConfig> {
     endpoint,
     timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxResponseBytes: config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+    workspaceDir: config.workspaceDir ?? process.env.OPENCLAW_WORKSPACE ?? DEFAULT_WORKSPACE_DIR,
   };
+}
+
+class ArtifactValidationError extends Error {}
+
+async function attestCompletionArtifacts(
+  action: string,
+  rawParams: Record<string, unknown>,
+  gatewayToken: string,
+  sessionKey: string | undefined,
+  workspaceDir: string,
+): Promise<{ params: Record<string, unknown>; attestation?: string }> {
+  if (action !== "submit_workflow_completion") {
+    return { params: rawParams };
+  }
+  const rawArtifacts = rawParams.artifacts;
+  if (rawArtifacts === undefined || (Array.isArray(rawArtifacts) && rawArtifacts.length === 0)) {
+    return { params: rawParams };
+  }
+  if (!Array.isArray(rawArtifacts)) {
+    throw new ArtifactValidationError("Completion artifacts must be an array.");
+  }
+
+  let workspaceRoot: string;
+  let resourcesRoot: string;
+  try {
+    workspaceRoot = await realpath(workspaceDir);
+    resourcesRoot = await realpath(resolve(workspaceRoot, "resources"));
+  } catch {
+    throw new ArtifactValidationError("The workspace resources directory is unavailable.");
+  }
+  const relativeResources = relative(workspaceRoot, resourcesRoot);
+  if (relativeResources.startsWith("..") || isAbsolute(relativeResources)) {
+    throw new ArtifactValidationError("The resources directory escapes the workspace.");
+  }
+  const normalized: Array<Record<string, unknown>> = [];
+  const manifest: string[][] = [];
+  for (const rawArtifact of rawArtifacts) {
+    if (!isRecord(rawArtifact)) {
+      throw new ArtifactValidationError("Every completion artifact must be an object.");
+    }
+    const path = rawArtifact.path;
+    const suppliedHash = rawArtifact.sha256;
+    const kind = typeof rawArtifact.kind === "string" ? rawArtifact.kind : "file";
+    if (
+      typeof path !== "string" ||
+      !/^resources\/[A-Za-z0-9._/-]{1,480}$/.test(path) ||
+      typeof suppliedHash !== "string" ||
+      !/^[a-f0-9]{64}$/.test(suppliedHash) ||
+      !/^[A-Za-z0-9._:-]{1,80}$/.test(kind)
+    ) {
+      throw new ArtifactValidationError("Completion artifact path or SHA-256 is invalid.");
+    }
+    let filePath: string;
+    try {
+      filePath = await realpath(resolve(workspaceDir, path));
+    } catch {
+      throw new ArtifactValidationError(`Completion artifact does not exist: ${path}.`);
+    }
+    const relativePath = relative(resourcesRoot, filePath);
+    if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+      throw new ArtifactValidationError("Completion artifact escapes the resources directory.");
+    }
+    let fileSize: number;
+    try {
+      const fileStat = await stat(filePath);
+      if (!fileStat.isFile()) {
+        throw new Error("not a file");
+      }
+      fileSize = fileStat.size;
+    } catch {
+      throw new ArtifactValidationError(`Completion artifact cannot be read: ${path}.`);
+    }
+    if (fileSize > MAX_COMPLETION_ARTIFACT_BYTES) {
+      throw new ArtifactValidationError(`Completion artifact is too large: ${path}.`);
+    }
+    let content: Buffer;
+    try {
+      content = await readFile(filePath);
+    } catch {
+      throw new ArtifactValidationError(`Completion artifact cannot be read: ${path}.`);
+    }
+    if (content.byteLength > MAX_COMPLETION_ARTIFACT_BYTES) {
+      throw new ArtifactValidationError(`Completion artifact is too large: ${path}.`);
+    }
+    const actualHash = createHash("sha256").update(content).digest("hex");
+    if (actualHash !== suppliedHash) {
+      throw new ArtifactValidationError(`Completion artifact hash mismatch for ${path}.`);
+    }
+    normalized.push({ path, sha256: actualHash, kind });
+    manifest.push([path, actualHash, kind]);
+  }
+
+  const signed = `${sessionKey ?? ""}\n${JSON.stringify(manifest)}`;
+  const attestation = `v1=${createHmac("sha256", gatewayToken).update(signed).digest("hex")}`;
+  return { params: { ...rawParams, artifacts: normalized }, attestation };
 }
 
 async function readBoundedBody(response: Response, maxBytes: number): Promise<string> {
@@ -270,14 +371,24 @@ export function createMagisterActionTool(
         ? context.sessionKey
         : undefined;
       try {
+        const prepared = await attestCompletionArtifacts(
+          action.action,
+          rawParams,
+          gatewayToken,
+          workflowSessionKey,
+          config.workspaceDir,
+        );
         const response = await fetchImpl(`${config.endpoint}/${action.action}`, {
           method: "POST",
           headers: {
             authorization: `Bearer ${gatewayToken}`,
             "content-type": "application/json",
             ...(workflowSessionKey ? { "x-magister-session-key": workflowSessionKey } : {}),
+            ...(prepared.attestation
+              ? { "x-magister-artifact-attestation": prepared.attestation }
+              : {}),
           },
-          body: JSON.stringify({ arguments: rawParams }),
+          body: JSON.stringify({ arguments: prepared.params }),
           signal: controller.signal,
         });
         if (!response.ok) {
@@ -320,14 +431,17 @@ export function createMagisterActionTool(
       } catch (error) {
         const timedOut = controller.signal.aborted;
         const tooLarge = error instanceof Error && error.message === "response_too_large";
+        const artifactInvalid = error instanceof ArtifactValidationError;
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: "upstream_failed",
-            message: timedOut
-              ? `Magister action timed out after ${config.timeoutMs}ms.`
-              : tooLarge
-                ? "Magister action response exceeded the configured size limit."
-                : "Magister action transport failed.",
+            code: artifactInvalid ? "validation_error" : "upstream_failed",
+            message: artifactInvalid
+              ? error.message
+              : timedOut
+                ? `Magister action timed out after ${config.timeoutMs}ms.`
+                : tooLarge
+                  ? "Magister action response exceeded the configured size limit."
+                  : "Magister action transport failed.",
             retryable: timedOut && action.side_effect === "none",
             userAction:
               action.side_effect === "external_write" ||

@@ -1,4 +1,7 @@
+import { createHash, createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +11,12 @@ const dir = dirname(fileURLToPath(import.meta.url));
 const action = nativeActionContract.actions.find((row) => row.action === "get_brand");
 if (!action) {
   throw new Error("get_brand contract missing");
+}
+const completionAction = nativeActionContract.actions.find(
+  (row) => row.action === "submit_workflow_completion",
+);
+if (!completionAction) {
+  throw new Error("submit_workflow_completion contract missing");
 }
 
 function api(config: Record<string, unknown> = {}) {
@@ -182,6 +191,89 @@ describe("typed gateway execution", () => {
     const output = resultJson(await tool.execute("call-5", {}));
     expect(output.ok).toBe(false);
     expect((output.error as { message: string }).message).toContain("size limit");
+  });
+
+  it("verifies and attests completion artifacts from the workspace", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const content = "verified report\n";
+      await writeFile(join(workspace, "resources", "report.md"), content);
+      const sha256 = createHash("sha256").update(content).digest("hex");
+      const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
+      let request: { init?: RequestInit } | undefined;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async (_input, init) => {
+          request = { init };
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey },
+      );
+      const argumentsPayload = {
+        version: 1,
+        idempotency_key: "plan-task-key-1",
+        verification: [
+          {
+            requirement: "The report exists.",
+            status: "passed",
+            evidence_refs: [`artifact:${sha256}`],
+          },
+        ],
+        artifacts: [{ path: "resources/report.md", sha256, kind: "file" }],
+        blocker: null,
+        finding_headline: "Report completed",
+        key_metrics: {},
+      };
+
+      const output = resultJson(await tool.execute("completion-1", argumentsPayload));
+
+      expect(output.ok).toBe(true);
+      expect(requestBody(request?.init)).toEqual({ arguments: argumentsPayload });
+      const manifest = [["resources/report.md", sha256, "file"]];
+      const expected = createHmac("sha256", "secret-machine-token")
+        .update(`${sessionKey}\n${JSON.stringify(manifest)}`)
+        .digest("hex");
+      expect(request?.init?.headers).toMatchObject({
+        "x-magister-artifact-attestation": `v1=${expected}`,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a completion artifact whose bytes do not match its hash", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      await writeFile(join(workspace, "resources", "report.md"), "actual bytes\n");
+      let fetched = false;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async () => {
+          fetched = true;
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey: "workflow_run:00000000-0000-4000-8000-000000000001" },
+      );
+
+      const output = resultJson(
+        await tool.execute("completion-2", {
+          artifacts: [{ path: "resources/report.md", sha256: "a".repeat(64), kind: "file" }],
+        }),
+      );
+
+      expect(output.ok).toBe(false);
+      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { message: string }).message).toContain("hash mismatch");
+      expect(fetched).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 });
 
