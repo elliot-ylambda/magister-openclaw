@@ -12,6 +12,10 @@ const action = nativeActionContract.actions.find((row) => row.action === "get_br
 if (!action) {
   throw new Error("get_brand contract missing");
 }
+const writeAction = nativeActionContract.actions.find((row) => row.action === "send_email");
+if (!writeAction) {
+  throw new Error("send_email contract missing");
+}
 const completionAction = nativeActionContract.actions.find(
   (row) => row.action === "submit_workflow_completion",
 );
@@ -193,6 +197,28 @@ describe("typed gateway execution", () => {
     expect((output.error as { message: string }).message).toContain("size limit");
   });
 
+  it("retries read-only 5xx responses but never blindly retries a write", async () => {
+    process.env.GATEWAY_TOKEN = "token";
+    const readTool = createMagisterActionTool(
+      api(),
+      action,
+      async () => new Response("unavailable", { status: 503 }),
+    );
+    const writeTool = createMagisterActionTool(
+      api(),
+      writeAction,
+      async () => new Response("unavailable", { status: 503 }),
+    );
+
+    const read = resultJson(await readTool.execute("read-503", {}));
+    const write = resultJson(await writeTool.execute("write-503", {}));
+
+    expect((read.error as { retryable: boolean }).retryable).toBe(true);
+    expect((read.error as { retry_after_seconds: number | null }).retry_after_seconds).toBeNull();
+    expect((write.error as { retryable: boolean }).retryable).toBe(false);
+    expect((write.error as { user_action: string }).user_action).toContain("Read back");
+  });
+
   it("verifies and attests completion artifacts from the workspace", async () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
@@ -285,5 +311,130 @@ describe("envelope validator", () => {
   it("rejects success with an error and unknown side effects", () => {
     expect(parseActionEnvelope(envelope({ error: { code: "conflict" } }))).toBeNull();
     expect(parseActionEnvelope(envelope({ side_effect: "root_shell" }))).toBeNull();
+  });
+
+  it("rejects unknown top-level, status, and error fields", () => {
+    expect(parseActionEnvelope({ ...envelope(), injected: true })).toBeNull();
+    expect(
+      parseActionEnvelope(
+        envelope({
+          status: {
+            state: "succeeded",
+            terminal: true,
+            poll_after_seconds: 0,
+            stale_seconds: 0,
+            started_at: "secret",
+          },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseActionEnvelope(
+        envelope({
+          ok: false,
+          status: {
+            state: "failed",
+            terminal: true,
+            poll_after_seconds: 0,
+            stale_seconds: 0,
+          },
+          error: {
+            code: "upstream_failed",
+            message: "failed",
+            retryable: true,
+            retry_after_seconds: null,
+            user_action: null,
+            internal_detail: "secret",
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects contradictory success and terminal state combinations", () => {
+    expect(
+      parseActionEnvelope(
+        envelope({
+          status: {
+            state: "failed",
+            terminal: true,
+            poll_after_seconds: 0,
+            stale_seconds: 0,
+          },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseActionEnvelope(
+        envelope({
+          status: {
+            state: "running",
+            terminal: true,
+            poll_after_seconds: 0,
+            stale_seconds: 0,
+          },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseActionEnvelope(
+        envelope({
+          status: {
+            state: "succeeded",
+            terminal: true,
+            poll_after_seconds: 3,
+            stale_seconds: 0,
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects retryable write envelopes that could trigger a blind redispatch", () => {
+    expect(
+      parseActionEnvelope(
+        envelope({
+          ok: false,
+          status: {
+            state: "failed",
+            terminal: true,
+            poll_after_seconds: 0,
+            stale_seconds: 0,
+          },
+          side_effect: "draft",
+          error: {
+            code: "upstream_failed",
+            message: "response lost",
+            retryable: true,
+            retry_after_seconds: null,
+            user_action: "Read back the draft.",
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("accepts a closed non-terminal approval envelope", () => {
+    expect(
+      parseActionEnvelope(
+        envelope({
+          ok: false,
+          status: {
+            state: "running",
+            terminal: false,
+            poll_after_seconds: 5,
+            stale_seconds: 0,
+          },
+          side_effect: "external_write",
+          error: {
+            code: "not_authorized",
+            message: "Human approval is required.",
+            retryable: false,
+            retry_after_seconds: null,
+            user_action: "Open the approval page.",
+          },
+        }),
+      ),
+    ).not.toBeNull();
   });
 });

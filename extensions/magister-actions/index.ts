@@ -34,6 +34,19 @@ const SIDE_EFFECTS = new Set([
   "spend",
   "delete",
 ]);
+const ENVELOPE_KEYS = new Set([
+  "ok",
+  "operation_id",
+  "resource_id",
+  "status",
+  "side_effect",
+  "idempotency_key",
+  "receipt",
+  "artifacts",
+  "error",
+]);
+const STATUS_KEYS = new Set(["state", "terminal", "poll_after_seconds", "stale_seconds"]);
+const ERROR_KEYS = new Set(["code", "message", "retryable", "retry_after_seconds", "user_action"]);
 
 type ActionContract = {
   action: string;
@@ -87,26 +100,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === "string";
+function hasExactKeys(value: Record<string, unknown>, expected: Set<string>): boolean {
+  const keys = Object.keys(value);
+  return keys.length === expected.size && keys.every((key) => expected.has(key));
 }
 
-function isNullableNonNegativeNumber(value: unknown): value is number | null {
-  return value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
+function isNullableBoundedString(value: unknown, maximum: number): value is string | null {
+  return value === null || (typeof value === "string" && value.length <= maximum);
+}
+
+function isNullableNonNegativeInteger(
+  value: unknown,
+  maximum = Number.MAX_SAFE_INTEGER,
+): value is number | null {
+  return (
+    value === null ||
+    (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= maximum)
+  );
 }
 
 export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
-  if (!isRecord(value) || typeof value.ok !== "boolean") {
+  if (!isRecord(value) || !hasExactKeys(value, ENVELOPE_KEYS) || typeof value.ok !== "boolean") {
     return null;
   }
   if (
     typeof value.operation_id !== "string" ||
     value.operation_id.length < 4 ||
-    !isNullableString(value.resource_id) ||
-    !isNullableString(value.idempotency_key) ||
+    value.operation_id.length > 128 ||
+    !isNullableBoundedString(value.resource_id, 512) ||
+    !isNullableBoundedString(value.idempotency_key, 256) ||
     !SIDE_EFFECTS.has(String(value.side_effect)) ||
     !isRecord(value.receipt) ||
     !Array.isArray(value.artifacts) ||
+    value.artifacts.length > 100 ||
     !value.artifacts.every(isRecord)
   ) {
     return null;
@@ -114,31 +140,71 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
   const status = value.status;
   if (
     !isRecord(status) ||
+    !hasExactKeys(status, STATUS_KEYS) ||
     !STATUS_STATES.has(String(status.state)) ||
     typeof status.terminal !== "boolean" ||
-    !isNullableNonNegativeNumber(status.poll_after_seconds) ||
+    !isNullableNonNegativeInteger(status.poll_after_seconds, 3600) ||
     status.poll_after_seconds === null ||
-    !isNullableNonNegativeNumber(status.stale_seconds)
+    !isNullableNonNegativeInteger(status.stale_seconds, 86_400)
   ) {
     return null;
   }
-  if (value.ok && value.error !== null) {
+  const state = String(status.state) as ActionEnvelope["status"]["state"];
+  if (
+    status.terminal !== (state !== "running") ||
+    (status.terminal && status.poll_after_seconds !== 0) ||
+    (value.ok && state === "failed") ||
+    (!value.ok && state === "succeeded")
+  ) {
     return null;
+  }
+  let parsedError: ActionEnvelope["error"] = null;
+  if (value.ok) {
+    if (value.error !== null) {
+      return null;
+    }
   }
   if (!value.ok) {
     const error = value.error;
     if (
       !isRecord(error) ||
+      !hasExactKeys(error, ERROR_KEYS) ||
       !ERROR_CODES.has(String(error.code)) ||
       typeof error.message !== "string" ||
+      error.message.length < 1 ||
+      error.message.length > 1000 ||
       typeof error.retryable !== "boolean" ||
-      !isNullableNonNegativeNumber(error.retry_after_seconds) ||
-      !isNullableString(error.user_action)
+      !isNullableNonNegativeInteger(error.retry_after_seconds, 86_400) ||
+      !isNullableBoundedString(error.user_action, 1000) ||
+      (error.retryable && !["rate_limited", "upstream_failed"].includes(String(error.code))) ||
+      (error.retryable && value.side_effect !== "none")
     ) {
       return null;
     }
+    parsedError = {
+      code: String(error.code),
+      message: error.message,
+      retryable: error.retryable,
+      retry_after_seconds: error.retry_after_seconds,
+      user_action: error.user_action,
+    };
   }
-  return value as ActionEnvelope;
+  return {
+    ok: value.ok,
+    operation_id: value.operation_id,
+    resource_id: value.resource_id,
+    status: {
+      state,
+      terminal: status.terminal,
+      poll_after_seconds: status.poll_after_seconds,
+      stale_seconds: status.stale_seconds,
+    },
+    side_effect: String(value.side_effect) as ActionEnvelope["side_effect"],
+    idempotency_key: value.idempotency_key,
+    receipt: { ...value.receipt },
+    artifacts: value.artifacts.map((artifact) => ({ ...artifact })),
+    error: parsedError,
+  };
 }
 
 function clientOperationId(action: string, callId: string): string {
@@ -181,6 +247,12 @@ function failureEnvelope(
       user_action: options.userAction?.slice(0, 1000) ?? null,
     },
   };
+}
+
+function ambiguousWriteUserAction(sideEffect: string): string | null {
+  return sideEffect === "none"
+    ? null
+    : "Read back the target state before deciding whether to retry with the same idempotency key.";
 }
 
 function resolveConfig(api: OpenClawPluginApi): Required<PluginConfig> {
@@ -392,7 +464,9 @@ export function createMagisterActionTool(
           signal: controller.signal,
         });
         if (!response.ok) {
-          const retryAfter = Number(response.headers.get("retry-after"));
+          const retryAfterHeader = response.headers.get("retry-after");
+          const retryAfter = retryAfterHeader === null ? null : Number(retryAfterHeader);
+          const serverFailure = response.status >= 500;
           return jsonResult(
             failureEnvelope(action, callId, {
               code:
@@ -404,8 +478,13 @@ export function createMagisterActionTool(
                       ? "upstream_failed"
                       : "validation_error",
               message: `Magister action request failed with HTTP ${response.status}.`,
-              retryable: response.status === 429 || response.status >= 500,
-              retryAfterSeconds: Number.isFinite(retryAfter) ? retryAfter : null,
+              retryable:
+                response.status === 429 || (serverFailure && action.side_effect === "none"),
+              retryAfterSeconds:
+                retryAfter !== null && Number.isFinite(retryAfter) && retryAfter >= 0
+                  ? retryAfter
+                  : null,
+              userAction: serverFailure ? ambiguousWriteUserAction(action.side_effect) : null,
             }),
           );
         }
@@ -443,12 +522,7 @@ export function createMagisterActionTool(
                   ? "Magister action response exceeded the configured size limit."
                   : "Magister action transport failed.",
             retryable: timedOut && action.side_effect === "none",
-            userAction:
-              action.side_effect === "external_write" ||
-              action.side_effect === "spend" ||
-              action.side_effect === "delete"
-                ? "Read back the target state before deciding whether to retry."
-                : null,
+            userAction: ambiguousWriteUserAction(action.side_effect),
           }),
         );
       } finally {
