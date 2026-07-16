@@ -33,6 +33,8 @@ export {
   filterWorkspaceSkillEntries,
   filterWorkspaceSkillEntriesWithOptions,
   loadWorkspaceSkillEntries,
+  renderSkillsCatalogPrompt,
+  resolveSkillsCatalogForRun,
   resolveSkillsPromptForRun,
   syncSkillsToWorkspace,
 } from "./skills/workspace.js";
