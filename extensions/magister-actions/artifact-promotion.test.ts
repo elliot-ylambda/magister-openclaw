@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ArtifactPromotionError, promoteArtifact } from "./artifact-promotion.js";
+import {
+  ArtifactPromotionError,
+  openArtifactContent,
+  promoteArtifact,
+} from "./artifact-promotion.js";
 
 const roots: string[] = [];
 const previousEnforcement = process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT;
@@ -137,5 +141,56 @@ describe("artifact promotion", () => {
     expect(fs.readFileSync(path.join(row.workspace, "deliverables", "report.txt"), "utf8")).toBe(
       "user edit",
     );
+  });
+});
+
+describe("artifact content readback", () => {
+  it("opens only the promoted regular file whose bytes match the registered hash", async () => {
+    const row = fixture("verified content");
+    const destination = path.join(row.workspace, "deliverables", "report.txt");
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, "verified content");
+
+    const opened = await openArtifactContent(
+      { destination_path: "deliverables/report.txt", sha256: row.sha256 },
+      { workspace: row.workspace },
+    );
+
+    expect(opened).toEqual({
+      filePath: destination,
+      size: Buffer.byteLength("verified content"),
+      sha256: row.sha256,
+    });
+    expect(fs.readFileSync(opened.filePath, "utf8")).toBe("verified content");
+  });
+
+  it("rejects changed bytes, symlinks, and platform-managed paths", async () => {
+    const row = fixture("registered content");
+    const destination = path.join(row.workspace, "deliverables", "report.txt");
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, "changed content");
+
+    await expect(
+      openArtifactContent(
+        { destination_path: "deliverables/report.txt", sha256: row.sha256 },
+        { workspace: row.workspace },
+      ),
+    ).rejects.toThrow("hash mismatch");
+
+    fs.rmSync(destination);
+    fs.symlinkSync(row.staged, destination);
+    await expect(
+      openArtifactContent(
+        { destination_path: "deliverables/report.txt", sha256: row.sha256 },
+        { workspace: row.workspace },
+      ),
+    ).rejects.toThrow("symlink");
+
+    await expect(
+      openArtifactContent(
+        { destination_path: ".magister/private", sha256: row.sha256 },
+        { workspace: row.workspace },
+      ),
+    ).rejects.toThrow("platform-managed");
   });
 });

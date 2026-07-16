@@ -29,6 +29,17 @@ type PromotionRequest = {
   mutation_context?: unknown;
 };
 
+type ArtifactReadRequest = {
+  destination_path: string;
+  sha256: string;
+};
+
+export type VerifiedArtifactContent = {
+  filePath: string;
+  size: number;
+  sha256: string;
+};
+
 export class ArtifactPromotionError extends Error {
   constructor(
     message: string,
@@ -122,6 +133,24 @@ function parseRequest(value: unknown): PromotionRequest {
     sha256: row.sha256,
     ...(typeof row.replace_sha256 === "string" ? { replace_sha256: row.replace_sha256 } : {}),
     ...(row.mutation_context !== undefined ? { mutation_context: row.mutation_context } : {}),
+  };
+}
+
+function parseArtifactReadRequest(value: unknown): ArtifactReadRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ArtifactPromotionError("artifact read request must be an object");
+  }
+  const row = value as Record<string, unknown>;
+  if (
+    Object.keys(row).some((key) => !["destination_path", "sha256"].includes(key)) ||
+    typeof row.sha256 !== "string" ||
+    !SHA256_RE.test(row.sha256)
+  ) {
+    throw new ArtifactPromotionError("artifact read request is invalid");
+  }
+  return {
+    destination_path: destinationRelative(row.destination_path),
+    sha256: row.sha256,
   };
 }
 
@@ -400,6 +429,71 @@ export async function handleArtifactPromotion(
     const status = error instanceof ArtifactPromotionError ? error.statusCode : 500;
     const message = error instanceof ArtifactPromotionError ? error.message : "promotion failed";
     sendJson(res, status, { error: "promotion_rejected", message });
+  }
+  return true;
+}
+
+export async function openArtifactContent(
+  rawRequest: unknown,
+  options: { workspace?: string } = {},
+): Promise<VerifiedArtifactContent> {
+  const request = parseArtifactReadRequest(rawRequest);
+  const workspace = path.resolve(
+    options.workspace ?? process.env.OPENCLAW_WORKSPACE_DIR ?? "/data/.openclaw/workspace",
+  );
+  const artifactPath = await assertComponents(workspace, request.destination_path, {
+    createParents: false,
+  });
+  const stat = await fs.promises.lstat(artifactPath).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new ArtifactPromotionError("promoted artifact is missing", 404);
+    }
+    throw error;
+  });
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink !== 1) {
+    throw new ArtifactPromotionError("promoted artifact is not a safe regular file", 409);
+  }
+  if (stat.size > MAX_ARTIFACT_BYTES) {
+    throw new ArtifactPromotionError("promoted artifact exceeds the 50 MB quota", 413);
+  }
+  if ((await hashFile(artifactPath)) !== request.sha256) {
+    throw new ArtifactPromotionError("promoted artifact hash mismatch", 409);
+  }
+  return { filePath: artifactPath, size: stat.size, sha256: request.sha256 };
+}
+
+export async function handleArtifactContent(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<boolean> {
+  if (req.method !== "POST") {
+    res.setHeader("allow", "POST");
+    sendJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  try {
+    const artifact = await openArtifactContent(await readJsonBody(req));
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/octet-stream");
+    res.setHeader("cache-control", "private, no-store");
+    res.setHeader("content-length", artifact.size);
+    res.setHeader("x-magister-artifact-sha256", artifact.sha256);
+    await new Promise<void>((resolve, reject) => {
+      const stream = fs.createReadStream(artifact.filePath);
+      stream.once("error", reject);
+      res.once("error", reject);
+      res.once("finish", resolve);
+      stream.pipe(res);
+    });
+  } catch (error) {
+    if (!res.headersSent) {
+      const status = error instanceof ArtifactPromotionError ? error.statusCode : 500;
+      const message =
+        error instanceof ArtifactPromotionError ? error.message : "artifact read failed";
+      sendJson(res, status, { error: "artifact_read_rejected", message });
+    } else {
+      res.destroy(error instanceof Error ? error : undefined);
+    }
   }
   return true;
 }

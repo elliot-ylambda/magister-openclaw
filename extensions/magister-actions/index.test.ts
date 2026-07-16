@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMagisterActionTool, nativeActionContract, parseActionEnvelope } from "./index.js";
+import {
+  createMagisterActionTool,
+  nativeActionContract,
+  parseActionEnvelope,
+  presentationInvocationId,
+} from "./index.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const action = nativeActionContract.actions.find((row) => row.action === "get_brand");
@@ -34,6 +39,10 @@ const integrationsAction = nativeActionContract.actions.find(
 if (!integrationsAction) {
   throw new Error("list_integrations contract missing");
 }
+const skillsAction = nativeActionContract.actions.find((row) => row.action === "list_skills");
+if (!skillsAction) {
+  throw new Error("list_skills contract missing");
+}
 const temporaryDirectories: string[] = [];
 
 function api(config: Record<string, unknown> = {}) {
@@ -53,6 +62,9 @@ function envelope(overrides: Record<string, unknown> = {}) {
     },
     side_effect: "none",
     idempotency_key: null,
+    source_action_id: "tool:8e9775f4d653d74900c9",
+    presentation_result_ref: null,
+    presentation_result: null,
     receipt: { brand: null },
     artifacts: [],
     error: null,
@@ -114,6 +126,7 @@ describe("Magister action manifest contract", () => {
         expect(properties.has(required)).toBe(true);
       }
       expect(JSON.stringify(row.input_schema)).not.toContain("project_id");
+      expect(Array.isArray(row.presentation_views)).toBe(true);
     }
   });
 });
@@ -138,7 +151,10 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).toMatchObject({
       authorization: "Bearer secret-machine-token",
     });
-    expect(requestBody(request?.init)).toEqual({ arguments: {} });
+    expect(requestBody(request?.init)).toEqual({
+      arguments: {},
+      invocation_id: presentationInvocationId("magister_get_brand", "call-1"),
+    });
   });
 
   it("forwards trusted workflow context without exposing it in tool arguments", async () => {
@@ -158,7 +174,10 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).toMatchObject({
       "x-magister-session-key": "workflow_run:00000000-0000-4000-8000-000000000001",
     });
-    expect(requestBody(request?.init)).toEqual({ arguments: {} });
+    expect(requestBody(request?.init)).toEqual({
+      arguments: {},
+      invocation_id: presentationInvocationId("magister_get_brand", "call-workflow"),
+    });
   });
 
   it("does not forward ordinary chat session keys", async () => {
@@ -286,14 +305,14 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
   });
 
-  it("reuses only freshness-valid cached integration reads", async () => {
+  it("reuses only freshness-valid non-presentation reads", async () => {
     process.env.GATEWAY_TOKEN = "token";
     const workspace = mkdtempSync(join(tmpdir(), "magister-read-cache-"));
     temporaryDirectories.push(workspace);
     process.env.OPENCLAW_WORKSPACE_DIR = workspace;
     process.env.FLY_APP_NAME = "project-app-1";
     let fetches = 0;
-    const tool = createMagisterActionTool(api(), integrationsAction, async () => {
+    const tool = createMagisterActionTool(api(), skillsAction, async () => {
       fetches += 1;
       return new Response(
         JSON.stringify(envelope({ receipt: { integrations: [{ service: "ga4" }] } })),
@@ -311,6 +330,28 @@ describe("typed gateway execution", () => {
     expect((second.receipt as Record<string, unknown>).cache_freshness).toMatchObject({
       cached: true,
     });
+  });
+
+  it("always calls the gateway for presentation-producing reads", async () => {
+    process.env.GATEWAY_TOKEN = "token";
+    const workspace = mkdtempSync(join(tmpdir(), "magister-presentation-read-"));
+    temporaryDirectories.push(workspace);
+    process.env.OPENCLAW_WORKSPACE_DIR = workspace;
+    process.env.FLY_APP_NAME = "project-app-1";
+    let fetches = 0;
+    const tool = createMagisterActionTool(api(), integrationsAction, async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify(envelope({ receipt: { integrations: [{ service: "ga4" }] } })),
+        { status: 200 },
+      );
+    });
+
+    await tool.execute("call-presentation-1", {});
+    await tool.execute("call-presentation-2", {});
+
+    expect(integrationsAction.presentation_views).toEqual(["integration_status"]);
+    expect(fetches).toBe(2);
   });
 
   it("rejects a raw legacy result instead of inferring success", async () => {
@@ -411,7 +452,13 @@ describe("typed gateway execution", () => {
       const output = resultJson(await tool.execute("completion-1", argumentsPayload));
 
       expect(output.ok).toBe(true);
-      expect(requestBody(request?.init)).toEqual({ arguments: argumentsPayload });
+      expect(requestBody(request?.init)).toEqual({
+        arguments: argumentsPayload,
+        invocation_id: presentationInvocationId(
+          "magister_submit_workflow_completion",
+          "completion-1",
+        ),
+      });
       const manifest = [["resources/report.md", sha256, "file"]];
       const expected = createHmac("sha256", "secret-machine-token")
         .update(`${sessionKey}\n${JSON.stringify(manifest)}`)
@@ -448,7 +495,13 @@ describe("typed gateway execution", () => {
       const output = resultJson(await tool.execute("completion-broker", { artifacts }));
 
       expect(output.ok).toBe(true);
-      expect(requestBody(request?.init)).toEqual({ arguments: { artifacts } });
+      expect(requestBody(request?.init)).toEqual({
+        arguments: { artifacts },
+        invocation_id: presentationInvocationId(
+          "magister_submit_workflow_completion",
+          "completion-broker",
+        ),
+      });
       expect(request?.init?.headers).toMatchObject({
         authorization: "Bearer broker-local",
         "x-magister-session-key": sessionKey,

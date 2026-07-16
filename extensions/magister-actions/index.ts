@@ -11,7 +11,7 @@ import {
 } from "openclaw/plugin-sdk/core";
 import { Type, type TSchema } from "typebox";
 import contractJson from "./action-contract.json" with { type: "json" };
-import { handleArtifactPromotion } from "./artifact-promotion.js";
+import { handleArtifactContent, handleArtifactPromotion } from "./artifact-promotion.js";
 import {
   canonicalCorpusJson,
   getCorpusReadCache,
@@ -63,6 +63,9 @@ const ENVELOPE_KEYS = new Set([
   "status",
   "side_effect",
   "idempotency_key",
+  "source_action_id",
+  "presentation_result_ref",
+  "presentation_result",
   "receipt",
   "artifacts",
   "error",
@@ -76,6 +79,7 @@ type ActionContract = {
   description: string;
   input_schema: Record<string, unknown>;
   side_effect: string;
+  presentation_views: string[];
 };
 
 type Contract = {
@@ -103,6 +107,9 @@ type ActionEnvelope = {
   };
   side_effect: "none" | "draft" | "internal_write" | "external_write" | "spend" | "delete";
   idempotency_key: string | null;
+  source_action_id: string | null;
+  presentation_result_ref: string | null;
+  presentation_result: Record<string, unknown> | null;
   receipt: Record<string, unknown>;
   artifacts: Array<Record<string, unknown>>;
   error: {
@@ -191,11 +198,21 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
     value.operation_id.length > 128 ||
     !isNullableBoundedString(value.resource_id, 512) ||
     !isNullableBoundedString(value.idempotency_key, 256) ||
+    !isNullableBoundedString(value.source_action_id, 300) ||
+    !isNullableBoundedString(value.presentation_result_ref, 160) ||
+    (value.presentation_result !== null && !isRecord(value.presentation_result)) ||
     !SIDE_EFFECTS.has(String(value.side_effect)) ||
     !isRecord(value.receipt) ||
     !Array.isArray(value.artifacts) ||
     value.artifacts.length > 100 ||
     !value.artifacts.every(isRecord)
+  ) {
+    return null;
+  }
+  if (
+    value.presentation_result_ref !== null &&
+    (!isRecord(value.presentation_result) ||
+      value.presentation_result.resultRef !== value.presentation_result_ref)
   ) {
     return null;
   }
@@ -263,6 +280,9 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
     },
     side_effect: String(value.side_effect) as ActionEnvelope["side_effect"],
     idempotency_key: value.idempotency_key,
+    source_action_id: value.source_action_id,
+    presentation_result_ref: value.presentation_result_ref,
+    presentation_result: value.presentation_result ? { ...value.presentation_result } : null,
     receipt: { ...value.receipt },
     artifacts: value.artifacts.map((artifact) => ({ ...artifact })),
     error: parsedError,
@@ -272,6 +292,11 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
 function clientOperationId(action: string, callId: string): string {
   const digest = createHash("sha256").update(`${action}:${callId}`).digest("hex").slice(0, 32);
   return `op_client_${digest}`;
+}
+
+export function presentationInvocationId(toolName: string, callId: string): string {
+  const digest = createHash("sha256").update(`${toolName}\0${callId}`).digest("hex").slice(0, 40);
+  return `tool:${digest}`;
 }
 
 function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | undefined {
@@ -406,6 +431,9 @@ function failureEnvelope(
       ? (action.side_effect as ActionEnvelope["side_effect"])
       : "none",
     idempotency_key: null,
+    source_action_id: null,
+    presentation_result_ref: null,
+    presentation_result: null,
     receipt: {},
     artifacts: [],
     error: {
@@ -640,7 +668,13 @@ export function createMagisterActionTool(
         );
       }
 
-      const policy = action.side_effect === "none" ? readCachePolicy(action.action) : undefined;
+      // A card-producing invocation must cross the gateway every time so it
+      // receives a new immutable result row correlated to this tool call.
+      // Reusing a cached envelope would relay the prior invocation's resultRef.
+      const policy =
+        action.side_effect === "none" && action.presentation_views.length === 0
+          ? readCachePolicy(action.action)
+          : undefined;
       const scope = policy ? cacheScope(rawParams) : undefined;
       const inputHash = policy
         ? createHash("sha256").update(canonicalCorpusJson(rawParams)).digest("hex")
@@ -660,6 +694,7 @@ export function createMagisterActionTool(
             });
             const envelope = parseActionEnvelope(cached);
             if (envelope) {
+              envelope.source_action_id = presentationInvocationId(action.tool_name, callId);
               envelope.receipt = {
                 ...envelope.receipt,
                 cache_freshness: {
@@ -699,7 +734,10 @@ export function createMagisterActionTool(
               ? { "x-magister-artifact-attestation": prepared.attestation }
               : {}),
           },
-          body: JSON.stringify({ arguments: prepared.params }),
+          body: JSON.stringify({
+            arguments: prepared.params,
+            invocation_id: presentationInvocationId(action.tool_name, callId),
+          }),
           signal: controller.signal,
         });
         if (!response.ok) {
@@ -745,7 +783,7 @@ export function createMagisterActionTool(
             }),
           );
         }
-        if (envelope.ok && policy && scope && inputHash) {
+        if (envelope.ok && envelope.status.terminal && policy && scope && inputHash) {
           try {
             const fetchedAt = Date.now();
             const resultHash = createHash("sha256")
@@ -849,6 +887,13 @@ export default definePluginEntry({
       match: "exact",
       gatewayRuntimeScopeSurface: "write-default",
       handler: handleArtifactPromotion,
+    });
+    api.registerHttpRoute({
+      path: "/v1/artifact-content",
+      auth: "gateway",
+      match: "exact",
+      gatewayRuntimeScopeSurface: "write-default",
+      handler: handleArtifactContent,
     });
     api.registerTool(() => createCorpusSearchTool(), { name: "search_project_corpus" });
     for (const action of contract.actions) {
