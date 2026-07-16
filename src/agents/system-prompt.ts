@@ -939,6 +939,7 @@ export function buildAgentSystemPrompt(params: {
     memoryCitationsMode: params.memoryCitationsMode,
     memorySection,
     acpEnabled,
+    skillsCatalogSection,
     stableContextFiles,
   });
   const stablePrefix = cacheStablePromptPrefix(stablePrefixCacheKey, () => {

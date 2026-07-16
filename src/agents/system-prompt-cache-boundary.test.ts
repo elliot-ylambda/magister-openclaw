@@ -61,6 +61,26 @@ describe("system prompt cache boundary helpers", () => {
     expect(split?.stablePrefix).not.toContain("Task-selected skill hints");
   });
 
+  it("keys the memoized stable prefix on the skills catalog", () => {
+    const build = (catalog: string) =>
+      buildAgentSystemPrompt({
+        workspaceDir: "/data/.openclaw/workspace",
+        toolNames: ["exec", "message"],
+        skillsCatalogPrompt: catalog,
+        contextFiles: [{ path: "AGENTS.md", content: "Static platform policy" }],
+        runtimeInfo: { channel: "webchat", capabilities: ["inlineButtons"] },
+      });
+    const first = splitSystemPromptCacheBoundary(
+      build("<available_skills>CATALOG_A</available_skills>"),
+    );
+    const second = splitSystemPromptCacheBoundary(
+      build("<available_skills>CATALOG_B</available_skills>"),
+    );
+    expect(first?.stablePrefix).toContain("CATALOG_A");
+    expect(second?.stablePrefix).toContain("CATALOG_B");
+    expect(second?.stablePrefix).not.toContain("CATALOG_A");
+  });
+
   it("keeps channel, task-selected skills, and project state out of stable bytes", () => {
     const build = (params: { channel: string; skillsPrompt: string }) =>
       buildAgentSystemPrompt({
