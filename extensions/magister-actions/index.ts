@@ -31,11 +31,14 @@ import {
 const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/actions";
 const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
 const DEFAULT_TIMEOUT_MS = 45_000;
+const ARTIFACT_PROMOTION_TIMEOUT_MS = 90_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_WORKSPACE_DIR = "/data/.openclaw/workspace";
 const MAX_COMPLETION_ARTIFACT_BYTES = 16 * 1024 * 1024;
 const HEARTBEAT_SESSION_RE =
   /(?:^|:)heartbeat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[1-9][0-9]*$/i;
+const WORKFLOW_SESSION_RE =
+  /^workflow_run:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEARTBEAT_NOTE_MAX_BYTES = 64 * 1024;
 
 const ERROR_CODES = new Set([
@@ -279,10 +282,30 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
   if (!sessionKey) {
     return undefined;
   }
-  if (sessionKey.startsWith("workflow_run:") || HEARTBEAT_SESSION_RE.test(sessionKey)) {
+  if (WORKFLOW_SESSION_RE.test(sessionKey) || HEARTBEAT_SESSION_RE.test(sessionKey)) {
     return sessionKey;
   }
   return undefined;
+}
+
+export function actionTimeoutMs(action: string, configuredTimeoutMs: number): number {
+  return action === "promote_artifact"
+    ? Math.max(configuredTimeoutMs, ARTIFACT_PROMOTION_TIMEOUT_MS)
+    : configuredTimeoutMs;
+}
+
+function actionAvailableInContext(
+  action: ActionContract,
+  context: OpenClawPluginToolContext,
+): boolean {
+  const sessionKey = context.sessionKey ?? "";
+  if (action.action === "submit_workflow_completion") {
+    return WORKFLOW_SESSION_RE.test(sessionKey);
+  }
+  if (action.action === "record_heartbeat_escalation") {
+    return HEARTBEAT_SESSION_RE.test(sessionKey);
+  }
+  return true;
 }
 
 async function mirrorHeartbeatNote(envelope: ActionEnvelope): Promise<void> {
@@ -659,7 +682,7 @@ export function createMagisterActionTool(
               freshnessTtlSeconds: source.freshnessTtlSeconds,
             });
             const envelope = parseActionEnvelope(cached);
-            if (envelope) {
+            if (envelope?.ok && envelope.status.terminal) {
               envelope.receipt = {
                 ...envelope.receipt,
                 cache_freshness: {
@@ -679,7 +702,8 @@ export function createMagisterActionTool(
       }
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+      const selectedTimeoutMs = actionTimeoutMs(action.action, config.timeoutMs);
+      const timeout = setTimeout(() => controller.abort(), selectedTimeoutMs);
       const runtimeSessionKey = trustedRuntimeSessionKey(context);
       try {
         const prepared = await attestCompletionArtifacts(
@@ -745,7 +769,7 @@ export function createMagisterActionTool(
             }),
           );
         }
-        if (envelope.ok && policy && scope && inputHash) {
+        if (envelope.ok && envelope.status.terminal && policy && scope && inputHash) {
           try {
             const fetchedAt = Date.now();
             const resultHash = createHash("sha256")
@@ -816,7 +840,7 @@ export function createMagisterActionTool(
             message: artifactInvalid
               ? error.message
               : timedOut
-                ? `Magister action timed out after ${config.timeoutMs}ms.`
+                ? `Magister action timed out after ${selectedTimeoutMs}ms.`
                 : tooLarge
                   ? "Magister action response exceeded the configured size limit."
                   : "Magister action transport failed.",
@@ -829,6 +853,18 @@ export function createMagisterActionTool(
       }
     },
   };
+}
+
+export function createContextualMagisterActionTool(
+  api: OpenClawPluginApi,
+  action: ActionContract,
+  fetchImpl: FetchLike = fetch,
+  context: OpenClawPluginToolContext = {},
+) {
+  if (!actionAvailableInContext(action, context)) {
+    return null;
+  }
+  return createMagisterActionTool(api, action, fetchImpl, context);
 }
 
 export default definePluginEntry({
@@ -852,9 +888,12 @@ export default definePluginEntry({
     });
     api.registerTool(() => createCorpusSearchTool(), { name: "search_project_corpus" });
     for (const action of contract.actions) {
-      api.registerTool((context) => createMagisterActionTool(api, action, fetch, context), {
-        name: action.tool_name,
-      });
+      api.registerTool(
+        (context) => createContextualMagisterActionTool(api, action, fetch, context),
+        {
+          name: action.tool_name,
+        },
+      );
     }
   },
 });
