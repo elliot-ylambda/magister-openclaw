@@ -752,6 +752,7 @@ export async function handleOpenAiHttpRequest(
           toolCallId: data.toolCallId,
           ...(data.isError !== undefined && { isError: data.isError }),
           ...(data.args !== undefined && { args: data.args }),
+          ...(data.presentation !== undefined && { presentation: data.presentation }),
           ...(Boolean(data.isError) && data.result !== undefined && { result: data.result }),
         });
       }

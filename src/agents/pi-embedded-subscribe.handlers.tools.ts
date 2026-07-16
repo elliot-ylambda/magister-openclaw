@@ -23,6 +23,7 @@ import { normalizeOptionalLowercaseString, readStringValue } from "../shared/str
 import type { ApplyPatchSummary } from "./apply-patch.js";
 import type { ExecToolDetails } from "./bash-tools.exec-types.js";
 import { parseExecApprovalResultText } from "./exec-approval-result.js";
+import { projectMagisterToolPresentation } from "./magister-presentation.js";
 import { normalizeTextForComparison } from "./pi-embedded-helpers.js";
 import { isMessagingTool, isMessagingToolSendAction } from "./pi-embedded-messaging.js";
 import { mergeEmbeddedRunReplayState } from "./pi-embedded-runner/replay-state.js";
@@ -829,6 +830,7 @@ export async function handleToolExecutionEnd(
   const result = evt.result;
   const isToolError = isError || isToolResultError(result);
   const sanitizedResult = sanitizeToolResult(result);
+  const presentation = projectMagisterToolPresentation(toolName, sanitizedResult);
   const toolStartKey = buildToolStartKey(runId, toolCallId);
   const startData = toolStartData.get(toolStartKey);
   toolStartData.delete(toolStartKey);
@@ -935,6 +937,7 @@ export async function handleToolExecutionEnd(
       meta,
       isError: isToolError,
       result: sanitizedResult,
+      ...(presentation ? { presentation } : {}),
     },
   });
   const endedAt = Date.now();
@@ -963,6 +966,7 @@ export async function handleToolExecutionEnd(
       toolCallId,
       meta,
       isError: isToolError,
+      ...(presentation ? { presentation } : {}),
     },
   });
 

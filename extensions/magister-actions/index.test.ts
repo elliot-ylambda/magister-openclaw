@@ -497,6 +497,41 @@ describe("envelope validator", () => {
     expect(parseActionEnvelope(envelope())).not.toBeNull();
   });
 
+  it("accepts a terminal failed read while retaining its safe resource receipt", () => {
+    const parsed = parseActionEnvelope(
+      envelope({
+        ok: false,
+        resource_id: "d772df9d-4841-46f0-aa62-2effd01536df",
+        status: {
+          state: "failed",
+          terminal: true,
+          poll_after_seconds: 0,
+          stale_seconds: 0,
+        },
+        receipt: {
+          audit: {
+            id: "d772df9d-4841-46f0-aa62-2effd01536df",
+            status: "failed",
+            url: "https://example.com/",
+            error_message: "fetch failed",
+          },
+        },
+        error: {
+          code: "upstream_failed",
+          message: "fetch failed",
+          retryable: false,
+          retry_after_seconds: null,
+          user_action: null,
+        },
+      }),
+    );
+
+    expect(parsed?.ok).toBe(false);
+    expect(parsed?.receipt).toMatchObject({
+      audit: { status: "failed", error_message: "fetch failed" },
+    });
+  });
+
   it("rejects success with an error and unknown side effects", () => {
     expect(parseActionEnvelope(envelope({ error: { code: "conflict" } }))).toBeNull();
     expect(parseActionEnvelope(envelope({ side_effect: "root_shell" }))).toBeNull();

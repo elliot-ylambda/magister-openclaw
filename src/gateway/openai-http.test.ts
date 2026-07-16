@@ -1207,6 +1207,75 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
     expect(data[data.length - 1]).toBe("[DONE]");
   });
 
+  it("forwards a bounded tool presentation without exposing successful results", async () => {
+    const port = enabledPort;
+    const auditId = "d772df9d-4841-46f0-aa62-2effd01536df";
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({
+            runId,
+            stream: "tool",
+            data: {
+              phase: "result",
+              name: "magister_get_aeo_audit",
+              toolCallId: "tool-aeo-success",
+              isError: false,
+              presentation: {
+                v: 1,
+                type: "aeo_audit",
+                sourceId: auditId,
+                status: "ready",
+                url: "https://example.com/",
+                score: 91,
+                checks: [],
+                error: null,
+              },
+              result: { secret: "sentinel-success-result" },
+            },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "tool",
+            data: {
+              phase: "result",
+              name: "read",
+              toolCallId: "tool-error",
+              isError: true,
+              result: { message: "bounded failure" },
+            },
+          });
+          emitAgentEvent({ runId, stream: "assistant", data: { delta: "done" } });
+          emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "end" } });
+          setTimeout(() => resolve({ payloads: [{ text: "done" }], meta: {} }), 50);
+        })) as never,
+    );
+
+    const res = await postChatCompletions(port, {
+      stream: true,
+      model: "openclaw",
+      messages: [{ role: "user", content: "audit example.com" }],
+    });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    const toolPayloads = parseSseDataLines(text)
+      .filter((line) => line.startsWith("{") && line.includes("toolCallId"))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const success = toolPayloads.find((payload) => payload.toolCallId === "tool-aeo-success");
+    const failure = toolPayloads.find((payload) => payload.toolCallId === "tool-error");
+    expect(success?.presentation).toMatchObject({
+      v: 1,
+      type: "aeo_audit",
+      sourceId: auditId,
+    });
+    expect(success).not.toHaveProperty("result");
+    expect(text).not.toContain("sentinel-success-result");
+    expect(failure?.result).toEqual({ message: "bounded failure" });
+  });
+
   it("writes an error SSE event before finalizing on terminal lifecycle error (Magister fork)", async () => {
     const port = enabledPort;
     agentCommand.mockClear();

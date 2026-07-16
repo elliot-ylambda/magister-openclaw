@@ -196,6 +196,76 @@ describe("handleToolExecutionEnd cron.add commitment tracking", () => {
   });
 });
 
+describe("handleToolExecutionEnd Magister presentation projection", () => {
+  it("attaches only the bounded AEO projection to the result event", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+    const auditId = "d772df9d-4841-46f0-aa62-2effd01536df";
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "magister_get_aeo_audit",
+        toolCallId: "tool-aeo-1",
+        args: { audit_id: auditId },
+      } as never,
+    );
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "magister_get_aeo_audit",
+        toolCallId: "tool-aeo-1",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "private full result" }],
+          details: {
+            ok: true,
+            operation_id: "op_1234567890",
+            resource_id: auditId,
+            status: {
+              state: "succeeded",
+              terminal: true,
+              poll_after_seconds: 0,
+              stale_seconds: 0,
+            },
+            side_effect: "none",
+            idempotency_key: null,
+            receipt: {
+              audit: {
+                id: auditId,
+                status: "ready",
+                url: "https://example.com/",
+                score: 91,
+                checks: [],
+              },
+              secret: "sentinel-must-not-cross",
+            },
+            artifacts: [],
+            error: null,
+          },
+        },
+      } as never,
+    );
+
+    const resultEvent = onAgentEvent.mock.calls
+      .map(([event]) => event as { stream: string; data: Record<string, unknown> })
+      .find((event) => event.stream === "tool" && event.data.phase === "result");
+    expect(resultEvent?.data.presentation).toEqual({
+      v: 1,
+      type: "aeo_audit",
+      sourceId: auditId,
+      status: "ready",
+      url: "https://example.com/",
+      score: 91,
+      checks: [],
+      error: null,
+    });
+    expect(resultEvent?.data).not.toHaveProperty("result");
+    expect(JSON.stringify(resultEvent)).not.toContain("sentinel");
+  });
+});
+
 describe("handleToolExecutionEnd mutating failure recovery", () => {
   it("clears edit failure when the retry succeeds through common file path aliases", async () => {
     const { ctx } = createTestContext();
