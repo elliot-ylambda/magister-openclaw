@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LegacyContextEngine } from "./legacy.js";
-import { MagisterMemoryContextEngine } from "./magister-memory.js";
+import {
+  createMagisterMemoryContextEngine,
+  MagisterMemoryContextEngine,
+} from "./magister-memory.js";
 
 describe("MagisterMemoryContextEngine", () => {
   let dir: string;
@@ -119,6 +122,15 @@ describe("MagisterMemoryContextEngine", () => {
     await writeFile(memoryPath, "Updated");
     const fresh = await engine.assemble({ sessionId: "s2", messages: [] });
     expect(fresh.systemPromptAddition).toContain("Updated");
+  });
+
+  it("production factory scopes file paths to the provided workspaceDir", async () => {
+    // Simulates an agent with its own workspace (e.g. heartbeat): the engine
+    // must read that workspace's files, not the hardcoded marketing root.
+    await writeFile(memoryPath, "Workspace-scoped memory");
+    const engine = createMagisterMemoryContextEngine({ workspaceDir: dir });
+    const result = await engine.assemble({ sessionId: "ws1", messages: [] });
+    expect(result.systemPromptAddition).toContain("Workspace-scoped memory");
   });
 
   it("injects bounded sourced brand claims only for relevant work", async () => {

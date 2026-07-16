@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
@@ -262,6 +263,35 @@ async function readTextOrEmpty(path: string): Promise<string> {
   }
 }
 
+/**
+ * Production composition for the 'magister-memory' slot, shared by the
+ * registry factory and tests. When a `workspaceDir` is provided (the resolver
+ * passes the run's agent workspace), the memory/user/project/brand files are
+ * read from that workspace; otherwise the historical marketing-root defaults
+ * apply. This keeps a non-root agent (e.g. heartbeat) from being served the
+ * marketing agent's files.
+ */
+export function createMagisterMemoryContextEngine(options?: {
+  workspaceDir?: string;
+}): MagisterMemoryContextEngine {
+  const ws = options?.workspaceDir?.trim();
+  return new MagisterMemoryContextEngine({
+    inner: new MagisterPlanContextEngine({
+      inner: new MagisterWorkflowsContextEngine({
+        inner: new MagisterIntegrationsContextEngine(),
+      }),
+    }),
+    ...(ws
+      ? {
+          memoryPath: join(ws, "MEMORY.md"),
+          userPath: join(ws, "USER.md"),
+          projectPath: join(ws, "PROJECT.md"),
+          brandPath: join(ws, "BRAND.md"),
+        }
+      : {}),
+  });
+}
+
 export function registerMagisterMemoryContextEngine(): void {
   // Compose ON TOP of magister-plan so the active 'magister-memory' slot folds
   // MEMORY.md + USER.md (frozen per-session snapshot), the live marketing plan,
@@ -271,15 +301,7 @@ export function registerMagisterMemoryContextEngine(): void {
   //       -> MagisterWorkflowsContextEngine (per-turn)
   //         -> MagisterIntegrationsContextEngine (per-turn)
   //           -> LegacyContextEngine
-  registerContextEngine(
-    "magister-memory",
-    () =>
-      new MagisterMemoryContextEngine({
-        inner: new MagisterPlanContextEngine({
-          inner: new MagisterWorkflowsContextEngine({
-            inner: new MagisterIntegrationsContextEngine(),
-          }),
-        }),
-      }),
+  registerContextEngine("magister-memory", (ctx) =>
+    createMagisterMemoryContextEngine({ workspaceDir: ctx?.workspaceDir }),
   );
 }
