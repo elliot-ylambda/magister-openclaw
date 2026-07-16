@@ -94,9 +94,16 @@ export class MagisterMemoryContextEngine implements ContextEngine {
     const innerResult = await this.inner.assemble(params);
 
     let snapshot = this.snapshotBySession.get(params.sessionId);
-    if (snapshot === undefined) {
+    if (!snapshot) {
+      // Re-render while empty: a session that starts before the provision-time
+      // seed files exist must pick them up on a later turn instead of staying
+      // blind for its whole life. Freezing begins once content appears — the
+      // addition lands below the cache boundary, so the one-time
+      // empty→content flip does not invalidate the stable prefix.
       snapshot = await this.renderSnapshot();
-      this.rememberSnapshot(params.sessionId, snapshot);
+      if (snapshot) {
+        this.rememberSnapshot(params.sessionId, snapshot);
+      }
     }
 
     const brandContext = await this.renderBrandContext(params.prompt);

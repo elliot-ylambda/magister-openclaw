@@ -78,6 +78,33 @@ describe("MagisterMemoryContextEngine", () => {
     expect(second.systemPromptAddition).not.toContain("Updated");
   });
 
+  it("re-reads an empty snapshot on later assembles and freezes once content appears", async () => {
+    const engine = new MagisterMemoryContextEngine({
+      memoryPath,
+      userPath,
+      projectPath,
+      brandPath,
+      inner: new LegacyContextEngine(),
+    });
+
+    // First assemble: no files exist yet — snapshot is empty.
+    const first = await engine.assemble({ sessionId: "s1", messages: [] });
+    expect(first.systemPromptAddition ?? "").not.toContain("Seeded memory entry");
+
+    // Files appear after the session already started (the provision race).
+    await writeFile(memoryPath, "Seeded memory entry");
+
+    // Second assemble on the SAME session must pick the content up.
+    const second = await engine.assemble({ sessionId: "s1", messages: [] });
+    expect(second.systemPromptAddition).toContain("Seeded memory entry");
+
+    // And once non-empty, it freezes: later writes do not appear.
+    await writeFile(memoryPath, "Rewritten later");
+    const third = await engine.assemble({ sessionId: "s1", messages: [] });
+    expect(third.systemPromptAddition).toContain("Seeded memory entry");
+    expect(third.systemPromptAddition).not.toContain("Rewritten later");
+  });
+
   it("re-reads for a new session", async () => {
     await writeFile(memoryPath, "Original");
     const engine = new MagisterMemoryContextEngine({
