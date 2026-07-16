@@ -1051,13 +1051,21 @@ export function renderSkillNameIndex(skills: Skill[]): string {
     "<!-- System-managed. Generated from the current eligible runtime skills. -->",
     "# Complete skill index",
     "",
-    "This is the on-demand name/location index. Read the selected `SKILL.md` before use.",
+    "This is the on-demand skill index (name — description — location). Read the selected `SKILL.md` before use.",
     "",
   ];
   for (const skill of skills.toSorted((a, b) => a.name.localeCompare(b.name, "en"))) {
     const name = skill.name.replaceAll("`", "\\`").replaceAll("\n", " ");
     const location = skill.filePath.replaceAll("`", "\\`").replaceAll("\n", " ");
-    lines.push(`- \`${name}\` — \`${location}\``);
+    const description = (skill.description ?? "")
+      .replaceAll("`", "\\`")
+      .replace(/\s+/g, " ")
+      .trim();
+    lines.push(
+      description
+        ? `- \`${name}\` — ${description} — \`${location}\``
+        : `- \`${name}\` — \`${location}\``,
+    );
   }
   lines.push("");
   return lines.join("\n");
@@ -1109,7 +1117,7 @@ function renderTaskSelectedSkillsPrompt(params: {
     selected.push(skill);
   }
   const indexGuidance = indexPath
-    ? `The complete name-only skill index is available on demand at \`${indexPath}\`. Read it only when no task-selected hint fits.`
+    ? `The complete skill index (names, descriptions, locations) is available on demand at \`${indexPath}\`. Read it when no task-selected hint fits.`
     : "If no task-selected hint fits, run `openclaw skills list --json` for the complete on-demand index.";
   return [
     "Task-selected skill hints for the current request follow. They are routing hints, not proof that a capability is ready.",
