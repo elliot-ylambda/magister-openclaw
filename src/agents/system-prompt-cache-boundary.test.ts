@@ -108,9 +108,15 @@ describe("system prompt cache boundary helpers", () => {
     expect(slack).toBeDefined();
     expect(webchat?.stablePrefix).toBe(slack?.stablePrefix);
     expect(webchat?.dynamicSuffix).toContain("SEO task-selected hint");
-    expect(webchat?.dynamicSuffix).toContain("Webchat may emit canonical");
+    expect(webchat?.dynamicSuffix).toContain("Webchat supports canonical `<json-render>`");
+    expect(webchat?.dynamicSuffix).toContain("Default to one minimal JSON-render block");
+    expect(webchat?.dynamicSuffix).toContain("2–5 concrete choices");
+    expect(webchat?.dynamicSuffix).toContain("up to three short non-sensitive fields");
+    expect(webchat?.dynamicSuffix).toContain("never bypass approval requirements");
+    expect(webchat?.dynamicSuffix).not.toContain("This channel does not render JSON-render");
     expect(slack?.dynamicSuffix).toContain("Email task-selected hint");
     expect(slack?.dynamicSuffix).toContain("Never emit `<json-render>`");
+    expect(slack?.dynamicSuffix).not.toContain("Default to one minimal JSON-render block");
 
     const stable = webchat!.stablePrefix;
     for (const addition of [

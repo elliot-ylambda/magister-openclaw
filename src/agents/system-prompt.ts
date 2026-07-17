@@ -533,9 +533,16 @@ function buildChannelRuntimePolicySection(params: {
       inlineButtonsEnabled: params.inlineButtonsEnabled,
       runtimeCapabilities: params.runtimeCapabilities,
     }),
-    params.runtimeChannel === "webchat"
-      ? "Webchat may emit canonical `<json-render>` only after reading the selected UI-render skill."
-      : "This channel does not render JSON-render. Never emit `<json-render>` tags, their raw JSON body, or web-only embeds; use plain text and full links.",
+    ...(params.runtimeChannel === "webchat"
+      ? [
+          "Webchat supports canonical `<json-render>`. Read the `magister-ui-render` skill and its generated catalog before emitting it.",
+          "- Default to one minimal JSON-render block when asking for a concrete approval, presenting 2–5 concrete choices, collecting up to three short non-sensitive fields, or showing a compact comparison, table, or chart.",
+          "- Use prose for open-ended discussion, sensitive inputs, unsupported UI, or when UI would not reduce user effort. If channel support or schema validity is uncertain, use prose.",
+          "- JSON-render actions only submit a user message. They never bypass approval requirements or directly authorize or execute external mutations.",
+        ]
+      : [
+          "This channel does not render JSON-render. Never emit `<json-render>` tags, their raw JSON body, or web-only embeds; use plain text and full links.",
+        ]),
     ...(params.runtimeChannel === "discord" && params.threadBoundAcpSpawnEnabled
       ? [
           'Default ACP harness requests to thread-bound persistent sessions (`thread: true`, `mode: "session"`) unless the user asks otherwise.',
