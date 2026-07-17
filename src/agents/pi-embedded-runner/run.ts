@@ -2781,7 +2781,7 @@ export async function runEmbeddedPiAgent(
           }
 
           log.debug(
-            `embedded run done: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
+            `embedded run done: runId=${params.runId} sessionId=${params.sessionId} agentId=${sessionAgentId} workspace=${workspaceResolution.workspaceDir} durationMs=${Date.now() - started} aborted=${aborted}`,
           );
           if (lastProfileId) {
             await markAuthProfileGood({
