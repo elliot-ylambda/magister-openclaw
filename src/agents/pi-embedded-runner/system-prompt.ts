@@ -22,6 +22,8 @@ export function buildEmbeddedSystemPrompt(params: {
   reasoningTagHint: boolean;
   heartbeatPrompt?: string;
   skillsPrompt?: string;
+  /** Complete skills catalog for the cache-stable prefix (all names + descriptions). */
+  skillsCatalogPrompt?: string;
   docsPath?: string;
   sourcePath?: string;
   ttsHint?: string;
@@ -80,6 +82,7 @@ export function buildEmbeddedSystemPrompt(params: {
     reasoningTagHint: params.reasoningTagHint,
     heartbeatPrompt: params.heartbeatPrompt,
     skillsPrompt: params.skillsPrompt,
+    skillsCatalogPrompt: params.skillsCatalogPrompt,
     docsPath: params.docsPath,
     sourcePath: params.sourcePath,
     ttsHint: params.ttsHint,

@@ -153,6 +153,7 @@ import { detectRuntimeShell } from "../../shell-utils.js";
 import {
   applySkillEnvOverrides,
   applySkillEnvOverridesFromSnapshot,
+  resolveSkillsCatalogForRun,
   resolveSkillsPromptForRun,
 } from "../../skills.js";
 import {
@@ -744,6 +745,13 @@ export async function runEmbeddedAttempt(
       agentId: sessionAgentId,
       taskText: params.prompt,
     });
+    const skillsCatalogPrompt = resolveSkillsCatalogForRun({
+      skillsSnapshot: params.skillsSnapshot,
+      entries: shouldLoadSkillEntries ? skillEntries : undefined,
+      config: params.config,
+      workspaceDir: effectiveWorkspace,
+      agentId: sessionAgentId,
+    });
     prepStages.mark("skills");
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
@@ -1227,6 +1235,9 @@ export async function runEmbeddedAttempt(
     // When toolsAllow is set, use minimal prompt and strip skills catalog
     const effectivePromptMode = params.toolsAllow?.length ? ("minimal" as const) : promptMode;
     const effectiveSkillsPrompt = params.toolsAllow?.length ? undefined : skillsPrompt;
+    const effectiveSkillsCatalogPrompt = params.toolsAllow?.length
+      ? undefined
+      : skillsCatalogPrompt;
     const openClawReferences = await resolveOpenClawReferencePaths({
       workspaceDir: effectiveWorkspace,
       argv1: process.argv[1],
@@ -1293,6 +1304,7 @@ export async function runEmbeddedAttempt(
         reasoningTagHint,
         heartbeatPrompt,
         skillsPrompt: effectiveSkillsPrompt,
+        skillsCatalogPrompt: effectiveSkillsCatalogPrompt,
         docsPath: openClawReferences.docsPath ?? undefined,
         sourcePath: openClawReferences.sourcePath ?? undefined,
         ttsHint,

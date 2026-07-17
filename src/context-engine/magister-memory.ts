@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
@@ -94,9 +95,16 @@ export class MagisterMemoryContextEngine implements ContextEngine {
     const innerResult = await this.inner.assemble(params);
 
     let snapshot = this.snapshotBySession.get(params.sessionId);
-    if (snapshot === undefined) {
+    if (!snapshot) {
+      // Re-render while empty: a session that starts before the provision-time
+      // seed files exist must pick them up on a later turn instead of staying
+      // blind for its whole life. Freezing begins once content appears — the
+      // addition lands below the cache boundary, so the one-time
+      // empty→content flip does not invalidate the stable prefix.
       snapshot = await this.renderSnapshot();
-      this.rememberSnapshot(params.sessionId, snapshot);
+      if (snapshot) {
+        this.rememberSnapshot(params.sessionId, snapshot);
+      }
     }
 
     const brandContext = await this.renderBrandContext(params.prompt);
@@ -255,6 +263,35 @@ async function readTextOrEmpty(path: string): Promise<string> {
   }
 }
 
+/**
+ * Production composition for the 'magister-memory' slot, shared by the
+ * registry factory and tests. When a `workspaceDir` is provided (the resolver
+ * passes the run's agent workspace), the memory/user/project/brand files are
+ * read from that workspace; otherwise the historical marketing-root defaults
+ * apply. This keeps a non-root agent (e.g. heartbeat) from being served the
+ * marketing agent's files.
+ */
+export function createMagisterMemoryContextEngine(options?: {
+  workspaceDir?: string;
+}): MagisterMemoryContextEngine {
+  const ws = options?.workspaceDir?.trim();
+  return new MagisterMemoryContextEngine({
+    inner: new MagisterPlanContextEngine({
+      inner: new MagisterWorkflowsContextEngine({
+        inner: new MagisterIntegrationsContextEngine(),
+      }),
+    }),
+    ...(ws
+      ? {
+          memoryPath: join(ws, "MEMORY.md"),
+          userPath: join(ws, "USER.md"),
+          projectPath: join(ws, "PROJECT.md"),
+          brandPath: join(ws, "BRAND.md"),
+        }
+      : {}),
+  });
+}
+
 export function registerMagisterMemoryContextEngine(): void {
   // Compose ON TOP of magister-plan so the active 'magister-memory' slot folds
   // MEMORY.md + USER.md (frozen per-session snapshot), the live marketing plan,
@@ -264,15 +301,7 @@ export function registerMagisterMemoryContextEngine(): void {
   //       -> MagisterWorkflowsContextEngine (per-turn)
   //         -> MagisterIntegrationsContextEngine (per-turn)
   //           -> LegacyContextEngine
-  registerContextEngine(
-    "magister-memory",
-    () =>
-      new MagisterMemoryContextEngine({
-        inner: new MagisterPlanContextEngine({
-          inner: new MagisterWorkflowsContextEngine({
-            inner: new MagisterIntegrationsContextEngine(),
-          }),
-        }),
-      }),
+  registerContextEngine("magister-memory", (ctx) =>
+    createMagisterMemoryContextEngine({ workspaceDir: ctx?.workspaceDir }),
   );
 }

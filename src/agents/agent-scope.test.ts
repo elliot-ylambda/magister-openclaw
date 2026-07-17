@@ -18,6 +18,7 @@ import {
   resolveAgentWorkspaceDir,
   resolveAgentIdByWorkspacePath,
   resolveAgentIdsByWorkspacePath,
+  resolveSessionAgentId,
   setAgentEffectiveModelPrimary,
 } from "./agent-scope.js";
 
@@ -757,5 +758,49 @@ describe("resolveAgentSkillsFilter", () => {
     };
 
     expect(resolveAgentSkillsFilter(cfg, "writer")).toEqual([]);
+  });
+});
+
+describe("magister production config resolution", () => {
+  // Mirrors openclaw-image/default-config/openclaw.json in the Magister
+  // monorepo. These pin the invariants the fleet depends on: gateway webchat
+  // keys route to the marketing agent, marketing is the default agent for
+  // bare (unqualified) session keys, and its workspace matches the
+  // magister-memory engine's default root.
+  const cfg: OpenClawConfig = {
+    agents: {
+      list: [
+        {
+          id: "marketing",
+          name: "Magister Marketing Agent",
+          workspace: "/data/.openclaw/workspace",
+        },
+        { id: "heartbeat", workspace: "/data/.openclaw/heartbeat-workspace", skills: [] },
+      ],
+    },
+  };
+
+  it("routes gateway webchat session keys to the marketing agent", () => {
+    expect(
+      resolveSessionAgentId({ sessionKey: "agent:marketing:webchat:abc-123", config: cfg }),
+    ).toBe("marketing");
+  });
+
+  it("routes bare workflow_run keys to marketing (the default agent)", () => {
+    expect(resolveSessionAgentId({ sessionKey: "workflow_run:7b845630", config: cfg })).toBe(
+      "marketing",
+    );
+  });
+
+  it("marketing workspace matches the magister-memory default root", () => {
+    expect(resolveAgentWorkspaceDir(cfg, "marketing")).toBe(
+      path.resolve("/data/.openclaw/workspace"),
+    );
+  });
+
+  it("heartbeat keeps its own isolated workspace", () => {
+    expect(resolveAgentWorkspaceDir(cfg, "heartbeat")).toBe(
+      path.resolve("/data/.openclaw/heartbeat-workspace"),
+    );
   });
 });
