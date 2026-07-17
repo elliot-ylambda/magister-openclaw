@@ -6,6 +6,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  canonicalCorpusJson,
+  putCorpusReadCache,
+  recordFetchedCorpusSource,
+} from "./corpus-index.js";
+import {
+  actionTimeoutMs,
+  createContextualMagisterActionTool,
   createMagisterActionTool,
   nativeActionContract,
   parseActionEnvelope,
@@ -352,6 +359,128 @@ describe("typed gateway execution", () => {
 
     expect(integrationsAction.presentation_views).toEqual(["integration_status"]);
     expect(fetches).toBe(2);
+  });
+
+  it("never caches a non-terminal read result", async () => {
+    process.env.GATEWAY_TOKEN = "token";
+    const workspace = mkdtempSync(join(tmpdir(), "magister-running-cache-"));
+    temporaryDirectories.push(workspace);
+    process.env.OPENCLAW_WORKSPACE_DIR = workspace;
+    process.env.FLY_APP_NAME = "project-app-running";
+    let fetches = 0;
+    const tool = createMagisterActionTool(api(), skillsAction, async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify(
+          fetches === 1
+            ? envelope({
+                status: {
+                  state: "running",
+                  terminal: false,
+                  poll_after_seconds: 3,
+                  stale_seconds: 0,
+                },
+                receipt: { stage: "running" },
+              })
+            : envelope({ receipt: { integrations: [{ service: "ga4" }] } }),
+        ),
+        { status: 200 },
+      );
+    });
+
+    const running = resultJson(await tool.execute("call-running-1", {}));
+    const terminal = resultJson(await tool.execute("call-running-2", {}));
+    const cached = resultJson(await tool.execute("call-running-3", {}));
+
+    expect(fetches).toBe(2);
+    expect((running.receipt as Record<string, unknown>).cache_freshness).toBeUndefined();
+    expect((terminal.receipt as Record<string, unknown>).cache_freshness).toMatchObject({
+      cached: false,
+    });
+    expect((cached.receipt as Record<string, unknown>).cache_freshness).toMatchObject({
+      cached: true,
+    });
+  });
+
+  it("ignores a non-terminal envelope written by an older cache policy", async () => {
+    process.env.GATEWAY_TOKEN = "token";
+    const workspace = mkdtempSync(join(tmpdir(), "magister-legacy-running-cache-"));
+    temporaryDirectories.push(workspace);
+    process.env.OPENCLAW_WORKSPACE_DIR = workspace;
+    process.env.FLY_APP_NAME = "project-app-legacy-running";
+    const inputHash = createHash("sha256").update(canonicalCorpusJson({})).digest("hex");
+    const fetchedAt = Date.now();
+    const source = recordFetchedCorpusSource({
+      workspace,
+      projectScope: "project-app-legacy-running",
+      url: `magister-action:list_skills:${inputHash}`,
+      contentHash: "a".repeat(64),
+      provenance: "integration_discovery",
+      fetchedAt,
+      freshnessTtlSeconds: 300,
+    });
+    putCorpusReadCache(
+      workspace,
+      {
+        projectScope: "project-app-legacy-running",
+        inputHash,
+        sourceRevision: source.sourceRevision,
+        fetchedAt,
+        freshnessTtlSeconds: 300,
+      },
+      envelope({
+        status: {
+          state: "running",
+          terminal: false,
+          poll_after_seconds: 3,
+          stale_seconds: 0,
+        },
+        receipt: { stage: "stale-running" },
+      }),
+    );
+    let fetches = 0;
+    const tool = createMagisterActionTool(api(), skillsAction, async () => {
+      fetches += 1;
+      return new Response(JSON.stringify(envelope({ receipt: { integrations: [] } })), {
+        status: 200,
+      });
+    });
+
+    const result = resultJson(await tool.execute("call-legacy-running", {}));
+
+    expect(fetches).toBe(1);
+    expect((result.receipt as Record<string, unknown>).cache_freshness).toMatchObject({
+      cached: false,
+    });
+  });
+
+  it("exposes workflow-only tools only in their trusted runtime contexts", () => {
+    expect(
+      createContextualMagisterActionTool(api(), completionAction, fetch, {
+        sessionKey: "agent:main:webchat:session-1",
+      }),
+    ).toBeNull();
+    expect(
+      createContextualMagisterActionTool(api(), completionAction, fetch, {
+        sessionKey: "workflow_run:00000000-0000-4000-8000-000000000001",
+      }),
+    ).not.toBeNull();
+    expect(
+      createContextualMagisterActionTool(api(), heartbeatAction, fetch, {
+        sessionKey: "agent:main:webchat:session-1",
+      }),
+    ).toBeNull();
+    expect(
+      createContextualMagisterActionTool(api(), heartbeatAction, fetch, {
+        sessionKey: "agent:heartbeat:heartbeat:00000000-0000-4000-8000-000000000002:7",
+      }),
+    ).not.toBeNull();
+  });
+
+  it("gives artifact promotion an outer timeout above the broker budget", () => {
+    expect(actionTimeoutMs("get_brand", 45_000)).toBe(45_000);
+    expect(actionTimeoutMs("promote_artifact", 45_000)).toBe(90_000);
+    expect(actionTimeoutMs("promote_artifact", 120_000)).toBe(120_000);
   });
 
   it("rejects a raw legacy result instead of inferring success", async () => {

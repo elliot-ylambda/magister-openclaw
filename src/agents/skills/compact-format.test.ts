@@ -14,6 +14,7 @@ import {
   formatSkillsCompact,
   buildWorkspaceSkillsPrompt,
   buildWorkspaceSkillSnapshot,
+  renderSkillsCatalogPrompt,
 } from "./workspace.js";
 
 function makeSkill(name: string, desc = "A skill", filePath = `/skills/${name}/SKILL.md`): Skill {
@@ -301,5 +302,44 @@ describe("applySkillsPromptLimits (via buildWorkspaceSkillsPrompt)", () => {
       expect(skill.filePath).toContain(home);
       expect(skill.filePath).not.toMatch(/^~\//);
     }
+  });
+});
+
+describe("renderSkillsCatalogPrompt", () => {
+  const longDesc = (n: number) => "d".repeat(n);
+
+  it("renders full descriptions when the budget fits", () => {
+    const skills = Array.from({ length: 5 }, (_, i) => makeSkill(`skill-${i}`, longDesc(200)));
+    const out = renderSkillsCatalogPrompt({ skills, maxChars: 80_000 });
+    for (const skill of skills) {
+      expect(out).toContain(`<name>${skill.name}</name>`);
+    }
+    expect(out).toContain(longDesc(200));
+    expect(out).not.toContain("descriptions trimmed");
+    expect(out).not.toContain("⚠️");
+  });
+
+  it("keeps every skill with a trimmed description before falling back to compact", () => {
+    const skills = Array.from({ length: 30 }, (_, i) => makeSkill(`skill-${i}`, longDesc(400)));
+    const out = renderSkillsCatalogPrompt({ skills, maxChars: 9_000 });
+    expect(out.length).toBeLessThanOrEqual(9_000);
+    for (const skill of skills) {
+      expect(out).toContain(`<name>${skill.name}</name>`);
+    }
+    // Descriptions survive in trimmed form (ellipsis marker), not dropped.
+    expect(out).toContain("…");
+    expect(out).toContain("descriptions are trimmed");
+    expect(out).not.toContain("descriptions omitted");
+  });
+
+  it("falls back to compact then truncation when even trimmed descriptions cannot fit", () => {
+    const skills = Array.from({ length: 200 }, (_, i) => makeSkill(`skill-${i}`, longDesc(400)));
+    const out = renderSkillsCatalogPrompt({ skills, maxChars: 2_000 });
+    expect(out.length).toBeLessThanOrEqual(2_000);
+    expect(out).toContain("compact format, descriptions omitted");
+  });
+
+  it("returns empty for an empty skill list", () => {
+    expect(renderSkillsCatalogPrompt({ skills: [], maxChars: 10_000 })).toBe("");
   });
 });

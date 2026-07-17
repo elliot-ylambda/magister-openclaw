@@ -68,8 +68,10 @@ describe("resolveSkillsPromptForRun", () => {
       const index = readFileSync(join(workspaceDir, SKILL_INDEX_RELATIVE_PATH), "utf8");
       expect(index).toContain("`seo-audit`");
       expect(index).toContain("`magister-gmail`");
-      expect(index).not.toContain("Audit technical SEO");
-      expect(index).not.toContain("Read and send Gmail messages");
+      // The on-demand index carries full descriptions (it is disk content, not
+      // prompt bytes) so a single read gives the complete picture.
+      expect(index).toContain("Audit technical SEO, keywords, and search performance");
+      expect(index).toContain("Read and send Gmail messages");
     } finally {
       rmSync(workspaceDir, { recursive: true, force: true });
     }

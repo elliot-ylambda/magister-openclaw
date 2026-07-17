@@ -212,6 +212,20 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
   ];
 }
 
+function buildSkillsCatalogSection(params: { skillsCatalogPrompt?: string; readToolName: string }) {
+  const trimmed = params.skillsCatalogPrompt?.trim();
+  if (!trimmed) {
+    return [];
+  }
+  return [
+    "## Skills catalog (complete)",
+    "Every installed skill, with its description and SKILL.md location. Task-selected hints for the current request may also appear later in this prompt; this catalog is the complete set.",
+    `When a task matches a skill, read its SKILL.md at the exact <location> value with \`${params.readToolName}\` before acting on that capability. Never guess, fabricate, or hard-code a skill file path.`,
+    trimmed,
+    "",
+  ];
+}
+
 function buildMemorySection(params: {
   isMinimal: boolean;
   includeMemorySection?: boolean;
@@ -627,6 +641,8 @@ export function buildAgentSystemPrompt(params: {
   bootstrapMode?: BootstrapMode;
   bootstrapTruncationNotice?: string;
   skillsPrompt?: string;
+  /** Complete skills catalog for the cache-stable prefix (all names + descriptions). */
+  skillsCatalogPrompt?: string;
   heartbeatPrompt?: string;
   docsPath?: string;
   sourcePath?: string;
@@ -859,6 +875,10 @@ export function buildAgentSystemPrompt(params: {
     skillsPrompt,
     readToolName,
   });
+  const skillsCatalogSection = buildSkillsCatalogSection({
+    skillsCatalogPrompt: params.skillsCatalogPrompt,
+    readToolName,
+  });
   const memorySection = buildMemorySection({
     isMinimal,
     includeMemorySection: params.includeMemorySection,
@@ -919,6 +939,7 @@ export function buildAgentSystemPrompt(params: {
     memoryCitationsMode: params.memoryCitationsMode,
     memorySection,
     acpEnabled,
+    skillsCatalogSection,
     stableContextFiles,
   });
   const stablePrefix = cacheStablePromptPrefix(stablePrefixCacheKey, () => {
@@ -1113,6 +1134,11 @@ export function buildAgentSystemPrompt(params: {
     if (reasoningHint) {
       lines.push("## Reasoning Format", reasoningHint, "");
     }
+
+    // The complete catalog is stable for the session (it changes only when
+    // installed skills change), so it lives above the cache boundary; the
+    // per-turn task-selected hints stay below it.
+    lines.push(...skillsCatalogSection);
 
     lines.push(
       ...buildProjectContextSection({

@@ -1051,13 +1051,21 @@ export function renderSkillNameIndex(skills: Skill[]): string {
     "<!-- System-managed. Generated from the current eligible runtime skills. -->",
     "# Complete skill index",
     "",
-    "This is the on-demand name/location index. Read the selected `SKILL.md` before use.",
+    "This is the on-demand skill index (name — description — location). Read the selected `SKILL.md` before use.",
     "",
   ];
   for (const skill of skills.toSorted((a, b) => a.name.localeCompare(b.name, "en"))) {
     const name = skill.name.replaceAll("`", "\\`").replaceAll("\n", " ");
     const location = skill.filePath.replaceAll("`", "\\`").replaceAll("\n", " ");
-    lines.push(`- \`${name}\` — \`${location}\``);
+    const description = (skill.description ?? "")
+      .replaceAll("`", "\\`")
+      .replace(/\s+/g, " ")
+      .trim();
+    lines.push(
+      description
+        ? `- \`${name}\` — ${description} — \`${location}\``
+        : `- \`${name}\` — \`${location}\``,
+    );
   }
   lines.push("");
   return lines.join("\n");
@@ -1109,7 +1117,7 @@ function renderTaskSelectedSkillsPrompt(params: {
     selected.push(skill);
   }
   const indexGuidance = indexPath
-    ? `The complete name-only skill index is available on demand at \`${indexPath}\`. Read it only when no task-selected hint fits.`
+    ? `The complete skill index (names, descriptions, locations) is available on demand at \`${indexPath}\`. Read it when no task-selected hint fits.`
     : "If no task-selected hint fits, run `openclaw skills list --json` for the complete on-demand index.";
   return [
     "Task-selected skill hints for the current request follow. They are routing hints, not proof that a capability is ready.",
@@ -1128,12 +1136,13 @@ function applySkillsPromptLimits(params: {
   skills: Skill[];
   config?: OpenClawConfig;
   agentId?: string;
+  limits?: Pick<ResolvedSkillsLimits, "maxSkillsInPrompt" | "maxSkillsPromptChars">;
 }): {
   skillsForPrompt: Skill[];
   truncated: boolean;
   compact: boolean;
 } {
-  const limits = resolveSkillsLimits(params.config, params.agentId);
+  const limits = params.limits ?? resolveSkillsLimits(params.config, params.agentId);
   const total = params.skills.length;
   const byCount = params.skills.slice(0, Math.max(0, limits.maxSkillsInPrompt));
 
@@ -1174,6 +1183,87 @@ function applySkillsPromptLimits(params: {
   }
 
   return { skillsForPrompt, truncated, compact };
+}
+
+// Progressive per-skill description caps tried, in order, before the catalog
+// falls back to the compact (description-less) tiers.
+const CATALOG_DESC_TRIM_STEPS = [512, 384, 256, 192, 128] as const;
+const CATALOG_TRIM_NOTE =
+  "Note: some skill descriptions are trimmed to fit the prompt budget; read the skill's SKILL.md or the skill index file for full text.";
+
+function trimSkillDescription(description: string, cap: number): string {
+  if (description.length <= cap) {
+    return description;
+  }
+  return `${description.slice(0, Math.max(0, cap - 1)).trimEnd()}…`;
+}
+
+/**
+ * Render the COMPLETE skills catalog (every skill, name + description +
+ * location) for the cache-stable system-prompt prefix. Unlike the legacy
+ * tiering in applySkillsPromptLimits — which drops descriptions wholesale the
+ * moment the full format exceeds budget — this degrades gracefully: full
+ * descriptions → progressively trimmed descriptions → compact → truncated
+ * compact, so descriptions survive as long as the budget allows.
+ */
+export function renderSkillsCatalogPrompt(params: { skills: Skill[]; maxChars: number }): string {
+  const skills = compactSkillPaths(params.skills)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "en"));
+  if (skills.length === 0) {
+    return "";
+  }
+  const full = formatSkillsForPrompt(skills);
+  if (full.length <= params.maxChars) {
+    return full;
+  }
+  for (const cap of CATALOG_DESC_TRIM_STEPS) {
+    const trimmed = skills.map((skill) => ({
+      ...skill,
+      description: trimSkillDescription(skill.description ?? "", cap),
+    }));
+    const rendered = formatSkillsForPrompt(trimmed);
+    if (rendered.length + CATALOG_TRIM_NOTE.length + 1 <= params.maxChars) {
+      return [CATALOG_TRIM_NOTE, rendered].join("\n");
+    }
+  }
+  // Even trimmed descriptions cannot fit — fall back to the compact tiers.
+  const { skillsForPrompt, truncated } = applySkillsPromptLimits({
+    skills,
+    limits: { maxSkillsInPrompt: skills.length, maxSkillsPromptChars: params.maxChars },
+  });
+  const note = truncated
+    ? `⚠️ Skills truncated: included ${skillsForPrompt.length} of ${skills.length} (compact format, descriptions omitted). Read the skill index file for the complete list.`
+    : `⚠️ Skills catalog using compact format (descriptions omitted). Read the skill index file for full descriptions.`;
+  return [note, formatSkillsCompact(skillsForPrompt)].join("\n");
+}
+
+/**
+ * Resolve the complete skills catalog for a run, mirroring
+ * resolveSkillsPromptForRun's skill-source order (snapshot → entries). The
+ * result is stable for a session as long as the installed skills are — it is
+ * injected ABOVE the system-prompt cache boundary by the embedded runner.
+ */
+export function resolveSkillsCatalogForRun(params: {
+  skillsSnapshot?: SkillSnapshot;
+  entries?: SkillEntry[];
+  config?: OpenClawConfig;
+  workspaceDir: string;
+  agentId?: string;
+}): string {
+  const limits = resolveSkillsLimits(params.config, params.agentId);
+  let skills = params.skillsSnapshot?.resolvedSkills;
+  if (!skills && params.entries && params.entries.length > 0) {
+    skills = resolveWorkspaceSkillPromptState(params.workspaceDir, {
+      entries: params.entries,
+      config: params.config,
+      agentId: params.agentId,
+    }).resolvedSkills;
+  }
+  if (!skills || skills.length === 0) {
+    return "";
+  }
+  return renderSkillsCatalogPrompt({ skills, maxChars: limits.maxSkillsPromptChars });
 }
 
 export function buildWorkspaceSkillSnapshot(

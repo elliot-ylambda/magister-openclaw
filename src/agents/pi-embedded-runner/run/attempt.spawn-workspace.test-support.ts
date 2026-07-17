@@ -69,9 +69,7 @@ type AttemptSpawnWorkspaceHoisted = {
   installContextEngineLoopHookMock: UnknownMock;
   flushPendingToolResultsAfterIdleMock: AsyncUnknownMock;
   releaseWsSessionMock: UnknownMock;
-  resolveBootstrapFilesForRunMock: Mock<
-    (...args: unknown[]) => Promise<WorkspaceBootstrapFile[]>
-  >;
+  resolveBootstrapFilesForRunMock: Mock<(...args: unknown[]) => Promise<WorkspaceBootstrapFile[]>>;
   resolveBootstrapContextForRunMock: Mock<() => Promise<BootstrapContext>>;
   isWorkspaceBootstrapPendingMock: Mock<(workspaceDir: string) => Promise<boolean>>;
   resolveContextInjectionModeMock: Mock<() => "always" | "continuation-skip">;
@@ -307,6 +305,7 @@ vi.mock("../../skills.js", () => ({
   applySkillEnvOverrides: () => () => {},
   applySkillEnvOverridesFromSnapshot: () => () => {},
   resolveSkillsPromptForRun: () => "",
+  resolveSkillsCatalogForRun: () => "",
 }));
 
 vi.mock("../skills-runtime.js", () => ({
