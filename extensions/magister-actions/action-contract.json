@@ -1073,6 +1073,17 @@
             "maxLength": 128,
             "minLength": 1,
             "type": "string"
+          },
+          "view": {
+            "default": "ai_visibility",
+            "description": "Which registered presentation of the set to emit: the score overview (default), discovered competitors, competitive gaps, or citation opportunities.",
+            "enum": [
+              "ai_visibility",
+              "ai_visibility_competitors",
+              "ai_visibility_gaps",
+              "ai_visibility_citations"
+            ],
+            "type": "string"
           }
         },
         "required": ["set_id"],
@@ -1985,7 +1996,7 @@
         "type": "object"
       },
       "measurement_intervention": true,
-      "presentation_views": ["commerce_product"],
+      "presentation_views": ["content_draft", "commerce_product"],
       "retry_policy": "read_after_timeout",
       "side_effect": "external_write",
       "spend_limited": false,
@@ -2246,6 +2257,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "157abb251338a780107732956f8bb0ad83d466f7fd3ea766c6b53d7040ec7471",
+  "registry_revision": "f54bcdd62dd9e01e9589733fb1fc0ad74a8a4f7d792dcd90f9ed2599400563e7",
   "schema_version": 1
 }
