@@ -30,6 +30,13 @@ export type DurableWebhookEntry = {
   deliveredAt?: number;
 };
 
+export class DurableWebhookReplayConflictError extends Error {
+  constructor() {
+    super("conflicting durable webhook event replay");
+    this.name = "DurableWebhookReplayConflictError";
+  }
+}
+
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 function canonicalJson(value: unknown): string {
@@ -41,6 +48,9 @@ function canonicalJson(value: unknown): string {
   }
   const row = value as Record<string, unknown>;
   return `{${Object.keys(row)
+    // Match JSON.stringify/writeDurable: object properties with undefined
+    // values do not survive persistence, while undefined array items become null.
+    .filter((key) => row[key] !== undefined)
     .toSorted()
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(row[key])}`)
     .join(",")}}`;
@@ -68,6 +78,14 @@ function entryPath(eventId: string, stateDir?: string): string {
 
 function deliveredEntryPath(eventId: string, stateDir?: string): string {
   return `${entryPath(eventId, stateDir)}.delivered`;
+}
+
+function originalPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...payload };
+  delete result.event_id;
+  delete result.event_type;
+  delete result.payload_hash;
+  return result;
 }
 
 async function syncDirectory(directory: string): Promise<void> {
@@ -124,7 +142,7 @@ export async function enqueueDurableWebhook(params: {
   try {
     const delivered = await readEntry(deliveredEntryPath(params.eventId, params.stateDir));
     if (delivered.eventType !== params.eventType || delivered.payloadHash !== payloadHash) {
-      throw new Error("conflicting durable webhook event replay");
+      throw new DurableWebhookReplayConflictError();
     }
     return delivered;
   } catch (error) {
@@ -134,12 +152,30 @@ export async function enqueueDurableWebhook(params: {
   }
   try {
     const existing = await readEntry(filePath);
+    // Pending entries retain their body, so it is safe to repair metadata from
+    // the canonical persisted payload. This migrates hashes written before
+    // undefined properties were omitted and retargets undelivered callbacks
+    // after an allowlisted route change without resetting retry history.
+    const persistedPayloadHash = sha256(canonicalJson(originalPayload(existing.payload)));
     if (
+      existing.eventId !== params.eventId ||
       existing.eventType !== params.eventType ||
-      existing.payloadHash !== payloadHash ||
-      existing.url !== params.url
+      persistedPayloadHash !== payloadHash
     ) {
-      throw new Error("conflicting durable webhook event replay");
+      throw new DurableWebhookReplayConflictError();
+    }
+    if (existing.payloadHash !== payloadHash || existing.url !== params.url) {
+      const repaired: DurableWebhookEntry = {
+        ...existing,
+        payloadHash,
+        url: params.url,
+        payload: {
+          ...existing.payload,
+          payload_hash: payloadHash,
+        },
+      };
+      await writeDurable(filePath, repaired);
+      return repaired;
     }
     return existing;
   } catch (error) {

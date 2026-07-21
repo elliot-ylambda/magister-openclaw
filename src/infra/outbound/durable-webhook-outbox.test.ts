@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -102,6 +103,75 @@ describe("durable webhook outbox", () => {
         stateDir: root,
       }),
     ).rejects.toThrow("conflicting durable webhook event replay");
+  });
+
+  it("treats omitted and undefined object properties as the same payload", async () => {
+    const root = stateDir();
+    const base = {
+      eventId: "cron:job-undefined:1234",
+      eventType: "cron_completion" as const,
+      url: "http://gateway.internal/cron",
+      stateDir: root,
+    };
+
+    await enqueueDurableWebhook({
+      ...base,
+      payload: { jobId: "job-undefined", optionalSummary: undefined },
+    });
+    await expect(
+      enqueueDurableWebhook({
+        ...base,
+        payload: { jobId: "job-undefined" },
+      }),
+    ).resolves.toMatchObject({ eventId: base.eventId });
+  });
+
+  it("repairs a legacy pending hash and callback URL without resetting retries", async () => {
+    const root = stateDir();
+    const eventId = "cron:job-legacy:5678";
+    await enqueueDurableWebhook({
+      eventId,
+      eventType: "cron_completion",
+      url: "http://broker.internal/api/cron-webhook",
+      payload: { jobId: "job-legacy" },
+      stateDir: root,
+    });
+
+    const directory = path.join(root, "durable-webhook-outbox");
+    const filename = fs.readdirSync(directory).find((name) => name.endsWith(".json"));
+    if (!filename) {
+      throw new Error("expected a pending outbox entry");
+    }
+    const filePath = path.join(directory, filename);
+    const stored = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const legacyHash = createHash("sha256")
+      .update('{"jobId":"job-legacy","optionalSummary":null}')
+      .digest("hex");
+    stored.payloadHash = legacyHash;
+    stored.attemptCount = 3;
+    stored.lastError = "webhook returned HTTP 403";
+    stored.payload = {
+      ...(stored.payload as Record<string, unknown>),
+      payload_hash: legacyHash,
+    };
+    fs.writeFileSync(filePath, JSON.stringify(stored, null, 2));
+
+    const repaired = await enqueueDurableWebhook({
+      eventId,
+      eventType: "cron_completion",
+      url: "http://broker.internal/callbacks/cron",
+      payload: { jobId: "job-legacy" },
+      stateDir: root,
+    });
+
+    expect(repaired).toMatchObject({
+      eventId,
+      url: "http://broker.internal/callbacks/cron",
+      attemptCount: 3,
+      lastError: "webhook returned HTTP 403",
+    });
+    expect(repaired.payloadHash).not.toBe(legacyHash);
+    expect(repaired.payload.payload_hash).toBe(repaired.payloadHash);
   });
 
   it("retains a content-free delivery receipt so task reconstruction cannot resend", async () => {
