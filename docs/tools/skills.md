@@ -224,7 +224,13 @@ metadata:
 Fields under `metadata.openclaw`:
 
 <ParamField path="always" type="boolean">
-  When `true`, always include the skill (skip other gates).
+  When `true`, keep the skill eligible by skipping runtime requirement gates.
+  This does not preload the `SKILL.md` body.
+</ParamField>
+<ParamField path="preloadChannels" type="string[]">
+  Load the full `SKILL.md` body into the run prompt when the normalized runtime
+  channel matches one of these values. Use this only for short, channel-specific
+  contracts that must apply to every turn on that surface.
 </ParamField>
 <ParamField path="emoji" type="string">
   Optional emoji used by the macOS Skills UI.

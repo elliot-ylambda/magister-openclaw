@@ -703,6 +703,7 @@ export async function runEmbeddedAttempt(
     config: params.config,
     agentId: params.agentId,
   });
+  const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
   const effectiveFsWorkspaceOnly = resolveAttemptFsWorkspaceOnly({
     config: params.config,
     sessionAgentId,
@@ -744,6 +745,7 @@ export async function runEmbeddedAttempt(
       workspaceDir: effectiveWorkspace,
       agentId: sessionAgentId,
       taskText: params.prompt,
+      runtimeChannel,
     });
     const skillsCatalogPrompt = resolveSkillsCatalogForRun({
       skillsSnapshot: params.skillsSnapshot,
@@ -1155,7 +1157,6 @@ export async function runEmbeddedAttempt(
     });
 
     const machineName = await getMachineDisplayName();
-    const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
     const runtimeCapabilities = collectRuntimeChannelCapabilities({
       cfg: params.config,
       channel: runtimeChannel,

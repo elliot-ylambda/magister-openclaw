@@ -65,3 +65,13 @@ describe("resolveOpenClawMetadata install validation", () => {
     expect(install).toBeUndefined();
   });
 });
+
+describe("resolveOpenClawMetadata channel preloading", () => {
+  it("normalizes and deduplicates preload channels", () => {
+    const metadata = resolveOpenClawMetadata({
+      metadata: '{"openclaw":{"always":true,"preloadChannels":[" WebChat ","webchat","SLACK"]}}',
+    });
+
+    expect(metadata?.preloadChannels).toEqual(["webchat", "slack"]);
+  });
+});
