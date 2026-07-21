@@ -65,6 +65,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Magister/Slack approvals: forward trusted Slack runtime session context to native actions so approval cards can return to the exact originating channel thread without exposing routing fields to the model.
 - Magister/runtime safety: require live gateway commit attestation for artifact, corpus, memory, user-profile, and heartbeat writes; reclaim bounded per-attempt scratch space; and reject stale mutation owners before atomic promotion.
 - Security/dependencies: refresh vulnerable runtime and test packages, move Baileys to the fixed rc13 release, and backport three Pi coding-agent protections for managed install paths, credential-file permissions, and exported Markdown URLs.
 - Plugins/install: honor the beta update channel for onboarding and doctor-managed plugin installs by requesting floating npm and ClawHub specs with `@beta` while keeping persistent install records on the catalog default. Thanks @vincentkoc.
