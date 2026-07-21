@@ -12,6 +12,7 @@ import type {
 import { buildAgentHookContextChannelFields } from "../../plugins/hook-agent-context.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
+import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { resolveOpenClawAgentDir } from "../agent-paths.js";
 import { resolveSessionAgentIds } from "../agent-scope.js";
 import { externalCliDiscoveryForProviderAuth } from "../auth-profiles/external-cli-discovery.js";
@@ -324,6 +325,7 @@ export async function prepareCliRunContext(
     config: params.config,
     agentId: sessionAgentId,
     taskText: params.prompt,
+    runtimeChannel: normalizeMessageChannel(params.messageChannel ?? params.messageProvider),
   });
   const builtSystemPrompt =
     resolveSystemPromptOverride({

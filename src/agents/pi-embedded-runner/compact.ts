@@ -570,6 +570,8 @@ async function compactEmbeddedPiSessionDirectOnce(
     sessionKey: params.sessionKey,
     config: params.config,
   });
+  const resolvedMessageProvider = params.messageChannel ?? params.messageProvider;
+  const runtimeChannel = normalizeMessageChannel(resolvedMessageProvider);
 
   let restoreSkillEnv: (() => void) | undefined;
   let compactionSessionManager: unknown = null;
@@ -598,10 +600,10 @@ async function compactEmbeddedPiSessionDirectOnce(
       workspaceDir: effectiveWorkspace,
       agentId: effectiveSkillAgentId,
       taskText: params.customInstructions ?? "session compaction",
+      runtimeChannel,
     });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
-    const resolvedMessageProvider = params.messageChannel ?? params.messageProvider;
     const contextInjectionMode = resolveContextInjectionMode(params.config);
     const { contextFiles } =
       contextInjectionMode === "never"
@@ -753,7 +755,6 @@ async function compactEmbeddedPiSessionDirectOnce(
     const allowedToolNames = collectAllowedToolNames({ tools: effectiveTools });
     runtimePlan.tools.logDiagnostics(effectiveTools, runtimePlanModelContext);
     const machineName = await getMachineDisplayName();
-    const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
     const runtimeCapabilities = collectRuntimeChannelCapabilities({
       cfg: params.config,
       channel: runtimeChannel,

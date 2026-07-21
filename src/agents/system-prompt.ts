@@ -535,9 +535,9 @@ function buildChannelRuntimePolicySection(params: {
     }),
     ...(params.runtimeChannel === "webchat"
       ? [
-          "Webchat supports canonical `<json-render>`. Author it directly from the JSON-render authoring contract in TOOLS.md; read the magister-ui-render skill catalog for advanced components.",
-          "- Default to one minimal JSON-render block when asking for a concrete approval, presenting 2–5 concrete choices, collecting up to three short non-sensitive fields, or showing a compact comparison, table, or chart.",
-          "- Use prose for open-ended discussion, sensitive inputs, unsupported UI, or when UI would not reduce user effort. If channel support or schema validity is uncertain, use prose.",
+          "Webchat supports canonical `<json-render>`, and the magister-ui-render skill is preloaded for this channel. Follow it; use the compact authoring contract in TOOLS.md for basic UI and read its catalog only for advanced components.",
+          "- You MUST emit one minimal JSON-render block when asking for a concrete approval, presenting 2–5 concrete choices, or collecting up to three short non-sensitive fields.",
+          "- Use prose for open-ended discussion, sensitive inputs, unsupported UI, or when UI would not reduce user effort. For supported basic UI, do not fall back to prose merely because you have not memorized the schema; use the contract in TOOLS.md.",
           "- JSON-render actions only submit a user message. They never bypass approval requirements or directly authorize or execute external mutations.",
         ]
       : [
