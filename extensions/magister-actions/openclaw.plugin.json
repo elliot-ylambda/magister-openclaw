@@ -35,6 +35,7 @@
       "magister_get_ad_analytics",
       "magister_get_action_approval",
       "magister_send_email",
+      "magister_send_agent_email",
       "magister_create_social_draft",
       "magister_schedule_social_post",
       "magister_publish_social_post",
