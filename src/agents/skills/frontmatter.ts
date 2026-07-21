@@ -194,8 +194,16 @@ export function resolveOpenClawMetadata(
   const requires = resolveOpenClawManifestRequires(metadataObj);
   const install = resolveOpenClawManifestInstall(metadataObj, parseInstallSpec);
   const osRaw = resolveOpenClawManifestOs(metadataObj);
+  const preloadChannels = [
+    ...new Set(
+      normalizeStringList(metadataObj.preloadChannels)
+        .map((channel) => channel.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
   return {
     always: typeof metadataObj.always === "boolean" ? metadataObj.always : undefined,
+    preloadChannels: preloadChannels.length > 0 ? preloadChannels : undefined,
     emoji: readStringValue(metadataObj.emoji),
     homepage: readStringValue(metadataObj.homepage),
     skillKey: readStringValue(metadataObj.skillKey),

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,6 +35,63 @@ describe("resolveSkillsPromptForRun", () => {
     });
     expect(prompt).toContain("<available_skills>");
     expect(prompt).toContain("/app/skills/demo-skill/SKILL.md");
+  });
+
+  it("preloads the full skill body only on configured runtime channels", () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "skill-preload-"));
+    const skillDir = join(workspaceDir, "skills", "channel-contract");
+    const filePath = join(skillDir, "SKILL.md");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      filePath,
+      [
+        "---",
+        "name: channel-contract",
+        "description: Render interactive channel controls",
+        'metadata: {"openclaw":{"preloadChannels":["webchat"]}}',
+        "---",
+        "",
+        "# Channel contract",
+        "",
+        "PRELOADED_BODY_MARKER",
+      ].join("\n"),
+      "utf8",
+    );
+    const entry: SkillEntry = {
+      skill: createFixtureSkill({
+        name: "channel-contract",
+        description: "Render interactive channel controls",
+        filePath,
+        baseDir: skillDir,
+        source: "openclaw-workspace",
+      }),
+      frontmatter: {},
+      metadata: { preloadChannels: ["webchat"] },
+    };
+
+    try {
+      const webchatPrompt = resolveSkillsPromptForRun({
+        entries: [entry],
+        workspaceDir,
+        taskText: "Summarize the quarterly results",
+        runtimeChannel: "webchat",
+      });
+      const slackPrompt = resolveSkillsPromptForRun({
+        entries: [entry],
+        workspaceDir,
+        taskText: "Summarize the quarterly results",
+        runtimeChannel: "slack",
+      });
+
+      expect(webchatPrompt).toContain("<preloaded_skills>");
+      expect(webchatPrompt).toContain('name="channel-contract"');
+      expect(webchatPrompt).toContain("PRELOADED_BODY_MARKER");
+      expect(webchatPrompt).not.toContain("preloadChannels");
+      expect(slackPrompt).not.toContain("<preloaded_skills>");
+      expect(slackPrompt).not.toContain("PRELOADED_BODY_MARKER");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
   });
 
   it("loads only task-selected descriptions and writes a complete on-demand index", () => {

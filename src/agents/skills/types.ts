@@ -18,6 +18,8 @@ export type SkillInstallSpec = {
 
 export type OpenClawSkillMetadata = {
   always?: boolean;
+  /** Load the full SKILL.md body automatically on these runtime channels. */
+  preloadChannels?: string[];
   skillKey?: string;
   primaryEnv?: string;
   emoji?: string;

@@ -6,6 +6,8 @@ export type SourceOrigin = "package" | "top-level";
 export type Skill = CanonicalSkill & {
   // Preserve legacy source reads while keeping the canonical upstream shape.
   source?: string;
+  // Runtime-only channel preload policy resolved from metadata.openclaw.
+  preloadChannels?: string[];
 };
 
 export function createSyntheticSourceInfo(

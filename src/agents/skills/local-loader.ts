@@ -41,6 +41,24 @@ function readSkillFileSync(params: {
   }
 }
 
+export function readSkillFileSafe(params: {
+  rootDir: string;
+  filePath: string;
+  maxBytes?: number;
+}): string | null {
+  let rootRealPath: string;
+  try {
+    rootRealPath = fs.realpathSync(path.resolve(params.rootDir));
+  } catch {
+    return null;
+  }
+  return readSkillFileSync({
+    rootRealPath,
+    filePath: path.resolve(params.filePath),
+    maxBytes: params.maxBytes,
+  });
+}
+
 function loadSingleSkillDirectory(params: {
   skillDir: string;
   source: string;
@@ -159,15 +177,9 @@ export function readSkillFrontmatterSafe(params: {
   filePath: string;
   maxBytes?: number;
 }): Record<string, string> | null {
-  let rootRealPath: string;
-  try {
-    rootRealPath = fs.realpathSync(path.resolve(params.rootDir));
-  } catch {
-    return null;
-  }
-  const raw = readSkillFileSync({
-    rootRealPath,
-    filePath: path.resolve(params.filePath),
+  const raw = readSkillFileSafe({
+    rootDir: params.rootDir,
+    filePath: params.filePath,
     maxBytes: params.maxBytes,
   });
   if (!raw) {
