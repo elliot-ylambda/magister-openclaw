@@ -189,6 +189,42 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
   });
 
+  it("forwards a trusted Slack thread session outside tool arguments", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const sessionKey = "agent:main:slack:channel:c123:thread:1784596943.935399";
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      { sessionKey },
+    );
+
+    await tool.execute("call-slack", {});
+    expect(request?.init?.headers).toMatchObject({ "x-magister-session-key": sessionKey });
+    expect(requestBody(request?.init)).toEqual({ arguments: {} });
+  });
+
+  it("does not forward a malformed Slack session key", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      { sessionKey: "agent:main:slack:channel:c123:thread:not-a-timestamp" },
+    );
+
+    await tool.execute("call-malformed-slack", {});
+    expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
+  });
+
   it("forwards only a structurally valid heartbeat runtime session", async () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     let request: { init?: RequestInit } | undefined;

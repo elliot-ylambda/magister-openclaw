@@ -39,6 +39,8 @@ const HEARTBEAT_SESSION_RE =
   /(?:^|:)heartbeat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[1-9][0-9]*$/i;
 const WORKFLOW_SESSION_RE =
   /^workflow_run:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SLACK_SESSION_RE =
+  /^(?:agent:[^:]+:)?slack:(?:(?:direct|group|channel):[a-z0-9_-]+(?::thread:[0-9]+\.[0-9]+)?|[a-z0-9_-]+:[a-z0-9_-]+)$/i;
 const HEARTBEAT_NOTE_MAX_BYTES = 64 * 1024;
 
 const ERROR_CODES = new Set([
@@ -282,7 +284,11 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
   if (!sessionKey) {
     return undefined;
   }
-  if (WORKFLOW_SESSION_RE.test(sessionKey) || HEARTBEAT_SESSION_RE.test(sessionKey)) {
+  if (
+    WORKFLOW_SESSION_RE.test(sessionKey) ||
+    HEARTBEAT_SESSION_RE.test(sessionKey) ||
+    SLACK_SESSION_RE.test(sessionKey)
+  ) {
     return sessionKey;
   }
   return undefined;
