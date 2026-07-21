@@ -415,6 +415,228 @@ describe("gateway agent handler", () => {
     mocks.resolveSendPolicy.mockReset().mockReturnValue("allow");
   });
 
+  it("continues a resolved permission in-place and dedupes its receiver", async () => {
+    const approvalId = "11111111-1111-4111-8111-111111111111";
+    const canonicalKey = "agent:main:main";
+    const store: Record<string, Record<string, unknown>> = {
+      [canonicalKey]: buildExistingMainStoreEntry(),
+    };
+    mocks.loadSessionEntry.mockImplementation(() => ({
+      cfg: {},
+      storePath: "/tmp/sessions.json",
+      entry: store[canonicalKey],
+      canonicalKey,
+    }));
+    mocks.updateSessionStore.mockImplementation(async (_path, updater) => updater(store));
+    mocks.agentCommand.mockReset().mockImplementation(() => new Promise(() => {}));
+    mocks.performGatewaySessionReset.mockClear();
+
+    const params = {
+      approvalId,
+      surface: "web",
+      sessionKey: canonicalKey,
+      resolution: {
+        type: "approval_resolution",
+        approvalId,
+        operationId: `op_${"a".repeat(32)}`,
+        action: "send_agent_email",
+        decision: "allowed",
+        executionState: "succeeded",
+        summary: "Send the exact email",
+        result: '{"status":"success"}',
+        replyInstruction: "Tell the user the action completed.",
+      },
+    };
+    const client = { connect: { scopes: ["operator.admin"] } } as AgentHandlerArgs["client"];
+    const handler = agentHandlers["magister.approval.continue"]!;
+    const firstRespond = vi.fn();
+
+    await handler({
+      params,
+      respond: firstRespond as never,
+      context: makeContext(),
+      req: { type: "req", id: "permission-1", method: "magister.approval.continue" },
+      client,
+      isWebchatConnect: () => false,
+    });
+
+    expect(mocks.performGatewaySessionReset).not.toHaveBeenCalled();
+    await waitForAssertion(() => expect(mocks.agentCommand).toHaveBeenCalledTimes(1));
+    expect(mocks.agentCommand.mock.calls[0]?.[0]).toMatchObject({
+      sessionKey: canonicalKey,
+      sessionId: "existing-session-id",
+      internalEvents: [params.resolution],
+    });
+    expect(store[canonicalKey]?.approvalContinuationReceivers).toMatchObject({
+      [approvalId]: {
+        runId: `approval-continuation:${approvalId}`,
+        state: "dispatched",
+      },
+    });
+
+    const duplicateRespond = vi.fn();
+    await handler({
+      params,
+      respond: duplicateRespond as never,
+      context: makeContext(),
+      req: { type: "req", id: "permission-2", method: "magister.approval.continue" },
+      client,
+      isWebchatConnect: () => false,
+    });
+
+    expect(mocks.agentCommand).toHaveBeenCalledTimes(1);
+    expect(duplicateRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        runId: `approval-continuation:${approvalId}`,
+        status: "running",
+        deduped: true,
+      }),
+    );
+  });
+
+  it("persists run-scoped permission output and returns it on receiver replay", async () => {
+    const approvalId = "22222222-2222-4222-8222-222222222222";
+    const canonicalKey = "agent:main:main";
+    const store: Record<string, Record<string, unknown>> = {
+      [canonicalKey]: buildExistingMainStoreEntry(),
+    };
+    mocks.loadSessionEntry.mockImplementation(() => ({
+      cfg: {},
+      storePath: "/tmp/sessions.json",
+      entry: store[canonicalKey],
+      canonicalKey,
+    }));
+    mocks.updateSessionStore.mockImplementation(async (_path, updater) => updater(store));
+    mocks.agentCommand.mockReset().mockResolvedValue({
+      payloads: [{ text: "The approved email was accepted by the provider." }],
+      meta: { durationMs: 10 },
+    });
+    const params = {
+      approvalId,
+      surface: "web",
+      sessionKey: canonicalKey,
+      resolution: {
+        type: "approval_resolution",
+        approvalId,
+        operationId: `op_${"b".repeat(32)}`,
+        action: "send_agent_email",
+        decision: "allowed",
+        executionState: "succeeded",
+        summary: "Send the exact email",
+        result: '{"status":"success"}',
+        replyInstruction: "Tell the user the provider accepted the email.",
+      },
+    };
+    const client = { connect: { scopes: ["operator.admin"] } } as AgentHandlerArgs["client"];
+    const handler = agentHandlers["magister.approval.continue"]!;
+
+    await handler({
+      params,
+      respond: vi.fn() as never,
+      context: makeContext(),
+      req: { type: "req", id: "permission-output-1", method: "magister.approval.continue" },
+      client,
+      isWebchatConnect: () => false,
+    });
+    await waitForAssertion(() => {
+      expect(store[canonicalKey]?.approvalContinuationReceivers).toMatchObject({
+        [approvalId]: {
+          state: "completed",
+          output: "The approved email was accepted by the provider.",
+          outputSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      });
+    });
+
+    const replayRespond = vi.fn();
+    await handler({
+      params,
+      respond: replayRespond as never,
+      context: makeContext(),
+      req: { type: "req", id: "permission-output-2", method: "magister.approval.continue" },
+      client,
+      isWebchatConnect: () => false,
+    });
+
+    expect(mocks.agentCommand).toHaveBeenCalledTimes(1);
+    expect(replayRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        runId: `approval-continuation:${approvalId}`,
+        status: "completed",
+        state: "completed",
+        output: "The approved email was accepted by the provider.",
+      }),
+    );
+  });
+
+  it("delivers a Slack permission continuation to the exact original thread", async () => {
+    const approvalId = "33333333-3333-4333-8333-333333333333";
+    const canonicalKey = "agent:main:slack:channel:c123:thread:1784596943.935399";
+    const store: Record<string, Record<string, unknown>> = {
+      [canonicalKey]: buildExistingMainStoreEntry(),
+    };
+    mocks.loadSessionEntry.mockImplementation(() => ({
+      cfg: {},
+      storePath: "/tmp/sessions.json",
+      entry: store[canonicalKey],
+      canonicalKey,
+    }));
+    mocks.updateSessionStore.mockImplementation(async (_path, updater) => updater(store));
+    mocks.agentCommand.mockReset().mockResolvedValue({
+      payloads: [{ text: "The denied action was not sent." }],
+      deliverySucceeded: true,
+      meta: { durationMs: 10 },
+    });
+    const params = {
+      approvalId,
+      surface: "slack",
+      sessionKey: canonicalKey,
+      resolution: {
+        type: "approval_resolution",
+        approvalId,
+        operationId: `op_${"c".repeat(32)}`,
+        action: "send_agent_email",
+        decision: "denied",
+        executionState: "not_started",
+        summary: "Send the exact email",
+        replyInstruction: "Acknowledge the denial.",
+      },
+      delivery: {
+        channelId: "C123",
+        threadId: "1784596943.935399",
+      },
+    };
+    const client = { connect: { scopes: ["operator.admin"] } } as AgentHandlerArgs["client"];
+    const handler = agentHandlers["magister.approval.continue"]!;
+
+    await handler({
+      params,
+      respond: vi.fn() as never,
+      context: makeContext(),
+      req: { type: "req", id: "permission-slack-1", method: "magister.approval.continue" },
+      client,
+      isWebchatConnect: () => false,
+    });
+
+    await waitForAssertion(() => {
+      expect(store[canonicalKey]?.approvalContinuationReceivers).toMatchObject({
+        [approvalId]: {
+          state: "completed",
+          deliverySucceeded: true,
+        },
+      });
+    });
+    expect(mocks.agentCommand.mock.calls[0]?.[0]).toMatchObject({
+      sessionKey: canonicalKey,
+      deliver: true,
+      channel: "slack",
+      to: "channel:C123",
+      threadId: "1784596943.935399",
+    });
+  });
+
   it("preserves ACP metadata from the current stored session entry", async () => {
     const existingAcpMeta = {
       backend: "acpx",

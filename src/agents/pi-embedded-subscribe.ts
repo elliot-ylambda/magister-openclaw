@@ -97,6 +97,9 @@ function collectPendingMediaFromInternalEvents(
   const pending: string[] = [];
   const seen = new Set<string>();
   for (const event of events) {
+    if (event.type !== "task_completion") {
+      continue;
+    }
     if (!Array.isArray(event.mediaUrls)) {
       continue;
     }

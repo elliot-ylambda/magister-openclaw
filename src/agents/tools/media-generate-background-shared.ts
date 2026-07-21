@@ -241,7 +241,7 @@ async function wakeMediaGenerationTaskCompletion(params: {
   result: string;
   mediaUrls?: string[];
   statsLine?: string;
-  eventSource: AgentInternalEvent["source"];
+  eventSource: Extract<AgentInternalEvent, { type: "task_completion" }>["source"];
   announceType: string;
   toolName: string;
   completionLabel: string;
@@ -309,7 +309,7 @@ export function createMediaGenerationTaskLifecycle(params: {
   queuedProgressSummary: string;
   generatedLabel: string;
   failureProgressSummary: string;
-  eventSource: AgentInternalEvent["source"];
+  eventSource: Extract<AgentInternalEvent, { type: "task_completion" }>["source"];
   announceType: string;
   completionLabel: string;
 }) {
