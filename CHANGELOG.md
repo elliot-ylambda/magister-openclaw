@@ -65,6 +65,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Magister approvals: defer exact-action approval rendering to the trusted inline web card, suppress duplicate approval links, and keep link-only surfaces on the canonical approval URL.
 - Magister/permissions: resume the originating agent session after an exact action is approved or denied, preserve denial notes as untrusted agent feedback, and deliver Slack continuations back to the originating thread.
 - Magister/email approvals: expose a separate native tool for approved sends from the project's built-in agent address.
 - Magister/Slack approvals: forward trusted Slack runtime session context to native actions so approval cards can return to the exact originating channel thread without exposing routing fields to the model.
