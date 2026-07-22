@@ -646,7 +646,7 @@ export function createMagisterActionTool(
     label: action.tool_name,
     description:
       action.approval_policy === "exact_payload"
-        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. Do not invent another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
+        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. When receipt.approval_presentation is "inline_web", a trusted server-owned card is already in the conversation: do not print receipt.approval_url, emit another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.approval_presentation is "link_only", show receipt.approval_url once and do not render a synthetic Approve button. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
         : action.description,
     parameters: action.input_schema as unknown as TSchema,
     async execute(callId: string, rawParams: Record<string, unknown>) {

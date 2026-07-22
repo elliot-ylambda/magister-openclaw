@@ -127,6 +127,17 @@ describe("Magister action manifest contract", () => {
       expect(JSON.stringify(row.input_schema)).not.toContain("project_id");
     }
   });
+
+  it("routes exact inline permissions through the trusted server-owned card", () => {
+    const tool = createMagisterActionTool(api(), writeAction, async () => {
+      throw new Error("not called");
+    });
+
+    expect(tool.description).toContain('receipt.approval_presentation is "inline_web"');
+    expect(tool.description).toContain("do not print receipt.approval_url");
+    expect(tool.description).toContain('receipt.approval_presentation is "link_only"');
+    expect(tool.description).toContain("show receipt.approval_url once");
+  });
 });
 
 describe("typed gateway execution", () => {
