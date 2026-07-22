@@ -41,6 +41,8 @@ const WORKFLOW_SESSION_RE =
   /^workflow_run:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SLACK_SESSION_RE =
   /^(?:agent:[^:]+:)?slack:(?:(?:direct|group|channel):[a-z0-9_-]+(?::thread:[0-9]+\.[0-9]+)?|[a-z0-9_-]+:[a-z0-9_-]+)$/i;
+const WEBCHAT_SESSION_RE =
+  /^agent:[a-z0-9_-]{1,80}:webchat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEARTBEAT_NOTE_MAX_BYTES = 64 * 1024;
 
 const ERROR_CODES = new Set([
@@ -81,6 +83,7 @@ type ActionContract = {
   description: string;
   input_schema: Record<string, unknown>;
   side_effect: string;
+  approval_policy: "none" | "exact_payload";
 };
 
 type Contract = {
@@ -287,7 +290,8 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
   if (
     WORKFLOW_SESSION_RE.test(sessionKey) ||
     HEARTBEAT_SESSION_RE.test(sessionKey) ||
-    SLACK_SESSION_RE.test(sessionKey)
+    SLACK_SESSION_RE.test(sessionKey) ||
+    WEBCHAT_SESSION_RE.test(sessionKey)
   ) {
     return sessionKey;
   }
@@ -640,7 +644,10 @@ export function createMagisterActionTool(
   return {
     name: action.tool_name,
     label: action.tool_name,
-    description: action.description,
+    description:
+      action.approval_policy === "exact_payload"
+        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. Do not invent another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
+        : action.description,
     parameters: action.input_schema as unknown as TSchema,
     async execute(callId: string, rawParams: Record<string, unknown>) {
       const brokerEnabled = process.env.MAGISTER_BROKER_BASE_URL === "http://127.0.0.1:18796";
@@ -711,6 +718,7 @@ export function createMagisterActionTool(
       const selectedTimeoutMs = actionTimeoutMs(action.action, config.timeoutMs);
       const timeout = setTimeout(() => controller.abort(), selectedTimeoutMs);
       const runtimeSessionKey = trustedRuntimeSessionKey(context);
+      const runtimeSessionId = context.sessionId?.trim();
       try {
         const prepared = await attestCompletionArtifacts(
           action.action,
@@ -725,6 +733,9 @@ export function createMagisterActionTool(
             authorization: `Bearer ${gatewayToken}`,
             "content-type": "application/json",
             ...(runtimeSessionKey ? { "x-magister-session-key": runtimeSessionKey } : {}),
+            ...(runtimeSessionKey && runtimeSessionId
+              ? { "x-magister-session-id": runtimeSessionId }
+              : {}),
             ...(prepared.attestation
               ? { "x-magister-artifact-attestation": prepared.attestation }
               : {}),

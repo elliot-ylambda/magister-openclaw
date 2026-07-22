@@ -172,7 +172,30 @@ describe("typed gateway execution", () => {
     expect(requestBody(request?.init)).toEqual({ arguments: {} });
   });
 
-  it("does not forward ordinary chat session keys", async () => {
+  it("forwards only canonical web chat session keys", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      {
+        sessionKey: "agent:main:webchat:00000000-0000-4000-8000-000000000001",
+        sessionId: "11111111-1111-4111-8111-111111111111",
+      },
+    );
+
+    await tool.execute("call-chat", {});
+    expect(request?.init?.headers).toMatchObject({
+      "x-magister-session-key": "agent:main:webchat:00000000-0000-4000-8000-000000000001",
+      "x-magister-session-id": "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("does not forward a malformed web chat session key", async () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     let request: { init?: RequestInit } | undefined;
     const tool = createMagisterActionTool(
@@ -185,8 +208,9 @@ describe("typed gateway execution", () => {
       { sessionKey: "agent:main:webchat:session-1" },
     );
 
-    await tool.execute("call-chat", {});
+    await tool.execute("call-malformed-chat", {});
     expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
+    expect(request?.init?.headers).not.toHaveProperty("x-magister-session-id");
   });
 
   it("forwards a trusted Slack thread session outside tool arguments", async () => {

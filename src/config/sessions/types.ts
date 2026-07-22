@@ -147,6 +147,19 @@ export type SubagentRecoveryState = {
   wedgedReason?: string;
 };
 
+export type ApprovalContinuationReceiverState = {
+  runId: string;
+  sessionId: string;
+  state: "reserved" | "dispatched" | "completed" | "failed";
+  fence: number;
+  leaseExpiresAt?: number;
+  output?: string;
+  outputSha256?: string;
+  deliverySucceeded?: boolean;
+  error?: string;
+  updatedAt: number;
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -192,6 +205,8 @@ export type SessionEntry = {
   abortedLastRun?: boolean;
   /** Durable guard state for automatic subagent orphan recovery. */
   subagentRecovery?: SubagentRecoveryState;
+  /** Durable, per-permission receiver ledger for no-reset continuations. */
+  approvalContinuationReceivers?: Record<string, ApprovalContinuationReceiverState>;
   /** Timestamp (ms) when the current sessionId first became active. */
   sessionStartedAt?: number;
   /** Timestamp (ms) of the last user/channel interaction that should extend idle lifetime. */

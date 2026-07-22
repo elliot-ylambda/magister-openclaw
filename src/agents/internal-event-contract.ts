@@ -1,4 +1,5 @@
 export const AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION = "task_completion" as const;
+export const AGENT_INTERNAL_EVENT_TYPE_APPROVAL_RESOLUTION = "approval_resolution" as const;
 
 export const AGENT_INTERNAL_EVENT_SOURCES = [
   "subagent",
