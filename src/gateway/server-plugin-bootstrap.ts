@@ -1,3 +1,5 @@
+import { registerSlackCompletionWebhookHook } from "../agents/slack-completion-webhook.js";
+import { registerSubagentCompletionWebhookHook } from "../agents/subagent-completion-webhook.js";
 import { primeConfiguredBindingRegistry } from "../channels/plugins/binding-registry.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -109,6 +111,12 @@ export function prepareGatewayPluginLoad(params: GatewayPluginBootstrapParams) {
     suppressPluginInfoLogs: params.suppressPluginInfoLogs,
     startupTrace: params.startupTrace,
   });
+  // Plugin loading may be deferred until after the gateway listener binds.
+  // Register Magister's core completion hooks on the registry that was
+  // actually loaded; registering against the global registry before this
+  // point is a silent no-op in deferred-startup mode.
+  registerSubagentCompletionWebhookHook(resolvedConfig, loaded.pluginRegistry);
+  registerSlackCompletionWebhookHook(resolvedConfig, loaded.pluginRegistry);
   params.beforePrimeRegistry?.(loaded.pluginRegistry);
   primeConfiguredBindingRegistry({ cfg: resolvedConfig });
   if ((params.logDiagnostics ?? true) && loaded.pluginRegistry.diagnostics.length > 0) {
