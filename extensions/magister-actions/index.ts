@@ -646,7 +646,7 @@ export function createMagisterActionTool(
     label: action.tool_name,
     description:
       action.approval_policy === "exact_payload"
-        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. Do not invent another approval UI, ask for a synthetic confirmation message, or poll in this turn; Magister will resume this same session after the decision.`
+        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. Do not invent another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
         : action.description,
     parameters: action.input_schema as unknown as TSchema,
     async execute(callId: string, rawParams: Record<string, unknown>) {
@@ -718,6 +718,7 @@ export function createMagisterActionTool(
       const selectedTimeoutMs = actionTimeoutMs(action.action, config.timeoutMs);
       const timeout = setTimeout(() => controller.abort(), selectedTimeoutMs);
       const runtimeSessionKey = trustedRuntimeSessionKey(context);
+      const runtimeSessionId = context.sessionId?.trim();
       try {
         const prepared = await attestCompletionArtifacts(
           action.action,
@@ -732,6 +733,9 @@ export function createMagisterActionTool(
             authorization: `Bearer ${gatewayToken}`,
             "content-type": "application/json",
             ...(runtimeSessionKey ? { "x-magister-session-key": runtimeSessionKey } : {}),
+            ...(runtimeSessionKey && runtimeSessionId
+              ? { "x-magister-session-id": runtimeSessionId }
+              : {}),
             ...(prepared.attestation
               ? { "x-magister-artifact-attestation": prepared.attestation }
               : {}),

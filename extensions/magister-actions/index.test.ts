@@ -184,12 +184,14 @@ describe("typed gateway execution", () => {
       },
       {
         sessionKey: "agent:main:webchat:00000000-0000-4000-8000-000000000001",
+        sessionId: "11111111-1111-4111-8111-111111111111",
       },
     );
 
     await tool.execute("call-chat", {});
     expect(request?.init?.headers).toMatchObject({
       "x-magister-session-key": "agent:main:webchat:00000000-0000-4000-8000-000000000001",
+      "x-magister-session-id": "11111111-1111-4111-8111-111111111111",
     });
   });
 
@@ -208,6 +210,7 @@ describe("typed gateway execution", () => {
 
     await tool.execute("call-malformed-chat", {});
     expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
+    expect(request?.init?.headers).not.toHaveProperty("x-magister-session-id");
   });
 
   it("forwards a trusted Slack thread session outside tool arguments", async () => {
