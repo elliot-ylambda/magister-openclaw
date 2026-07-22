@@ -1319,6 +1319,42 @@ describe("loadGatewayPlugins", () => {
     expect(order).toEqual(["hook", "prime"]);
   });
 
+  test("registers completion webhooks on the deferred plugin registry", () => {
+    const { prepareGatewayPluginLoad } = serverPluginBootstrapModule;
+    const pluginRegistry = createRegistry([]);
+    loadOpenClawPlugins.mockReturnValue(pluginRegistry);
+
+    prepareGatewayPluginLoad({
+      cfg: {
+        subagent: {
+          completionWebhook: "https://gateway.internal/callbacks/subagent",
+          webhookToken: "subagent-token",
+        },
+        slackCompletion: {
+          completionWebhook: "https://gateway.internal/callbacks/slack",
+          webhookToken: "slack-token",
+        },
+      },
+      workspaceDir: "/tmp",
+      log: createTestLog(),
+      coreGatewayHandlers: {},
+      baseMethods: [],
+    });
+
+    expect(pluginRegistry.typedHooks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pluginId: "magister-subagent-completion-webhook",
+          hookName: "subagent_ended",
+        }),
+        expect.objectContaining({
+          pluginId: "magister-slack-completion-webhook",
+          hookName: "agent_end",
+        }),
+      ]),
+    );
+  });
+
   test("shares fallback context across module reloads for existing runtimes", async () => {
     const first = serverPluginsModule;
     const runtime = await createSubagentRuntime(first);
