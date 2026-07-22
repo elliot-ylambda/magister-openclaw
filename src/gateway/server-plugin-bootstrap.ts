@@ -3,6 +3,7 @@ import { registerSubagentCompletionWebhookHook } from "../agents/subagent-comple
 import { primeConfiguredBindingRegistry } from "../channels/plugins/binding-registry.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { pinGlobalHookRunnerRegistry } from "../plugins/hook-runner-global.js";
 import type { PluginLookUpTable } from "../plugins/plugin-lookup-table.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import { pinActivePluginChannelRegistry } from "../plugins/runtime.js";
@@ -119,6 +120,10 @@ export function prepareGatewayPluginLoad(params: GatewayPluginBootstrapParams) {
   registerSlackCompletionWebhookHook(resolvedConfig, loaded.pluginRegistry);
   params.beforePrimeRegistry?.(loaded.pluginRegistry);
   primeConfiguredBindingRegistry({ cfg: resolvedConfig });
+  // Binding/tool discovery can activate additional plugin registries after
+  // gateway startup. Keep this lifecycle registry authoritative so durable
+  // Slack and subagent completion hooks cannot silently disappear.
+  pinGlobalHookRunnerRegistry(loaded.pluginRegistry);
   if ((params.logDiagnostics ?? true) && loaded.pluginRegistry.diagnostics.length > 0) {
     logGatewayPluginDiagnostics({
       diagnostics: loaded.pluginRegistry.diagnostics,
