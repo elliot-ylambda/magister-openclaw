@@ -35,6 +35,10 @@ function resolveConfiguredGoogleVideoBaseUrl(req: VideoGenerationRequest): strin
   return configured ? resolveGoogleGenerativeAiApiOrigin(configured) : undefined;
 }
 
+function resolveConfiguredGoogleVideoAllowPrivateNetwork(req: VideoGenerationRequest): boolean {
+  return req.cfg?.models?.providers?.google?.request?.allowPrivateNetwork === true;
+}
+
 function resolveGoogleVideoRestBaseUrl(configuredBaseUrl?: string): string {
   return `${configuredBaseUrl ?? "https://generativelanguage.googleapis.com"}/v1beta`;
 }
@@ -288,6 +292,7 @@ async function requestGoogleVideoJson(params: {
   method: "GET" | "POST";
   headers: Record<string, string>;
   deadline: ReturnType<typeof createProviderOperationDeadline>;
+  allowPrivateNetwork: boolean;
   body?: unknown;
 }): Promise<unknown> {
   const controller = new AbortController();
@@ -307,6 +312,7 @@ async function requestGoogleVideoJson(params: {
         ...(params.body === undefined ? {} : { body: JSON.stringify(params.body) }),
       },
       signal: controller.signal,
+      ...(params.allowPrivateNetwork ? { policy: { allowPrivateNetwork: true } } : {}),
     });
     try {
       const text = await response.text();
@@ -333,12 +339,14 @@ async function generateGoogleVideoViaRest(params: {
   aspectRatio?: "16:9" | "9:16";
   resolution?: "720p" | "1080p";
   audio?: boolean;
+  allowPrivateNetwork: boolean;
 }): Promise<unknown> {
   let operation = await requestGoogleVideoJson({
     url: `${params.baseUrl}/${resolveGoogleVideoRestModelPath(params.model)}:predictLongRunning`,
     method: "POST",
     headers: params.headers,
     deadline: params.deadline,
+    allowPrivateNetwork: params.allowPrivateNetwork,
     body: {
       instances: [{ prompt: params.prompt }],
       parameters: {
@@ -369,6 +377,7 @@ async function generateGoogleVideoViaRest(params: {
       method: "GET",
       headers: params.headers,
       deadline: params.deadline,
+      allowPrivateNetwork: params.allowPrivateNetwork,
     });
   }
   const error = (operation as { error?: unknown }).error;
@@ -405,6 +414,7 @@ export function buildGoogleVideoGenerationProvider(): VideoGenerationProvider {
       const apiKey = auth.apiKey;
 
       const configuredBaseUrl = resolveConfiguredGoogleVideoBaseUrl(req);
+      const allowPrivateNetwork = resolveConfiguredGoogleVideoAllowPrivateNetwork(req);
       const restBaseUrl = resolveGoogleVideoRestBaseUrl(configuredBaseUrl);
       const authHeaders = parseGeminiAuth(apiKey).headers;
       const durationSeconds = resolveDurationSeconds(req.durationSeconds);
@@ -457,6 +467,7 @@ export function buildGoogleVideoGenerationProvider(): VideoGenerationProvider {
           aspectRatio,
           resolution,
           audio: req.audio,
+          allowPrivateNetwork,
         });
       }
 
@@ -491,6 +502,7 @@ export function buildGoogleVideoGenerationProvider(): VideoGenerationProvider {
           aspectRatio,
           resolution,
           audio: req.audio,
+          allowPrivateNetwork,
         });
         generatedVideos = extractGeneratedVideos(operation);
       }
