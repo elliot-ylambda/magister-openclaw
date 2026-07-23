@@ -69,9 +69,17 @@ function parseContext(value: Record<string, unknown>): LocalMutationContext {
   };
 }
 
-export function memoryOperationId(callId: string, action: string, target: string): string {
+export function memoryOperationId(
+  callId: string,
+  action: string,
+  target: string,
+  content?: string,
+): string {
+  const contentDigest = content
+    ? createHash("sha256").update(content).digest("hex").slice(0, 16)
+    : "";
   const digest = createHash("sha256")
-    .update(`${callId}:${action}:${target}`)
+    .update(`${callId}:${action}:${target}:${contentDigest}`)
     .digest("hex")
     .slice(0, 32);
   return `host-memory-${digest}`;

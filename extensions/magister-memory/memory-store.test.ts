@@ -72,6 +72,42 @@ describe("MemoryStore", () => {
     expect(store.entriesFor("memory")).toEqual([]);
   });
 
+  it("restores an exact receipt snapshot only when memory is unchanged", async () => {
+    await store.add("memory", "Original entry");
+    const before = [...store.entriesFor("memory")];
+    await store.replace("memory", "Original", "Updated entry");
+    const after = [...store.entriesFor("memory")];
+
+    const restored = await store.restoreSnapshot("memory", after, before);
+    expect(restored.success).toBe(true);
+    expect(store.entriesFor("memory")).toEqual(before);
+
+    const stale = await store.restoreSnapshot("memory", after, []);
+    expect(stale.success).toBe(false);
+    if (!stale.success) {
+      expect(stale.message).toMatch(/changed/i);
+    }
+  });
+
+  it("restores its in-memory snapshot when persistence fails", async () => {
+    await store.add("memory", "Original entry");
+    const guarded = new MemoryStore({
+      memoryDir: dir,
+      memoryCharLimit: 200,
+      userCharLimit: 100,
+      mutationBoundary: async () => {
+        throw new Error("lease unavailable");
+      },
+    });
+    await guarded.loadFromDisk();
+
+    await expect(guarded.replace("memory", "Original", "Updated entry")).rejects.toThrow(
+      "lease unavailable",
+    );
+    expect(guarded.entriesFor("memory")).toEqual(["Original entry"]);
+    expect(await readFile(join(dir, "MEMORY.md"), "utf8")).toBe("Original entry");
+  });
+
   it("atomic write — no .tmp files left on success", async () => {
     await store.add("memory", "x");
     const files = await readdir(dir);

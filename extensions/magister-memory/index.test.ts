@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as auditMirror from "./audit-mirror.js";
-import { createMemoryTool } from "./index.js";
+import plugin, { createMemoryTool } from "./index.js";
 
 /**
  * These tests exercise the tool's `execute` function directly by stubbing the
@@ -30,6 +30,33 @@ describe("manifest tool contract", () => {
     };
     expect(manifest.contracts?.tools).toContain("memory");
   });
+
+  it("registers the checkpoint lifecycle hooks and background service", () => {
+    const on = vi.fn();
+    const registerService = vi.fn();
+    const registerTool = vi.fn();
+    plugin.register({
+      config: { agents: { list: [] } },
+      pluginConfig: {},
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      on,
+      registerService,
+      registerTool,
+    } as never);
+
+    expect(registerTool).toHaveBeenCalledWith(expect.any(Function), { name: "memory" });
+    expect(on.mock.calls.map(([name]) => name)).toEqual([
+      "agent_end",
+      "before_compaction",
+      "session_end",
+      "before_prompt_build",
+      "message_sending",
+      "message_sent",
+    ]);
+    expect(registerService).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "magister-memory-conversation-checkpoints" }),
+    );
+  });
 });
 
 describe("memory tool dispatch", () => {
@@ -50,6 +77,7 @@ describe("memory tool dispatch", () => {
     const fakeApi = {
       config: {} as never,
       pluginConfig: { auditEndpoint: "http://example.invalid/api/memory/audit" },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     } as unknown as Parameters<typeof createMemoryTool>[0];
     const ctx = { workspaceDir: dir } as Parameters<typeof createMemoryTool>[1];
     const tool = createMemoryTool(fakeApi, ctx);
@@ -127,5 +155,31 @@ describe("memory tool dispatch", () => {
     });
 
     expect(mirrorSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns a receipt and undoes it only while the target snapshot is unchanged", async () => {
+    delete process.env.GATEWAY_TOKEN;
+    const tool = makeTool();
+
+    const added = await tool.execute("call-5a", {
+      action: "add",
+      target: "memory",
+      content: "Reversible project fact",
+    });
+    const addedBody = JSON.parse(
+      (added.content?.[0] as { type: string; text: string } | undefined)?.text ?? "{}",
+    ) as { success?: boolean; receipt_id?: string };
+    expect(addedBody.success).toBe(true);
+    expect(addedBody.receipt_id).toMatch(/^[A-Za-z0-9_-]{8,}$/);
+
+    const undone = await tool.execute("call-5b", {
+      action: "undo",
+      receipt_id: addedBody.receipt_id,
+    });
+    const undoneBody = JSON.parse(
+      (undone.content?.[0] as { type: string; text: string } | undefined)?.text ?? "{}",
+    ) as { success?: boolean; undone?: boolean };
+    expect(undoneBody).toMatchObject({ success: true, undone: true });
+    expect(readFileSync(join(dir, "MEMORY.md"), "utf8")).toBe("");
   });
 });
