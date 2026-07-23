@@ -135,6 +135,8 @@ describe("Magister action manifest contract", () => {
 
     expect(tool.description).toContain('receipt.approval_presentation is "inline_web"');
     expect(tool.description).toContain("do not print receipt.approval_url");
+    expect(tool.description).toContain('receipt.approval_presentation is "slack_card_scheduled"');
+    expect(tool.description).toContain("never call message(action=send)");
     expect(tool.description).toContain('receipt.approval_presentation is "link_only"');
     expect(tool.description).toContain("show receipt.approval_url once");
   });

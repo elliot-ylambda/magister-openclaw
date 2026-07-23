@@ -867,6 +867,7 @@ export async function runEmbeddedAttempt(
             currentChannelId: params.currentChannelId,
             currentThreadTs: params.currentThreadTs,
             currentMessageId: params.currentMessageId,
+            sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
             includeCoreTools: toolConstructionPlan.includeCoreTools,
             toolConstructionPlan: toolConstructionPlan.codingToolConstructionPlan,
             replyToMode: params.replyToMode,
