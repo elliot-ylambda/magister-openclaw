@@ -74,6 +74,10 @@ export class MemoryStore {
     return this.limits[target];
   }
 
+  snapshotMatches(target: MemoryTarget, expectedEntries: readonly string[]): boolean {
+    return sameEntries(this.entries[target], expectedEntries);
+  }
+
   async add(target: MemoryTarget, content: string): Promise<MemoryResult> {
     const trimmed = content.trim();
     if (!trimmed) {
@@ -102,7 +106,12 @@ export class MemoryStore {
     }
 
     this.entries[target].push(trimmed);
-    await this.persist(target);
+    try {
+      await this.persist(target);
+    } catch (error) {
+      this.entries[target].pop();
+      throw error;
+    }
     return ok(target, this.entries[target], this.charCount(target));
   }
 
@@ -131,7 +140,12 @@ export class MemoryStore {
       return fail(target, `Replace would exceed char limit (${this.limits[target]})`);
     }
 
-    await this.persist(target);
+    try {
+      await this.persist(target);
+    } catch (error) {
+      this.entries[target][match] = original;
+      throw error;
+    }
     return ok(target, this.entries[target], this.charCount(target));
   }
 
@@ -140,8 +154,42 @@ export class MemoryStore {
     if (typeof match === "string") {
       return fail(target, match);
     }
-    this.entries[target].splice(match, 1);
-    await this.persist(target);
+    const [removed] = this.entries[target].splice(match, 1);
+    try {
+      await this.persist(target);
+    } catch (error) {
+      this.entries[target].splice(match, 0, removed);
+      throw error;
+    }
+    return ok(target, this.entries[target], this.charCount(target));
+  }
+
+  async restoreSnapshot(
+    target: MemoryTarget,
+    expectedEntries: readonly string[],
+    replacementEntries: readonly string[],
+  ): Promise<MemoryResult> {
+    if (!this.snapshotMatches(target, expectedEntries)) {
+      return fail(target, "Memory changed after this receipt was created; undo was not applied");
+    }
+    for (const entry of replacementEntries) {
+      const threat = scanMemoryContent(entry);
+      if (threat) {
+        return fail(target, `Blocked: ${threat}`);
+      }
+    }
+    const replacement = [...replacementEntries];
+    if (charCountForEntries(replacement) > this.limits[target]) {
+      return fail(target, `Undo would exceed char limit (${this.limits[target]})`);
+    }
+    const original = this.entries[target];
+    this.entries[target] = replacement;
+    try {
+      await this.persist(target);
+    } catch (error) {
+      this.entries[target] = original;
+      throw error;
+    }
     return ok(target, this.entries[target], this.charCount(target));
   }
 
@@ -232,6 +280,20 @@ function dedupe(arr: string[]): string[] {
     }
   }
   return out;
+}
+
+function sameEntries(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
+function charCountForEntries(entries: readonly string[]): number {
+  if (entries.length === 0) {
+    return 0;
+  }
+  return (
+    entries.reduce((total, entry) => total + entry.length, 0) +
+    (entries.length - 1) * ENTRY_DELIMITER.length
+  );
 }
 
 function isNodeError(err: unknown): err is NodeJS.ErrnoException {

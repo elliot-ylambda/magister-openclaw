@@ -1,0 +1,474 @@
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readConversationSessionState } from "./checkpoint-state.js";
+import { parseCheckpointRecords } from "./checkpoint-store.js";
+import { resolveConversationCheckpointConfig } from "./conversation-config.js";
+import { ConversationCheckpointManager } from "./conversation-manager.js";
+import { hashIdentifier } from "./conversation-text.js";
+import { createMemoryTool } from "./index.js";
+
+describe("conversation checkpoint integration", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "magister-conversation-manager-"));
+    delete process.env.GATEWAY_TOKEN;
+    delete process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT;
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await rm(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("captures a short chat, promotes it, recalls it in a new session, delivers a receipt, and undoes", async () => {
+    const evidence = "Our target audience is independent dental practices.";
+    const preferenceEvidence = "Please keep reports concise.";
+    const runEmbeddedPiAgent = vi.fn(async () => ({
+      payloads: [
+        {
+          text: JSON.stringify({
+            summary:
+              "The project targets independent dental practices and the initial audience definition is complete.",
+            topics: ["target audience", "reporting style"],
+            durableCandidates: [
+              {
+                target: "memory",
+                key: "project.target_audience",
+                value: "Targets independent dental practices",
+                action: "add",
+                evidence,
+                confidence: 0.99,
+              },
+              {
+                target: "user",
+                key: "user.reporting_style",
+                value: "Prefers concise reports",
+                action: "add",
+                evidence: preferenceEvidence,
+                confidence: 0.99,
+              },
+            ],
+          }),
+        },
+      ],
+    }));
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config, {
+      memoryCharLimit: 2_200,
+      userCharLimit: 1_375,
+    });
+    const firstContext = {
+      agentId: "marketing",
+      sessionId: "session-one",
+      sessionKey: "agent:marketing:web:user-one",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    expect(
+      await manager.buildPromptContext({ prompt: evidence, messages: [], ctx: firstContext }),
+    ).toBeUndefined();
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: `${evidence} ${preferenceEvidence}` },
+          {
+            role: "assistant",
+            content: "I documented the audience and will use it to shape the campaign strategy.",
+          },
+        ],
+      },
+      firstContext,
+    );
+    await manager.finalizeSessionForTest({
+      workspaceDir: dir,
+      sessionHash: hashIdentifier(firstContext.sessionId),
+    });
+
+    expect(runEmbeddedPiAgent).toHaveBeenCalledOnce();
+    expect(runEmbeddedPiAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "magister-gateway",
+        model: "anthropic/claude-haiku-4-5",
+        disableTools: true,
+        reasoningLevel: "off",
+        streamParams: { maxTokens: 1_024, temperature: 0 },
+        cleanupBundleMcpOnRunEnd: true,
+        timeoutMs: 30_000,
+      }),
+    );
+    expect(await readFile(join(dir, "MEMORY.md"), "utf8")).toContain(
+      "[magister_learned:project.target_audience]",
+    );
+    expect(await readFile(join(dir, "USER.md"), "utf8")).toContain(
+      "[magister_learned:user.reporting_style]",
+    );
+
+    const newContext = {
+      agentId: "marketing",
+      sessionId: "session-two",
+      sessionKey: firstContext.sessionKey,
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const recall = await manager.buildPromptContext({
+      prompt: "Continue the dental audience campaign",
+      messages: [],
+      ctx: newContext,
+    });
+    expect(recall).toContain("Recent chats:");
+    expect(recall).toContain("independent dental practices");
+
+    const deliveryContext = { channelId: "web", conversationId: "user-one" };
+    const delivered = await manager.appendPendingReceipt("Here is the next step.", deliveryContext);
+    expect(delivered).toContain(
+      'Updated Magister\'s memory about: target audience, reporting style. Say "undo that" to revert.',
+    );
+    await manager.confirmPendingReceiptDelivery(
+      { content: delivered ?? "", success: false },
+      deliveryContext,
+    );
+    const retriedDelivery = await manager.appendPendingReceipt("Retry response.", newContext);
+    expect(retriedDelivery).toContain("Updated Magister's memory about:");
+    await manager.confirmPendingReceiptDelivery(
+      { content: retriedDelivery ?? "", success: true },
+      newContext,
+    );
+    expect(await manager.appendPendingReceipt("Later response.", newContext)).toBeUndefined();
+
+    const tool = createMemoryTool(api, { workspaceDir: dir });
+    if (!tool) {
+      throw new Error("memory tool unavailable");
+    }
+    const undoResult = await tool.execute("undo-conversation-memory", { action: "undo" });
+    const undoBody = JSON.parse(
+      (undoResult.content?.[0] as { text?: string } | undefined)?.text ?? "{}",
+    ) as { success?: boolean; undone?: boolean };
+    expect(undoBody).toMatchObject({ success: true, undone: true });
+    expect(await readFile(join(dir, "MEMORY.md"), "utf8")).toBe("");
+    expect(await readFile(join(dir, "USER.md"), "utf8")).toBe("");
+  });
+
+  it("honors retry deadlines and writes a deterministic fallback after three failures", async () => {
+    vi.useFakeTimers();
+    const startedAt = Date.UTC(2026, 6, 22, 12);
+    vi.setSystemTime(startedAt);
+    const runEmbeddedPiAgent = vi.fn(async () => {
+      throw new Error("model unavailable");
+    });
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config, {
+      memoryCharLimit: 2_200,
+      userCharLimit: 1_375,
+    });
+    const ctx = {
+      agentId: "marketing",
+      sessionId: "retry-session",
+      sessionKey: "agent:marketing:web:retry-user",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const sessionHash = hashIdentifier(ctx.sessionId);
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: "Please prepare the launch plan for our dental campaign." },
+          { role: "assistant", content: "I prepared the launch plan and captured next steps." },
+        ],
+      },
+      ctx,
+    );
+
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+    let state = await readConversationSessionState({
+      workspaceDir: dir,
+      sessionHash,
+      agentId: "marketing",
+    });
+    expect(state).toMatchObject({ retryCount: 1, retryAt: startedAt + 60_000 });
+    expect(state.pending).toHaveLength(2);
+
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(startedAt + 60_001);
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(2);
+
+    vi.setSystemTime(startedAt + 60_001 + 5 * 60_000 + 1);
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(3);
+    expect(await readFile(join(dir, "memory", "2026-07-22.md"), "utf8")).toContain(
+      "Conversation checkpoint",
+    );
+    state = await readConversationSessionState({
+      workspaceDir: dir,
+      sessionHash,
+      agentId: "marketing",
+    });
+    expect(state).toMatchObject({ retryCount: 0, sequence: 1, pending: [] });
+    expect(state.inFlight).toBeUndefined();
+  });
+
+  it("records proposals without touching canonical memory in shadow mode", async () => {
+    const runEmbeddedPiAgent = vi.fn(async () => ({
+      payloads: [
+        {
+          text: JSON.stringify({
+            summary: "The user completed a detailed campaign planning conversation.",
+            topics: ["campaign planning"],
+            durableCandidates: [],
+          }),
+        },
+      ],
+    }));
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "shadow" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config, {
+      memoryCharLimit: 2_200,
+      userCharLimit: 1_375,
+    });
+    const ctx = {
+      agentId: "marketing",
+      sessionKey: "agent:marketing:web:shadow-user",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const sessionHash = hashIdentifier(ctx.sessionKey);
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: "Let's create a detailed campaign plan for the new launch." },
+          { role: "assistant", content: "The campaign phases and launch criteria are now ready." },
+        ],
+      },
+      ctx,
+    );
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+
+    await expect(access(join(dir, "memory"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(dir, "MEMORY.md"))).rejects.toMatchObject({ code: "ENOENT" });
+    const shadowDir = join(dir, ".magister", "state", "conversation-checkpoints", "shadow");
+    const shadowFiles = await readdir(shadowDir);
+    expect(shadowFiles).toHaveLength(1);
+    expect(await readFile(join(shadowDir, shadowFiles[0]), "utf8")).toContain(
+      "campaign planning conversation",
+    );
+  });
+
+  it("defers a prepared write failure and reuses its model output, id, and date", async () => {
+    vi.useFakeTimers();
+    const startedAt = Date.UTC(2026, 6, 22, 23, 59);
+    vi.setSystemTime(startedAt);
+    const runEmbeddedPiAgent = vi.fn(async () => ({
+      payloads: [
+        {
+          text: JSON.stringify({
+            summary: "The user completed a detailed launch planning conversation.",
+            topics: ["launch planning"],
+            durableCandidates: [],
+          }),
+        },
+      ],
+    }));
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config, {
+      memoryCharLimit: 2_200,
+      userCharLimit: 1_375,
+    });
+    const ctx = {
+      agentId: "marketing",
+      sessionId: "prepared-retry-session",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const sessionHash = hashIdentifier(ctx.sessionId);
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: "Please build the detailed launch sequence for the campaign." },
+          { role: "assistant", content: "The launch sequence and handoff are complete." },
+        ],
+      },
+      ctx,
+    );
+    await writeFile(join(dir, "memory"), "blocks the daily directory", "utf8");
+
+    await expect(
+      manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash }),
+    ).rejects.toMatchObject({ code: "EEXIST" });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+    let state = await readConversationSessionState({
+      workspaceDir: dir,
+      sessionHash,
+      agentId: "marketing",
+    });
+    expect(state.inFlight?.prepared?.summary).toContain("launch planning");
+    expect(state.inFlight?.startedAt).toBe(startedAt);
+    expect(state.retryAt).toBe(startedAt + 5 * 60_000);
+    const checkpointId = state.inFlight?.checkpointId;
+    if (!checkpointId) {
+      throw new Error("prepared checkpoint id missing");
+    }
+
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+
+    await rm(join(dir, "memory"), { force: true });
+    await mkdir(join(dir, "memory"));
+    vi.setSystemTime(startedAt + 5 * 60_000 + 1);
+    await manager.finalizeSessionForTest({ workspaceDir: dir, sessionHash });
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+    const daily = await readFile(join(dir, "memory", "2026-07-22.md"), "utf8");
+    expect(parseCheckpointRecords(daily).map((record) => record.checkpointId)).toEqual([
+      checkpointId,
+    ]);
+    await expect(access(join(dir, "memory", "2026-07-23.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    state = await readConversationSessionState({
+      workspaceDir: dir,
+      sessionHash,
+      agentId: "marketing",
+    });
+    expect(state).toMatchObject({ sequence: 1, retryCount: 0 });
+    expect(state.inFlight).toBeUndefined();
+  });
+
+  it("ignores failed, non-user, and reviewer runs", async () => {
+    const runEmbeddedPiAgent = vi.fn();
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config, {
+      memoryCharLimit: 2_200,
+      userCharLimit: 1_375,
+    });
+    const messages = [
+      { role: "user", content: "This is a detailed conversation that would normally be saved." },
+      { role: "assistant", content: "I completed the detailed project work." },
+    ];
+    await manager.captureAgentEnd(
+      { success: false, messages },
+      { sessionId: "failed", workspaceDir: dir, trigger: "user" },
+    );
+    await manager.captureAgentEnd(
+      { success: true, messages },
+      { sessionId: "manual", workspaceDir: dir, trigger: "manual" },
+    );
+    await manager.captureAgentEnd(
+      { success: true, messages },
+      { agentId: "reviewer", sessionId: "review", workspaceDir: dir, trigger: "user" },
+    );
+    for (const sessionId of ["failed", "manual", "review"]) {
+      await manager.finalizeSessionForTest({
+        workspaceDir: dir,
+        sessionHash: hashIdentifier(sessionId),
+      });
+    }
+    expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
+  });
+
+  it("finalizes pre-compaction capture once when the transcript is seen again", async () => {
+    const runEmbeddedPiAgent = vi.fn(async () => ({
+      payloads: [
+        {
+          text: JSON.stringify({
+            summary: "The long planning chat reached a stable pre-compaction checkpoint.",
+            topics: ["planning"],
+            durableCandidates: [],
+          }),
+        },
+      ],
+    }));
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config, {
+      memoryCharLimit: 2_200,
+      userCharLimit: 1_375,
+    });
+    const ctx = {
+      agentId: "marketing",
+      sessionId: "compaction-session",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const checkpointDate = new Date().toISOString().slice(0, 10);
+    const messages = [
+      { role: "user", content: "Build the complete launch plan with channels and milestones." },
+      { role: "assistant", content: "The channel plan and all milestones are complete." },
+    ];
+    await manager.captureAgentEnd({ success: true, messages }, ctx);
+    await manager.captureBeforeCompaction(messages, ctx);
+    const sessionHash = hashIdentifier(ctx.sessionId);
+    await vi.waitFor(async () => {
+      const state = await readConversationSessionState({
+        workspaceDir: dir,
+        sessionHash,
+        agentId: "marketing",
+      });
+      expect(state.sequence).toBe(1);
+    });
+
+    await manager.captureBeforeCompaction(messages, ctx);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const daily = await readFile(join(dir, "memory", `${checkpointDate}.md`), "utf8");
+    expect(parseCheckpointRecords(daily)).toHaveLength(1);
+    expect(runEmbeddedPiAgent).toHaveBeenCalledTimes(1);
+  });
+
+  function makeApi(runEmbeddedPiAgent: ReturnType<typeof vi.fn>): OpenClawPluginApi {
+    return {
+      config: {
+        agents: {
+          list: [{ id: "marketing", workspace: dir }],
+          defaults: { userTimezone: "UTC" },
+        },
+      },
+      pluginConfig: {
+        conversationCheckpoints: { mode: "active" },
+      },
+      runtime: {
+        agent: {
+          resolveAgentDir: () => dir,
+          runEmbeddedPiAgent,
+        },
+      },
+      logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+    } as unknown as OpenClawPluginApi;
+  }
+});

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mirrorAudit } from "./audit-mirror.js";
-import { withHostMutationBoundary } from "./mutation-boundary.js";
+import { memoryOperationId, withHostMutationBoundary } from "./mutation-boundary.js";
 
 describe("host semantic mutation boundary", () => {
   beforeEach(() => {
@@ -112,5 +112,11 @@ describe("host semantic mutation boundary", () => {
     );
 
     expect(error).toHaveBeenCalledWith("[magister-memory] audit mirror failed:", expect.any(Error));
+  });
+
+  it("uses stable retry ids and distinct ids for different grouped snapshots", () => {
+    const first = memoryOperationId("checkpoint", "promote", "memory", "first snapshot");
+    expect(memoryOperationId("checkpoint", "promote", "memory", "first snapshot")).toBe(first);
+    expect(memoryOperationId("checkpoint", "promote", "memory", "second snapshot")).not.toBe(first);
   });
 });

@@ -1,7 +1,7 @@
 {
   "id": "magister-memory",
   "name": "Magister Memory",
-  "description": "Bounded, file-backed agent memory with tool-mediated writes, threat scanning, and gateway audit mirroring. Replaces the legacy MEMORY.md + memory/learnings/ tiered system.",
+  "description": "Bounded curated memory with conversation checkpoints, selective recent recall, reversible receipts, threat scanning, and gateway audit mirroring.",
   "activation": {
     "onStartup": true
   },
@@ -15,7 +15,22 @@
       "enabled": { "type": "boolean" },
       "memoryCharLimit": { "type": "integer", "minimum": 200, "maximum": 20000 },
       "userCharLimit": { "type": "integer", "minimum": 200, "maximum": 20000 },
-      "auditEndpoint": { "type": "string" }
+      "auditEndpoint": { "type": "string" },
+      "conversationCheckpoints": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": { "type": "string", "enum": ["off", "shadow", "active"] },
+          "model": { "type": "string" },
+          "idleMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+          "recentDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+          "maxInputChars": { "type": "integer", "minimum": 2000, "maximum": 100000 },
+          "maxCheckpointChars": { "type": "integer", "minimum": 200, "maximum": 5000 },
+          "maxHeaderChars": { "type": "integer", "minimum": 100, "maximum": 2000 },
+          "maxRecallChars": { "type": "integer", "minimum": 100, "maximum": 4000 },
+          "promotionConfidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
     }
   }
 }
