@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { onDiagnosticEvent, resetDiagnosticEventsForTest } from "../diagnostic-events.js";
 import {
+  deliverDurableWebhookEntry,
   enqueueAndDeliverDurableWebhook,
   enqueueDurableWebhook,
   loadPendingDurableWebhooks,
@@ -13,6 +15,7 @@ import {
 const temporaryRoots: string[] = [];
 
 afterEach(() => {
+  resetDiagnosticEventsForTest();
   for (const root of temporaryRoots.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -25,6 +28,53 @@ function stateDir(): string {
 }
 
 describe("durable webhook outbox", () => {
+  it("emits only when retry exhaustion moves a callback to dead letter", async () => {
+    const root = stateDir();
+    const entry = await enqueueDurableWebhook({
+      eventId: "slack:private-run-id",
+      eventType: "slack_completion",
+      url: "http://gateway.internal/slack",
+      payload: { private_output: "customer content" },
+      stateDir: root,
+    });
+    const events: unknown[] = [];
+    const stop = onDiagnosticEvent((event) => events.push(event));
+    const fail = vi.fn(async () => new Response("no", { status: 503 }));
+
+    expect(
+      await deliverDurableWebhookEntry({
+        entry,
+        token: "token",
+        fetchImpl: fail,
+        stateDir: root,
+      }),
+    ).toBe(false);
+    expect(events).toEqual([]);
+
+    const pending = (await loadPendingDurableWebhooks(root))[0];
+    if (!pending) {
+      throw new Error("expected pending entry");
+    }
+    pending.attemptCount = 9;
+    expect(
+      await deliverDurableWebhookEntry({
+        entry: pending,
+        token: "token",
+        fetchImpl: fail,
+        stateDir: root,
+      }),
+    ).toBe(false);
+    stop();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "webhook.delivery.dead_lettered",
+      channel: "slack",
+      failureKind: "retry_exhausted",
+    });
+    expect(JSON.stringify(events)).not.toContain("private");
+  });
+
   it("fsyncs an event before delivery and removes it only after acknowledgement", async () => {
     const root = stateDir();
     const fetchImpl = vi.fn(

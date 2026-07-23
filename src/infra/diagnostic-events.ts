@@ -68,6 +68,18 @@ export type DiagnosticWebhookErrorEvent = DiagnosticBaseEvent & {
   error: string;
 };
 
+export type DiagnosticWebhookDeliveryDeadLetteredEvent = DiagnosticBaseEvent & {
+  type: "webhook.delivery.dead_lettered";
+  channel: "cron" | "slack" | "subagent";
+  failureKind: "retry_exhausted";
+};
+
+export type DiagnosticHttpRequestErrorEvent = DiagnosticBaseEvent & {
+  type: "http.request.error";
+  surface: "plugin_http" | "gateway_http";
+  failureKind: "handler_exception" | "unhandled_exception";
+};
+
 export type DiagnosticMessageQueuedEvent = DiagnosticBaseEvent & {
   type: "message.queued";
   sessionKey?: string;
@@ -511,6 +523,8 @@ export type DiagnosticEventPayload =
   | DiagnosticWebhookReceivedEvent
   | DiagnosticWebhookProcessedEvent
   | DiagnosticWebhookErrorEvent
+  | DiagnosticWebhookDeliveryDeadLetteredEvent
+  | DiagnosticHttpRequestErrorEvent
   | DiagnosticMessageQueuedEvent
   | DiagnosticMessageProcessedEvent
   | DiagnosticMessageDeliveryStartedEvent
