@@ -2,12 +2,19 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../../config/paths.js";
+import { emitDiagnosticEvent } from "../diagnostic-events.js";
 
 const OUTBOX_DIRNAME = "durable-webhook-outbox";
 const DEAD_LETTER_DIRNAME = "dead-letter";
 const MAX_ATTEMPTS = 10;
 const MAX_PAYLOAD_BYTES = 512 * 1024;
 const DELIVERY_TIMEOUT_MS = 10_000;
+
+const DIAGNOSTIC_CHANNEL_BY_EVENT_TYPE = {
+  cron_completion: "cron",
+  slack_completion: "slack",
+  subagent_completion: "subagent",
+} as const;
 
 export type DurableWebhookEventType =
   | "cron_completion"
@@ -238,6 +245,11 @@ async function recordFailure(
     await fs.promises.rename(currentPath, target);
     await syncDirectory(outboxDir(stateDir));
     await syncDirectory(deadLetterDir(stateDir));
+    emitDiagnosticEvent({
+      type: "webhook.delivery.dead_lettered",
+      channel: DIAGNOSTIC_CHANNEL_BY_EVENT_TYPE[entry.eventType],
+      failureKind: "retry_exhausted",
+    });
     return;
   }
   await writeDurable(currentPath, updated);
