@@ -32,9 +32,21 @@ const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/action
 const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const ARTIFACT_PROMOTION_TIMEOUT_MS = 90_000;
+const SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_WORKSPACE_DIR = "/data/.openclaw/workspace";
 const MAX_COMPLETION_ARTIFACT_BYTES = 16 * 1024 * 1024;
+const MAX_SOCIAL_MEDIA_BYTES = 200 * 1024 * 1024;
+const SOCIAL_MEDIA_CONTENT_TYPES = new Map([
+  [".gif", "image/gif"],
+  [".jpeg", "image/jpeg"],
+  [".jpg", "image/jpeg"],
+  [".mov", "video/quicktime"],
+  [".mp4", "video/mp4"],
+  [".png", "image/png"],
+  [".webm", "video/webm"],
+  [".webp", "image/webp"],
+]);
 const HEARTBEAT_SESSION_RE =
   /(?:^|:)heartbeat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[1-9][0-9]*$/i;
 const WORKFLOW_SESSION_RE =
@@ -299,9 +311,13 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
 }
 
 export function actionTimeoutMs(action: string, configuredTimeoutMs: number): number {
-  return action === "promote_artifact"
-    ? Math.max(configuredTimeoutMs, ARTIFACT_PROMOTION_TIMEOUT_MS)
-    : configuredTimeoutMs;
+  if (action === "promote_artifact") {
+    return Math.max(configuredTimeoutMs, ARTIFACT_PROMOTION_TIMEOUT_MS);
+  }
+  if (action === "create_social_draft") {
+    return Math.max(configuredTimeoutMs, SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS);
+  }
+  return configuredTimeoutMs;
 }
 
 function actionAvailableInContext(
@@ -481,6 +497,226 @@ function resolveConfig(api: OpenClawPluginApi): Required<PluginConfig> {
 }
 
 class ArtifactValidationError extends Error {}
+
+class SocialMediaValidationError extends Error {}
+
+function localSocialMediaPath(reference: string, workspaceDir: string): string | null {
+  if (reference.startsWith("file:")) {
+    let parsed: URL;
+    try {
+      parsed = new URL(reference);
+    } catch {
+      throw new SocialMediaValidationError("The social media file URL is invalid.");
+    }
+    if (parsed.protocol !== "file:" || parsed.hostname) {
+      throw new SocialMediaValidationError("Remote file URLs cannot be used as social media.");
+    }
+    return decodeURIComponent(parsed.pathname);
+  }
+  if (isAbsolute(reference)) {
+    return reference;
+  }
+  if (reference === "resources" || reference.startsWith("resources/")) {
+    return resolve(workspaceDir, reference);
+  }
+  return null;
+}
+
+function pathIsInside(root: string, candidate: string): boolean {
+  const child = relative(root, candidate);
+  return child === "" || (!child.startsWith("..") && !isAbsolute(child));
+}
+
+async function allowedSocialMediaRoots(workspaceDir: string): Promise<string[]> {
+  const candidates = [
+    resolve(workspaceDir, "resources"),
+    resolve(process.env.OPENCLAW_STATE_DIR ?? "/data/.openclaw", "media/tool-image-generation"),
+    resolve(process.env.OPENCLAW_STATE_DIR ?? "/data/.openclaw", "media/tool-video-generation"),
+  ];
+  const roots: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      roots.push(await realpath(candidate));
+    } catch {
+      // A generation directory is optional until that provider has produced media.
+    }
+  }
+  return roots;
+}
+
+function socialMediaTicketEndpoint(actionEndpoint: string): string {
+  const endpoint = new URL(actionEndpoint);
+  endpoint.pathname = "/api/agent/actions/social_media_upload_ticket";
+  endpoint.search = "";
+  endpoint.hash = "";
+  return endpoint.toString();
+}
+
+async function uploadExactSocialMedia(
+  reference: string,
+  options: {
+    workspaceDir: string;
+    actionEndpoint: string;
+    gatewayToken: string;
+    fetchImpl: FetchLike;
+    signal: AbortSignal;
+    accountIds: string[];
+  },
+): Promise<string> {
+  const { workspaceDir, actionEndpoint, gatewayToken, fetchImpl, signal, accountIds } = options;
+  const unresolvedPath = localSocialMediaPath(reference, workspaceDir);
+  if (unresolvedPath === null) {
+    return reference;
+  }
+  let filePath: string;
+  try {
+    filePath = await realpath(unresolvedPath);
+  } catch {
+    throw new SocialMediaValidationError("The exact social media file does not exist.");
+  }
+  const roots = await allowedSocialMediaRoots(workspaceDir);
+  if (!roots.some((root) => pathIsInside(root, filePath))) {
+    throw new SocialMediaValidationError(
+      "Social media files must come from generated media or workspace resources.",
+    );
+  }
+  const extension = path.extname(filePath).toLowerCase();
+  const contentType = SOCIAL_MEDIA_CONTENT_TYPES.get(extension);
+  if (!contentType) {
+    throw new SocialMediaValidationError("The social media file type is not supported.");
+  }
+  let size: number;
+  try {
+    const fileStat = await stat(filePath);
+    if (!fileStat.isFile()) {
+      throw new Error("not a file");
+    }
+    size = fileStat.size;
+  } catch {
+    throw new SocialMediaValidationError("The exact social media file cannot be read.");
+  }
+  if (size > MAX_SOCIAL_MEDIA_BYTES) {
+    throw new SocialMediaValidationError("The social media file exceeds the 200 MB limit.");
+  }
+  if (size === 0) {
+    throw new SocialMediaValidationError("The exact social media file is empty.");
+  }
+  const content = await readFile(filePath);
+  if (content.byteLength > MAX_SOCIAL_MEDIA_BYTES) {
+    throw new SocialMediaValidationError("The social media file exceeds the 200 MB limit.");
+  }
+  const filename = `${createHash("sha256").update(content).digest("hex")}${extension}`;
+  const ticketResponse = await fetchImpl(socialMediaTicketEndpoint(actionEndpoint), {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${gatewayToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      filename,
+      content_type: contentType,
+      account_ids: accountIds,
+    }),
+    signal,
+  });
+  if (!ticketResponse.ok) {
+    throw new Error(`Zernio media ticket failed with HTTP ${ticketResponse.status}.`);
+  }
+  const ticketText = await readBoundedBody(ticketResponse, 64 * 1024);
+  let ticket: unknown;
+  try {
+    ticket = JSON.parse(ticketText);
+  } catch {
+    ticket = null;
+  }
+  const uploadUrl = isRecord(ticket) ? (ticket.uploadUrl ?? ticket.uploadURL) : undefined;
+  const publicUrl = isRecord(ticket) ? (ticket.publicUrl ?? ticket.publicURL) : undefined;
+  if (typeof uploadUrl !== "string" || typeof publicUrl !== "string") {
+    throw new Error("Zernio media ticket omitted its upload URLs.");
+  }
+  let uploadTarget: URL;
+  let publicTarget: URL;
+  try {
+    uploadTarget = new URL(uploadUrl);
+    publicTarget = new URL(publicUrl);
+  } catch {
+    throw new Error("Zernio media ticket returned invalid URLs.");
+  }
+  if (
+    uploadTarget.protocol !== "https:" ||
+    !uploadTarget.hostname ||
+    publicTarget.protocol !== "https:" ||
+    publicTarget.hostname.toLowerCase() !== "media.zernio.com" ||
+    publicTarget.username !== "" ||
+    publicTarget.password !== "" ||
+    !["", "443"].includes(publicTarget.port)
+  ) {
+    throw new Error("Zernio media ticket returned unsafe URLs.");
+  }
+  const uploadResponse = await fetchImpl(uploadTarget, {
+    method: "PUT",
+    headers: { "content-type": contentType },
+    body: content,
+    signal,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`Zernio media upload failed with HTTP ${uploadResponse.status}.`);
+  }
+  return publicTarget.toString();
+}
+
+async function prepareExactSocialMedia(
+  action: string,
+  rawParams: Record<string, unknown>,
+  options: {
+    workspaceDir: string;
+    actionEndpoint: string;
+    gatewayToken: string;
+    fetchImpl: FetchLike;
+    signal: AbortSignal;
+  },
+): Promise<Record<string, unknown>> {
+  const { workspaceDir, actionEndpoint, gatewayToken, fetchImpl, signal } = options;
+  if (action !== "create_social_draft") {
+    return rawParams;
+  }
+  const rawMedia = rawParams.media_urls;
+  if (rawMedia === undefined || (Array.isArray(rawMedia) && rawMedia.length === 0)) {
+    return rawParams;
+  }
+  if (!Array.isArray(rawMedia) || rawMedia.some((item) => typeof item !== "string")) {
+    throw new SocialMediaValidationError("Social media references must be strings.");
+  }
+  const rawPlatforms = rawParams.platforms;
+  if (
+    !Array.isArray(rawPlatforms) ||
+    rawPlatforms.some(
+      (item) =>
+        !isRecord(item) ||
+        typeof item.account_id !== "string" ||
+        !/^[A-Za-z0-9_-]{1,160}$/.test(item.account_id),
+    )
+  ) {
+    throw new SocialMediaValidationError("Social media target accounts are invalid.");
+  }
+  const accountIds = [
+    ...new Set(rawPlatforms.map((item) => String((item as Record<string, unknown>).account_id))),
+  ];
+  const mediaUrls: string[] = [];
+  for (const reference of rawMedia) {
+    mediaUrls.push(
+      await uploadExactSocialMedia(reference, {
+        workspaceDir,
+        actionEndpoint,
+        gatewayToken,
+        fetchImpl,
+        signal,
+        accountIds,
+      }),
+    );
+  }
+  return { ...rawParams, media_urls: mediaUrls };
+}
 
 async function attestCompletionArtifacts(
   action: string,
@@ -720,9 +956,16 @@ export function createMagisterActionTool(
       const runtimeSessionKey = trustedRuntimeSessionKey(context);
       const runtimeSessionId = context.sessionId?.trim();
       try {
+        const mediaPreparedParams = await prepareExactSocialMedia(action.action, rawParams, {
+          workspaceDir: config.workspaceDir,
+          actionEndpoint: config.endpoint,
+          gatewayToken,
+          fetchImpl,
+          signal: controller.signal,
+        });
         const prepared = await attestCompletionArtifacts(
           action.action,
-          rawParams,
+          mediaPreparedParams,
           gatewayToken,
           runtimeSessionKey,
           config.workspaceDir,
@@ -851,18 +1094,23 @@ export function createMagisterActionTool(
         const timedOut = controller.signal.aborted;
         const tooLarge = error instanceof Error && error.message === "response_too_large";
         const artifactInvalid = error instanceof ArtifactValidationError;
+        const mediaInvalid = error instanceof SocialMediaValidationError;
+        const inputInvalid = artifactInvalid || mediaInvalid;
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: artifactInvalid ? "validation_error" : "upstream_failed",
-            message: artifactInvalid
-              ? error.message
-              : timedOut
-                ? `Magister action timed out after ${selectedTimeoutMs}ms.`
-                : tooLarge
-                  ? "Magister action response exceeded the configured size limit."
-                  : "Magister action transport failed.",
+            code: inputInvalid ? "validation_error" : "upstream_failed",
+            message:
+              inputInvalid && error instanceof Error
+                ? error.message
+                : timedOut
+                  ? `Magister action timed out after ${selectedTimeoutMs}ms.`
+                  : tooLarge
+                    ? "Magister action response exceeded the configured size limit."
+                    : "Magister action transport failed.",
             retryable: timedOut && action.side_effect === "none",
-            userAction: ambiguousWriteUserAction(action.side_effect),
+            userAction: mediaInvalid
+              ? "Use the exact generated image or video file from generated media or workspace resources."
+              : ambiguousWriteUserAction(action.side_effect),
           }),
         );
       } finally {

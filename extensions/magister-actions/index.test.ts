@@ -27,6 +27,12 @@ const writeAction = nativeActionContract.actions.find((row) => row.action === "s
 if (!writeAction) {
   throw new Error("send_email contract missing");
 }
+const socialDraftAction = nativeActionContract.actions.find(
+  (row) => row.action === "create_social_draft",
+);
+if (!socialDraftAction) {
+  throw new Error("create_social_draft contract missing");
+}
 const completionAction = nativeActionContract.actions.find(
   (row) => row.action === "submit_workflow_completion",
 );
@@ -370,6 +376,181 @@ describe("typed gateway execution", () => {
     expect(request?.init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
   });
 
+  it.each([
+    ["image", "exact.jpg", "image/jpeg", Buffer.from("exact-jpeg-bytes")],
+    ["video", "exact.mp4", "video/mp4", Buffer.from("exact-mp4-bytes")],
+  ])(
+    "uploads exact local %s bytes before creating a social draft",
+    async (_kind, filename, expectedContentType, exactBytes) => {
+      process.env.GATEWAY_TOKEN = "secret-machine-token";
+      const workspace = await mkdtemp(join(tmpdir(), "magister-social-media-"));
+      try {
+        await mkdir(join(workspace, "resources"));
+        const localPath = join(workspace, "resources", filename);
+        await writeFile(localPath, exactBytes);
+        const publicUrl = `https://media.zernio.com/${filename}`;
+        const calls: Array<{ url: string; init?: RequestInit }> = [];
+        const tool = createMagisterActionTool(
+          api({ workspaceDir: workspace }),
+          socialDraftAction,
+          async (input, init) => {
+            const url = requestUrl(input);
+            calls.push({ url, init });
+            if (
+              url ===
+              "http://magister-gateway.internal:8081/api/agent/actions/social_media_upload_ticket"
+            ) {
+              const ticketRequest = requestBody(init);
+              expect(ticketRequest.content_type).toBe(expectedContentType);
+              expect(ticketRequest.account_ids).toEqual(["account-1"]);
+              expect(ticketRequest.filename).toMatch(
+                new RegExp(`^[a-f0-9]{64}\\.${filename.split(".").at(-1)}$`),
+              );
+              return new Response(
+                JSON.stringify({
+                  uploadUrl: "https://uploads.example/exact-signed-target",
+                  publicUrl,
+                }),
+                { status: 200 },
+              );
+            }
+            if (url === "https://uploads.example/exact-signed-target") {
+              const headers = new Headers(init?.headers);
+              expect(headers.get("authorization")).toBeNull();
+              expect(headers.get("content-type")).toBe(expectedContentType);
+              expect(Buffer.isBuffer(init?.body)).toBe(true);
+              expect(Buffer.from(init?.body as Buffer)).toEqual(exactBytes);
+              return new Response(null, { status: 200 });
+            }
+            expect(url).toBe(
+              "http://magister-gateway.internal:8081/api/agent/actions/create_social_draft",
+            );
+            expect(requestBody(init)).toMatchObject({
+              arguments: { media_urls: [publicUrl] },
+            });
+            return new Response(
+              JSON.stringify(envelope({ side_effect: "draft", receipt: { post_id: "post-1" } })),
+              { status: 200 },
+            );
+          },
+        );
+
+        const output = resultJson(
+          await tool.execute("social-local-media", {
+            content: "Exact media",
+            platforms: [{ platform: "instagram", account_id: "account-1" }],
+            media_urls: [localPath],
+            idempotency_key: "social-local-media-1",
+          }),
+        );
+
+        expect(output.ok).toBe(true);
+        expect(calls.map((call) => call.url)).toEqual([
+          "http://magister-gateway.internal:8081/api/agent/actions/social_media_upload_ticket",
+          "https://uploads.example/exact-signed-target",
+          "http://magister-gateway.internal:8081/api/agent/actions/create_social_draft",
+        ]);
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects local social media that escapes generated media and resources", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-social-escape-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const outside = join(workspace, "outside.jpg");
+      await writeFile(outside, "not approved local media");
+      let fetched = false;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        socialDraftAction,
+        async () => {
+          fetched = true;
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+      );
+
+      const output = resultJson(
+        await tool.execute("social-media-escape", {
+          content: "No escape",
+          platforms: [{ platform: "instagram", account_id: "account-1" }],
+          media_urls: [outside],
+          idempotency_key: "social-media-escape-1",
+        }),
+      );
+
+      expect(output.ok).toBe(false);
+      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { message: string }).message).toContain("generated media");
+      expect(fetched).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uploads exact local media through the enforced credential broker", async () => {
+    process.env.MAGISTER_BROKER_BASE_URL = "http://127.0.0.1:18796";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-social-broker-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const localPath = join(workspace, "resources", "brokered.png");
+      const exactBytes = Buffer.from("exact-brokered-png-bytes");
+      await writeFile(localPath, exactBytes);
+      const calls: Array<{ url: string; init?: RequestInit }> = [];
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        socialDraftAction,
+        async (input, init) => {
+          const url = requestUrl(input);
+          calls.push({ url, init });
+          if (url.endsWith("/social_media_upload_ticket")) {
+            expect(init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
+            return new Response(
+              JSON.stringify({
+                uploadUrl: "https://uploads.example/brokered-signed-target",
+                publicUrl: "https://media.zernio.com/brokered.png",
+              }),
+              { status: 200 },
+            );
+          }
+          if (url === "https://uploads.example/brokered-signed-target") {
+            expect(new Headers(init?.headers).get("authorization")).toBeNull();
+            expect(Buffer.from(init?.body as Buffer)).toEqual(exactBytes);
+            return new Response(null, { status: 200 });
+          }
+          expect(init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
+          expect(requestBody(init)).toMatchObject({
+            arguments: { media_urls: ["https://media.zernio.com/brokered.png"] },
+          });
+          return new Response(JSON.stringify(envelope({ side_effect: "draft" })), {
+            status: 200,
+          });
+        },
+      );
+
+      const output = resultJson(
+        await tool.execute("social-brokered-media", {
+          content: "Exact brokered media",
+          platforms: [{ platform: "instagram", account_id: "account-1" }],
+          media_urls: [localPath],
+          idempotency_key: "social-brokered-media-1",
+        }),
+      );
+
+      expect(output.ok).toBe(true);
+      expect(calls.map((call) => call.url)).toEqual([
+        "http://127.0.0.1:18796/api/agent/actions/social_media_upload_ticket",
+        "https://uploads.example/brokered-signed-target",
+        "http://127.0.0.1:18796/api/agent/actions/create_social_draft",
+      ]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("reuses only freshness-valid cached integration reads", async () => {
     process.env.GATEWAY_TOKEN = "token";
     const workspace = mkdtempSync(join(tmpdir(), "magister-read-cache-"));
@@ -517,6 +698,8 @@ describe("typed gateway execution", () => {
     expect(actionTimeoutMs("get_brand", 45_000)).toBe(45_000);
     expect(actionTimeoutMs("promote_artifact", 45_000)).toBe(90_000);
     expect(actionTimeoutMs("promote_artifact", 120_000)).toBe(120_000);
+    expect(actionTimeoutMs("create_social_draft", 45_000)).toBe(300_000);
+    expect(actionTimeoutMs("create_social_draft", 360_000)).toBe(360_000);
   });
 
   it("rejects a raw legacy result instead of inferring success", async () => {

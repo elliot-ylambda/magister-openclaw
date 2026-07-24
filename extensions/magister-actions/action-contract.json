@@ -748,7 +748,7 @@
       "action": "create_social_draft",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Create an unpublished social draft; scheduling and publishing are separate approvals.",
+      "description": "Create an unpublished social draft from the exact supplied media. media_urls accepts saved generated image/video paths or stable public assets; never substitute or regenerate media. Scheduling and publishing are separate approvals.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -1491,6 +1491,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "4c89b6e92b88732570b4045d69f2b25ba3c5d76db03e5883527e7cf3b98ecfd6",
+  "registry_revision": "ea9a82469528d0c214583b88db29a7667c00b436370dcfc206070ae57c287587",
   "schema_version": 1
 }
