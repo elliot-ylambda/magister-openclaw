@@ -419,3 +419,27 @@ describe("isTransientUnhandledRejectionError", () => {
     );
   });
 });
+
+describe("isTransientNetworkError with HTTP statuses", () => {
+  it("returns true for upstream statuses that mean the server is briefly unavailable", () => {
+    for (const status of [502, 503, 504]) {
+      const error = Object.assign(new Error(`${status} "upstream unavailable"`), { status });
+      expect(isTransientNetworkError(error), `status: ${status}`).toBe(true);
+    }
+  });
+
+  it("reads statusCode as well, since HTTP clients disagree on the property name", () => {
+    const error = Object.assign(new Error("503 service unavailable"), { statusCode: 503 });
+    expect(isTransientNetworkError(error)).toBe(true);
+  });
+
+  it("returns false for 500, which can be a real server-side bug worth surfacing", () => {
+    const error = Object.assign(new Error('500 "internal_error"'), { status: 500 });
+    expect(isTransientNetworkError(error)).toBe(false);
+  });
+
+  it("returns false for client errors, which retrying cannot fix", () => {
+    const error = Object.assign(new Error('403 "forbidden"'), { status: 403 });
+    expect(isTransientNetworkError(error)).toBe(false);
+  });
+});
