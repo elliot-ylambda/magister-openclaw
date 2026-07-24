@@ -20,6 +20,11 @@ describe("isAbortError", () => {
     expect(isAbortError(error)).toBe(true);
   });
 
+  it("returns true for OpenAI SDK APIUserAbortError message", () => {
+    const error = new Error("Request was aborted.");
+    expect(isAbortError(error)).toBe(true);
+  });
+
   it("returns true for undici-style AbortError", () => {
     // Node's undici throws errors with this exact message
     const error = Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
@@ -40,6 +45,7 @@ describe("isAbortError", () => {
     expect(isAbortError(new Error("Operation aborted"))).toBe(false);
     expect(isAbortError(new Error("aborted"))).toBe(false);
     expect(isAbortError(new Error("Request was aborted"))).toBe(false);
+    expect(isAbortError(new Error("Request was aborted by the provider."))).toBe(false);
   });
 
   it.each([null, undefined, "string error", 42, { message: "plain object" }])(

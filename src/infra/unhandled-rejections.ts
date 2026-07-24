@@ -230,9 +230,11 @@ export function isAbortError(err: unknown): boolean {
   if (name === "AbortError") {
     return true;
   }
-  // Check for "This operation was aborted" message from Node's undici
+  // Check exact abort messages emitted by the HTTP clients we use. OpenAI's
+  // APIUserAbortError keeps the generic Error name, so the message is the only
+  // stable discriminator when an SDK request is cancelled after a tool timeout.
   const message = "message" in err && typeof err.message === "string" ? err.message : "";
-  if (message === "This operation was aborted") {
+  if (message === "This operation was aborted" || message === "Request was aborted.") {
     return true;
   }
   return false;
