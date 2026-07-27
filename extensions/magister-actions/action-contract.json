@@ -1424,13 +1424,14 @@
                 "type": "string"
               },
               "sha256": {
+                "description": "Omit this \u2014 it is computed and attested automatically from the file bytes. Never hand-compute or guess a hash.",
                 "maxLength": 64,
                 "minLength": 64,
                 "pattern": "^[a-f0-9]{64}$",
                 "type": "string"
               }
             },
-            "required": ["path", "sha256"],
+            "required": ["path"],
             "type": "object"
           },
           "CompletionBlocker": {
@@ -1583,6 +1584,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "a68141b013a3d72d85f6ad9671bba22643770715e38dd5b1f3cbf6ac5cb2d118",
+  "registry_revision": "684d3b4789248f6adb9521e8b5f8adf147d3d89e50e1ddb523734eced96bff21",
   "schema_version": 1
 }

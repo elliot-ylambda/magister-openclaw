@@ -36,6 +36,10 @@ const SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_WORKSPACE_DIR = "/data/.openclaw/workspace";
 const MAX_COMPLETION_ARTIFACT_BYTES = 16 * 1024 * 1024;
+// A real consolidated report is never this small. Placeholder gaming is real:
+// run 6e06af15 attested a 3-byte "abc" file because its hash is a famous test
+// vector the model knew by heart.
+const MIN_COMPLETION_ARTIFACT_BYTES = 500;
 const MAX_SOCIAL_MEDIA_BYTES = 200 * 1024 * 1024;
 const SOCIAL_MEDIA_CONTENT_TYPES = new Map([
   [".gif", "image/gif"],
@@ -755,13 +759,16 @@ async function attestCompletionArtifacts(
       throw new ArtifactValidationError("Every completion artifact must be an object.");
     }
     const path = rawArtifact.path;
-    const suppliedHash = rawArtifact.sha256;
+    // Optional: when omitted (or null) the plugin computes the hash from the
+    // file bytes below — the agent never has to hash anything itself. A
+    // supplied value is still verified against the bytes for older callers.
+    const suppliedHash = rawArtifact.sha256 ?? undefined;
     const kind = typeof rawArtifact.kind === "string" ? rawArtifact.kind : "file";
     if (
       typeof path !== "string" ||
       !/^resources\/[A-Za-z0-9._/-]{1,480}$/.test(path) ||
-      typeof suppliedHash !== "string" ||
-      !/^[a-f0-9]{64}$/.test(suppliedHash) ||
+      (suppliedHash !== undefined &&
+        (typeof suppliedHash !== "string" || !/^[a-f0-9]{64}$/.test(suppliedHash))) ||
       !/^[A-Za-z0-9._:-]{1,80}$/.test(kind)
     ) {
       throw new ArtifactValidationError("Completion artifact path or SHA-256 is invalid.");
@@ -798,8 +805,14 @@ async function attestCompletionArtifacts(
     if (content.byteLength > MAX_COMPLETION_ARTIFACT_BYTES) {
       throw new ArtifactValidationError(`Completion artifact is too large: ${path}.`);
     }
+    if (content.byteLength < MIN_COMPLETION_ARTIFACT_BYTES) {
+      throw new ArtifactValidationError(
+        `Completion artifact is too small to be a real report (${content.byteLength} bytes): ${path}. ` +
+          "Write the complete report content to that file, then resubmit.",
+      );
+    }
     const actualHash = createHash("sha256").update(content).digest("hex");
-    if (actualHash !== suppliedHash) {
+    if (suppliedHash !== undefined && actualHash !== suppliedHash) {
       throw new ArtifactValidationError(`Completion artifact hash mismatch for ${path}.`);
     }
     normalized.push({ path, sha256: actualHash, kind });

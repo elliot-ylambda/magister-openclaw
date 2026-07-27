@@ -767,7 +767,7 @@ describe("typed gateway execution", () => {
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
     try {
       await mkdir(join(workspace, "resources"));
-      const content = "verified report\n";
+      const content = "verified report line with real analysis in it\n".repeat(16);
       await writeFile(join(workspace, "resources", "report.md"), content);
       const sha256 = createHash("sha256").update(content).digest("hex");
       const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
@@ -818,7 +818,7 @@ describe("typed gateway execution", () => {
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-broker-"));
     try {
       await mkdir(join(workspace, "resources"));
-      const content = "brokered report\n";
+      const content = "brokered report line with real analysis in it\n".repeat(16);
       await writeFile(join(workspace, "resources", "report.md"), content);
       const sha256 = createHash("sha256").update(content).digest("hex");
       const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
@@ -848,12 +848,94 @@ describe("typed gateway execution", () => {
     }
   });
 
+  it("computes and attests the hash itself when sha256 is omitted", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const content = "auto-hashed report line with real analysis in it\n".repeat(16);
+      await writeFile(join(workspace, "resources", "report.md"), content);
+      const expectedSha = createHash("sha256").update(content).digest("hex");
+      const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
+      let request: { init?: RequestInit } | undefined;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async (_input, init) => {
+          request = { init };
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey },
+      );
+
+      const output = resultJson(
+        await tool.execute("completion-auto-hash", {
+          artifacts: [{ path: "resources/report.md" }],
+        }),
+      );
+
+      expect(output.ok).toBe(true);
+      // The forwarded body carries the plugin-computed hash, not the raw input.
+      expect(requestBody(request?.init)).toEqual({
+        arguments: {
+          artifacts: [{ path: "resources/report.md", sha256: expectedSha, kind: "file" }],
+        },
+      });
+      const manifest = [["resources/report.md", expectedSha, "file"]];
+      const expected = createHmac("sha256", "secret-machine-token")
+        .update(`${sessionKey}\n${JSON.stringify(manifest)}`)
+        .digest("hex");
+      expect(request?.init?.headers).toMatchObject({
+        "x-magister-artifact-attestation": `v1=${expected}`,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a placeholder-sized completion artifact before any upstream call", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      // Run 6e06af15 shipped exactly this: a 3-byte test-vector file whose
+      // hash the model knew from memory.
+      await writeFile(join(workspace, "resources", "report.md"), "abc");
+      let fetched = false;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async () => {
+          fetched = true;
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey: "workflow_run:00000000-0000-4000-8000-000000000001" },
+      );
+
+      const output = resultJson(
+        await tool.execute("completion-placeholder", {
+          artifacts: [{ path: "resources/report.md" }],
+        }),
+      );
+
+      expect(output.ok).toBe(false);
+      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { message: string }).message).toContain("too small");
+      expect(fetched).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a completion artifact whose bytes do not match its hash", async () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
     try {
       await mkdir(join(workspace, "resources"));
-      await writeFile(join(workspace, "resources", "report.md"), "actual bytes\n");
+      await writeFile(
+        join(workspace, "resources", "report.md"),
+        "actual report bytes that differ from the supplied hash\n".repeat(10),
+      );
       let fetched = false;
       const tool = createMagisterActionTool(
         api({ workspaceDir: workspace }),
