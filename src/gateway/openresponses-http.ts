@@ -47,6 +47,7 @@ import {
   resolveOpenAiCompatibleHttpSenderIsOwner,
 } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
+import { extractMagisterApprovalEvent } from "./magister-approval-event.js";
 import {
   CreateResponseBodySchema,
   type CreateResponseBody,
@@ -222,7 +223,17 @@ export const __testing = {
   },
 };
 
-function writeSseEvent(res: ServerResponse, event: StreamingEvent) {
+type MagisterApprovalStreamingEvent = {
+  type: "approval";
+  approval_id: string;
+  operation_id: string;
+  state: "pending";
+};
+
+function writeSseEvent(
+  res: ServerResponse,
+  event: StreamingEvent | MagisterApprovalStreamingEvent,
+) {
   res.write(`event: ${event.type}\n`);
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
@@ -952,6 +963,22 @@ export async function handleOpenResponsesHttpRequest(
         content_index: 0,
         delta: content,
       });
+      return;
+    }
+
+    if (evt.stream === "tool") {
+      const data = evt.data as Record<string, unknown> | undefined;
+      if (data) {
+        const approval = extractMagisterApprovalEvent({
+          phase: data.phase,
+          name: data.name,
+          isError: data.isError,
+          result: data.result,
+        });
+        if (approval) {
+          writeSseEvent(res, { type: "approval", ...approval });
+        }
+      }
       return;
     }
 

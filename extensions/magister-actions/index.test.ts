@@ -27,6 +27,12 @@ const writeAction = nativeActionContract.actions.find((row) => row.action === "s
 if (!writeAction) {
   throw new Error("send_email contract missing");
 }
+const socialDraftAction = nativeActionContract.actions.find(
+  (row) => row.action === "create_social_draft",
+);
+if (!socialDraftAction) {
+  throw new Error("create_social_draft contract missing");
+}
 const completionAction = nativeActionContract.actions.find(
   (row) => row.action === "submit_workflow_completion",
 );
@@ -127,6 +133,19 @@ describe("Magister action manifest contract", () => {
       expect(JSON.stringify(row.input_schema)).not.toContain("project_id");
     }
   });
+
+  it("routes exact inline permissions through the trusted server-owned card", () => {
+    const tool = createMagisterActionTool(api(), writeAction, async () => {
+      throw new Error("not called");
+    });
+
+    expect(tool.description).toContain('receipt.approval_presentation is "inline_web"');
+    expect(tool.description).toContain("do not print receipt.approval_url");
+    expect(tool.description).toContain('receipt.approval_presentation is "slack_card_scheduled"');
+    expect(tool.description).toContain("never call message(action=send)");
+    expect(tool.description).toContain('receipt.approval_presentation is "link_only"');
+    expect(tool.description).toContain("show receipt.approval_url once");
+  });
 });
 
 describe("typed gateway execution", () => {
@@ -172,7 +191,30 @@ describe("typed gateway execution", () => {
     expect(requestBody(request?.init)).toEqual({ arguments: {} });
   });
 
-  it("does not forward ordinary chat session keys", async () => {
+  it("forwards only canonical web chat session keys", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    let request: { init?: RequestInit } | undefined;
+    const tool = createMagisterActionTool(
+      api(),
+      action,
+      async (_input, init) => {
+        request = { init };
+        return new Response(JSON.stringify(envelope()), { status: 200 });
+      },
+      {
+        sessionKey: "agent:main:webchat:00000000-0000-4000-8000-000000000001",
+        sessionId: "11111111-1111-4111-8111-111111111111",
+      },
+    );
+
+    await tool.execute("call-chat", {});
+    expect(request?.init?.headers).toMatchObject({
+      "x-magister-session-key": "agent:main:webchat:00000000-0000-4000-8000-000000000001",
+      "x-magister-session-id": "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("does not forward a malformed web chat session key", async () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     let request: { init?: RequestInit } | undefined;
     const tool = createMagisterActionTool(
@@ -185,8 +227,9 @@ describe("typed gateway execution", () => {
       { sessionKey: "agent:main:webchat:session-1" },
     );
 
-    await tool.execute("call-chat", {});
+    await tool.execute("call-malformed-chat", {});
     expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
+    expect(request?.init?.headers).not.toHaveProperty("x-magister-session-id");
   });
 
   it("forwards a trusted Slack thread session outside tool arguments", async () => {
@@ -331,6 +374,181 @@ describe("typed gateway execution", () => {
     expect(output.ok).toBe(true);
     expect(request?.input).toBe("http://127.0.0.1:18796/api/agent/actions/get_brand");
     expect(request?.init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
+  });
+
+  it.each([
+    ["image", "exact.jpg", "image/jpeg", Buffer.from("exact-jpeg-bytes")],
+    ["video", "exact.mp4", "video/mp4", Buffer.from("exact-mp4-bytes")],
+  ])(
+    "uploads exact local %s bytes before creating a social draft",
+    async (_kind, filename, expectedContentType, exactBytes) => {
+      process.env.GATEWAY_TOKEN = "secret-machine-token";
+      const workspace = await mkdtemp(join(tmpdir(), "magister-social-media-"));
+      try {
+        await mkdir(join(workspace, "resources"));
+        const localPath = join(workspace, "resources", filename);
+        await writeFile(localPath, exactBytes);
+        const publicUrl = `https://media.zernio.com/${filename}`;
+        const calls: Array<{ url: string; init?: RequestInit }> = [];
+        const tool = createMagisterActionTool(
+          api({ workspaceDir: workspace }),
+          socialDraftAction,
+          async (input, init) => {
+            const url = requestUrl(input);
+            calls.push({ url, init });
+            if (
+              url ===
+              "http://magister-gateway.internal:8081/api/agent/actions/social_media_upload_ticket"
+            ) {
+              const ticketRequest = requestBody(init);
+              expect(ticketRequest.content_type).toBe(expectedContentType);
+              expect(ticketRequest.account_ids).toEqual(["account-1"]);
+              expect(ticketRequest.filename).toMatch(
+                new RegExp(`^[a-f0-9]{64}\\.${filename.split(".").at(-1)}$`),
+              );
+              return new Response(
+                JSON.stringify({
+                  uploadUrl: "https://uploads.example/exact-signed-target",
+                  publicUrl,
+                }),
+                { status: 200 },
+              );
+            }
+            if (url === "https://uploads.example/exact-signed-target") {
+              const headers = new Headers(init?.headers);
+              expect(headers.get("authorization")).toBeNull();
+              expect(headers.get("content-type")).toBe(expectedContentType);
+              expect(Buffer.isBuffer(init?.body)).toBe(true);
+              expect(Buffer.from(init?.body as Buffer)).toEqual(exactBytes);
+              return new Response(null, { status: 200 });
+            }
+            expect(url).toBe(
+              "http://magister-gateway.internal:8081/api/agent/actions/create_social_draft",
+            );
+            expect(requestBody(init)).toMatchObject({
+              arguments: { media_urls: [publicUrl] },
+            });
+            return new Response(
+              JSON.stringify(envelope({ side_effect: "draft", receipt: { post_id: "post-1" } })),
+              { status: 200 },
+            );
+          },
+        );
+
+        const output = resultJson(
+          await tool.execute("social-local-media", {
+            content: "Exact media",
+            platforms: [{ platform: "instagram", account_id: "account-1" }],
+            media_urls: [localPath],
+            idempotency_key: "social-local-media-1",
+          }),
+        );
+
+        expect(output.ok).toBe(true);
+        expect(calls.map((call) => call.url)).toEqual([
+          "http://magister-gateway.internal:8081/api/agent/actions/social_media_upload_ticket",
+          "https://uploads.example/exact-signed-target",
+          "http://magister-gateway.internal:8081/api/agent/actions/create_social_draft",
+        ]);
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects local social media that escapes generated media and resources", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-social-escape-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const outside = join(workspace, "outside.jpg");
+      await writeFile(outside, "not approved local media");
+      let fetched = false;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        socialDraftAction,
+        async () => {
+          fetched = true;
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+      );
+
+      const output = resultJson(
+        await tool.execute("social-media-escape", {
+          content: "No escape",
+          platforms: [{ platform: "instagram", account_id: "account-1" }],
+          media_urls: [outside],
+          idempotency_key: "social-media-escape-1",
+        }),
+      );
+
+      expect(output.ok).toBe(false);
+      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { message: string }).message).toContain("generated media");
+      expect(fetched).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("uploads exact local media through the enforced credential broker", async () => {
+    process.env.MAGISTER_BROKER_BASE_URL = "http://127.0.0.1:18796";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-social-broker-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const localPath = join(workspace, "resources", "brokered.png");
+      const exactBytes = Buffer.from("exact-brokered-png-bytes");
+      await writeFile(localPath, exactBytes);
+      const calls: Array<{ url: string; init?: RequestInit }> = [];
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        socialDraftAction,
+        async (input, init) => {
+          const url = requestUrl(input);
+          calls.push({ url, init });
+          if (url.endsWith("/social_media_upload_ticket")) {
+            expect(init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
+            return new Response(
+              JSON.stringify({
+                uploadUrl: "https://uploads.example/brokered-signed-target",
+                publicUrl: "https://media.zernio.com/brokered.png",
+              }),
+              { status: 200 },
+            );
+          }
+          if (url === "https://uploads.example/brokered-signed-target") {
+            expect(new Headers(init?.headers).get("authorization")).toBeNull();
+            expect(Buffer.from(init?.body as Buffer)).toEqual(exactBytes);
+            return new Response(null, { status: 200 });
+          }
+          expect(init?.headers).toMatchObject({ authorization: "Bearer broker-local" });
+          expect(requestBody(init)).toMatchObject({
+            arguments: { media_urls: ["https://media.zernio.com/brokered.png"] },
+          });
+          return new Response(JSON.stringify(envelope({ side_effect: "draft" })), {
+            status: 200,
+          });
+        },
+      );
+
+      const output = resultJson(
+        await tool.execute("social-brokered-media", {
+          content: "Exact brokered media",
+          platforms: [{ platform: "instagram", account_id: "account-1" }],
+          media_urls: [localPath],
+          idempotency_key: "social-brokered-media-1",
+        }),
+      );
+
+      expect(output.ok).toBe(true);
+      expect(calls.map((call) => call.url)).toEqual([
+        "http://127.0.0.1:18796/api/agent/actions/social_media_upload_ticket",
+        "https://uploads.example/brokered-signed-target",
+        "http://127.0.0.1:18796/api/agent/actions/create_social_draft",
+      ]);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   it("reuses only freshness-valid cached integration reads", async () => {
@@ -480,6 +698,8 @@ describe("typed gateway execution", () => {
     expect(actionTimeoutMs("get_brand", 45_000)).toBe(45_000);
     expect(actionTimeoutMs("promote_artifact", 45_000)).toBe(90_000);
     expect(actionTimeoutMs("promote_artifact", 120_000)).toBe(120_000);
+    expect(actionTimeoutMs("create_social_draft", 45_000)).toBe(300_000);
+    expect(actionTimeoutMs("create_social_draft", 360_000)).toBe(360_000);
   });
 
   it("rejects a raw legacy result instead of inferring success", async () => {
@@ -547,7 +767,7 @@ describe("typed gateway execution", () => {
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
     try {
       await mkdir(join(workspace, "resources"));
-      const content = "verified report\n";
+      const content = "verified report line with real analysis in it\n".repeat(16);
       await writeFile(join(workspace, "resources", "report.md"), content);
       const sha256 = createHash("sha256").update(content).digest("hex");
       const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
@@ -598,7 +818,7 @@ describe("typed gateway execution", () => {
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-broker-"));
     try {
       await mkdir(join(workspace, "resources"));
-      const content = "brokered report\n";
+      const content = "brokered report line with real analysis in it\n".repeat(16);
       await writeFile(join(workspace, "resources", "report.md"), content);
       const sha256 = createHash("sha256").update(content).digest("hex");
       const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
@@ -628,12 +848,94 @@ describe("typed gateway execution", () => {
     }
   });
 
+  it("computes and attests the hash itself when sha256 is omitted", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      const content = "auto-hashed report line with real analysis in it\n".repeat(16);
+      await writeFile(join(workspace, "resources", "report.md"), content);
+      const expectedSha = createHash("sha256").update(content).digest("hex");
+      const sessionKey = "workflow_run:00000000-0000-4000-8000-000000000001";
+      let request: { init?: RequestInit } | undefined;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async (_input, init) => {
+          request = { init };
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey },
+      );
+
+      const output = resultJson(
+        await tool.execute("completion-auto-hash", {
+          artifacts: [{ path: "resources/report.md" }],
+        }),
+      );
+
+      expect(output.ok).toBe(true);
+      // The forwarded body carries the plugin-computed hash, not the raw input.
+      expect(requestBody(request?.init)).toEqual({
+        arguments: {
+          artifacts: [{ path: "resources/report.md", sha256: expectedSha, kind: "file" }],
+        },
+      });
+      const manifest = [["resources/report.md", expectedSha, "file"]];
+      const expected = createHmac("sha256", "secret-machine-token")
+        .update(`${sessionKey}\n${JSON.stringify(manifest)}`)
+        .digest("hex");
+      expect(request?.init?.headers).toMatchObject({
+        "x-magister-artifact-attestation": `v1=${expected}`,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a placeholder-sized completion artifact before any upstream call", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
+    try {
+      await mkdir(join(workspace, "resources"));
+      // Run 6e06af15 shipped exactly this: a 3-byte test-vector file whose
+      // hash the model knew from memory.
+      await writeFile(join(workspace, "resources", "report.md"), "abc");
+      let fetched = false;
+      const tool = createMagisterActionTool(
+        api({ workspaceDir: workspace }),
+        completionAction,
+        async () => {
+          fetched = true;
+          return new Response(JSON.stringify(envelope()), { status: 200 });
+        },
+        { sessionKey: "workflow_run:00000000-0000-4000-8000-000000000001" },
+      );
+
+      const output = resultJson(
+        await tool.execute("completion-placeholder", {
+          artifacts: [{ path: "resources/report.md" }],
+        }),
+      );
+
+      expect(output.ok).toBe(false);
+      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { message: string }).message).toContain("too small");
+      expect(fetched).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a completion artifact whose bytes do not match its hash", async () => {
     process.env.GATEWAY_TOKEN = "secret-machine-token";
     const workspace = await mkdtemp(join(tmpdir(), "magister-actions-"));
     try {
       await mkdir(join(workspace, "resources"));
-      await writeFile(join(workspace, "resources", "report.md"), "actual bytes\n");
+      await writeFile(
+        join(workspace, "resources", "report.md"),
+        "actual report bytes that differ from the supplied hash\n".repeat(10),
+      );
       let fetched = false;
       const tool = createMagisterActionTool(
         api({ workspaceDir: workspace }),

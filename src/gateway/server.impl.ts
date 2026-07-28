@@ -1,7 +1,5 @@
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { getActiveEmbeddedRunCount } from "../agents/pi-embedded-runner/run-state.js";
-import { registerSlackCompletionWebhookHook } from "../agents/slack-completion-webhook.js";
-import { registerSubagentCompletionWebhookHook } from "../agents/subagent-completion-webhook.js";
 import { getTotalPendingReplies } from "../auto-reply/reply/dispatcher-registry.js";
 import { CANVAS_HOST_PATH } from "../canvas-host/a2ui-shared.js";
 import type { CanvasHostServer } from "../canvas-host/server.js";
@@ -889,16 +887,6 @@ export async function startGatewayServer(
     hasMobileNodeConnected,
   } = createGatewayNodeSessionRuntime({ broadcast });
   applyGatewayLaneConcurrency(cfgAtStart);
-
-  // Magister fork: register subagent completion webhook hook at gateway boot.
-  // Mirrors the cron.completionWebhook pattern (see server-cron-notifications.ts).
-  // No-op when subagent.completionWebhook is unset.
-  registerSubagentCompletionWebhookHook(cfgAtStart);
-
-  // Magister fork: Slack run completion webhook — lets the Magister gateway
-  // hold the project turn slot until a Slack-triggered run finishes.
-  // No-op when slackCompletion.completionWebhook is unset.
-  registerSlackCompletionWebhookHook(cfgAtStart);
 
   runtimeState = createGatewayServerLiveState({
     hooksConfig: initialHooksConfig,

@@ -7,6 +7,7 @@
 
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { enqueueAndDeliverDurableWebhook } from "../infra/outbound/durable-webhook-outbox.js";
+import type { GlobalHookRunnerRegistry } from "../plugins/hook-registry.types.js";
 import { getGlobalPluginRegistry } from "../plugins/hook-runner-global.js";
 import type { PluginHookHandlerMap } from "../plugins/types.js";
 
@@ -72,14 +73,20 @@ export async function sendSlackCompletionWebhook(params: {
  * `webhookToken` supports inline string tokens only, matching how
  * `subagent.webhookToken` is consumed.
  */
-export function registerSlackCompletionWebhookHook(cfg: OpenClawConfig): void {
+export function registerSlackCompletionWebhookHook(
+  cfg: OpenClawConfig,
+  registryOverride?: GlobalHookRunnerRegistry,
+): void {
   const url = cfg.slackCompletion?.completionWebhook?.trim();
   const rawToken = cfg.slackCompletion?.webhookToken;
   const token = typeof rawToken === "string" ? rawToken.trim() : undefined;
   if (!url || !token) {
     return;
   }
-  const registry = getGlobalPluginRegistry();
+  // Gateway startup can defer plugin loading until after the HTTP listener is
+  // attached. In that path the global registry does not exist when core
+  // startup first runs, so accept the freshly loaded registry explicitly.
+  const registry = registryOverride ?? getGlobalPluginRegistry();
   if (!registry) {
     return;
   }

@@ -44,6 +44,7 @@ import {
   resolveOpenAiCompatibleHttpSenderIsOwner,
 } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
+import { extractMagisterApprovalEvent } from "./magister-approval-event.js";
 
 type OpenAiHttpOptions = {
   auth: ResolvedGatewayAuth;
@@ -754,6 +755,15 @@ export async function handleOpenAiHttpRequest(
           ...(data.args !== undefined && { args: data.args }),
           ...(Boolean(data.isError) && data.result !== undefined && { result: data.result }),
         });
+        const approval = extractMagisterApprovalEvent({
+          phase: data.phase,
+          name: data.name,
+          isError: data.isError,
+          result: data.result,
+        });
+        if (approval) {
+          writeCustomSseEvent(res, "approval", approval);
+        }
       }
       return;
     }

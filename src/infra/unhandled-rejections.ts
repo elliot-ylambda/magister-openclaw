@@ -71,6 +71,12 @@ const TRANSIENT_NETWORK_CODES = new Set([
   "ERR_SSL_PROTOCOL_RETURNED_AN_ERROR",
 ]);
 
+// The same outage reaches us as an errno when we hold the socket and as an
+// HTTP status when a proxy in front of the server holds it for us.  Both mean
+// "briefly unavailable, try again", so neither should kill the process.  500 is
+// excluded: it can report a real server-side bug worth surfacing.
+const TRANSIENT_HTTP_STATUSES = new Set([502, 503, 504]);
+
 const TRANSIENT_NETWORK_ERROR_NAMES = new Set([
   "AbortError",
   "ConnectTimeoutError",
@@ -230,9 +236,11 @@ export function isAbortError(err: unknown): boolean {
   if (name === "AbortError") {
     return true;
   }
-  // Check for "This operation was aborted" message from Node's undici
+  // Check exact abort messages emitted by the HTTP clients we use. OpenAI's
+  // APIUserAbortError keeps the generic Error name, so the message is the only
+  // stable discriminator when an SDK request is cancelled after a tool timeout.
   const message = "message" in err && typeof err.message === "string" ? err.message : "";
-  if (message === "This operation was aborted") {
+  if (message === "This operation was aborted" || message === "Request was aborted.") {
     return true;
   }
   return false;
@@ -268,6 +276,13 @@ function collectNestedUnhandledErrorCandidates(err: unknown): unknown[] {
  * Checks if an error is a transient network error that shouldn't crash the gateway.
  * These are typically temporary connectivity issues that will resolve on their own.
  */
+/** HTTP clients disagree on the property name, so read both. */
+function isTransientHttpStatus(candidate: object): boolean {
+  const source = candidate as { status?: unknown; statusCode?: unknown };
+  const raw = typeof source.status === "number" ? source.status : source.statusCode;
+  return typeof raw === "number" && TRANSIENT_HTTP_STATUSES.has(raw);
+}
+
 export function isTransientNetworkError(err: unknown): boolean {
   if (!err) {
     return false;
@@ -285,6 +300,9 @@ export function isTransientNetworkError(err: unknown): boolean {
 
     if (!candidate || typeof candidate !== "object") {
       continue;
+    }
+    if (isTransientHttpStatus(candidate)) {
+      return true;
     }
     const rawMessage = (candidate as { message?: unknown }).message;
     const message = normalizeLowercaseStringOrEmpty(rawMessage);

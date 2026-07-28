@@ -1,4 +1,5 @@
 import { Type, type TSchema } from "typebox";
+import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options.types.js";
 import { listChannelPlugins } from "../../channels/plugins/index.js";
 import {
   channelSupportsMessageCapability,
@@ -514,6 +515,7 @@ type MessageToolOptions = {
   currentChannelProvider?: string;
   currentThreadTs?: string;
   currentMessageId?: string | number;
+  sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   replyToMode?: "off" | "first" | "all" | "batched";
   hasRepliedRef?: { value: boolean };
   sandboxRoot?: string;
@@ -521,6 +523,75 @@ type MessageToolOptions = {
   requesterSenderId?: string;
   senderIsOwner?: boolean;
 };
+
+const AUTOMATIC_SLACK_REPLY_ERROR =
+  "This Slack conversation already receives your normal final reply automatically. " +
+  "Do not use message(action=send) for this reply, progress update, or approval notice; " +
+  "return the text as your normal final answer. Use the message tool only for an " +
+  "explicitly requested different destination or a non-text channel action.";
+
+function normalizeSlackConversationTarget(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  let normalized = value.trim().toLowerCase();
+  for (const prefix of ["slack:", "channel:", "group:"]) {
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.slice(prefix.length).trim();
+    }
+  }
+  return normalized;
+}
+
+function isPlainTextSendToCurrentAutomaticSlackConversation(params: {
+  args: Record<string, unknown>;
+  options?: MessageToolOptions;
+}): boolean {
+  const { args, options } = params;
+  if (options?.sourceReplyDeliveryMode !== "automatic") {
+    return false;
+  }
+  const currentProvider = normalizeMessageChannel(options.currentChannelProvider);
+  const requestedProvider = normalizeMessageChannel(
+    readStringParam(args, "channel") ?? options.currentChannelProvider,
+  );
+  if (currentProvider !== "slack" || requestedProvider !== "slack") {
+    return false;
+  }
+
+  const currentTarget = normalizeSlackConversationTarget(options.currentChannelId);
+  if (!currentTarget) {
+    return false;
+  }
+  const explicitTarget =
+    readStringParam(args, "target") ??
+    readStringParam(args, "to") ??
+    readStringParam(args, "channelId");
+  if (explicitTarget && normalizeSlackConversationTarget(explicitTarget) !== currentTarget) {
+    return false;
+  }
+
+  const explicitThread = readStringParam(args, "threadId") ?? readStringParam(args, "replyTo");
+  if (explicitThread) {
+    const currentThread = options.currentThreadTs?.trim() ?? "";
+    const currentMessage = String(options.currentMessageId ?? "").trim();
+    if (explicitThread !== currentThread && explicitThread !== currentMessage) {
+      return false;
+    }
+  }
+
+  return ![
+    "media",
+    "mediaUrl",
+    "path",
+    "filePath",
+    "fileUrl",
+    "buffer",
+    "presentation",
+    "interactive",
+    "buttons",
+  ].some((field) => args[field] != null);
+}
 
 type MessageToolDiscoveryParams = {
   cfg: OpenClawConfig;
@@ -769,6 +840,12 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       const action = readStringParam(params, "action", {
         required: true,
       }) as ChannelMessageActionName;
+      if (
+        action === "send" &&
+        isPlainTextSendToCurrentAutomaticSlackConversation({ args: params, options })
+      ) {
+        throw new Error(AUTOMATIC_SLACK_REPLY_ERROR);
+      }
       const requireExplicitTarget = options?.requireExplicitTarget === true;
       if (requireExplicitTarget && actionNeedsExplicitTarget(action)) {
         const explicitTarget =

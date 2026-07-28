@@ -407,6 +407,87 @@ describe("message tool explicit target guard", () => {
   });
 });
 
+describe("message tool automatic Slack reply guard", () => {
+  const automaticSlackOptions = {
+    currentChannelProvider: "slack",
+    currentChannelId: "C123",
+    currentThreadTs: "111.000",
+    currentMessageId: "111.111",
+    sourceReplyDeliveryMode: "automatic" as const,
+  };
+
+  it.each([
+    { label: "implicit current target", action: {} },
+    { label: "explicit current target", action: { target: "C123" } },
+    { label: "prefixed current target", action: { target: "channel:C123" } },
+    {
+      label: "explicit inbound reply target",
+      action: { target: "C123", replyTo: "111.111" },
+    },
+    {
+      label: "explicit current thread",
+      action: { target: "C123", threadId: "111.000" },
+    },
+  ])("blocks a plain-text send to the $label", async ({ action }) => {
+    const tool = createMessageTool({
+      ...automaticSlackOptions,
+      config: {} as never,
+      runMessageAction: mocks.runMessageAction as never,
+    });
+
+    await expect(
+      tool.execute("1", {
+        action: "send",
+        message: "Please approve the email using the permission controls here.",
+        ...action,
+      }),
+    ).rejects.toThrow(/already receives your normal final reply automatically/i);
+
+    expect(mocks.runMessageAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: "another channel", action: { target: "C999" } },
+    {
+      label: "another thread",
+      action: { target: "C123", threadId: "222.000" },
+    },
+  ])("allows an explicitly different Slack destination: $label", async ({ action }) => {
+    mockSendResult({ channel: "slack", to: action.target });
+    const tool = createMessageTool({
+      ...automaticSlackOptions,
+      config: {} as never,
+      runMessageAction: mocks.runMessageAction as never,
+    });
+
+    await tool.execute("1", {
+      action: "send",
+      message: "Post this elsewhere.",
+      ...action,
+    });
+
+    expect(mocks.runMessageAction).toHaveBeenCalledOnce();
+  });
+
+  it("does not apply when visible replies require the message tool", async () => {
+    mockSendResult({ channel: "slack", to: "C123" });
+    const tool = createMessageTool({
+      ...automaticSlackOptions,
+      sourceReplyDeliveryMode: "message_tool_only",
+      config: {} as never,
+      runMessageAction: mocks.runMessageAction as never,
+    });
+
+    await tool.execute("1", {
+      action: "send",
+      target: "C123",
+      message: "Visible reply",
+    });
+
+    expect(mocks.runMessageAction).toHaveBeenCalledOnce();
+  });
+});
+
 describe("message tool path passthrough", () => {
   it.each([
     { field: "path", value: "~/Downloads/voice.ogg" },

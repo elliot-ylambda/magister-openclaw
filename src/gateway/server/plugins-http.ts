@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { emitDiagnosticEvent } from "../../infra/diagnostic-events.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { PluginRegistry } from "../../plugins/registry.js";
 import { resolveActivePluginHttpRouteRegistry } from "../../plugins/runtime.js";
@@ -141,6 +142,11 @@ export function createGatewayPluginRequestHandler(params: {
         }
       } catch (err) {
         log.warn(`plugin http route failed (${route.pluginId ?? "unknown"}): ${String(err)}`);
+        emitDiagnosticEvent({
+          type: "http.request.error",
+          surface: "plugin_http",
+          failureKind: "handler_exception",
+        });
         if (!res.headersSent) {
           res.statusCode = 500;
           res.setHeader("Content-Type", "text/plain; charset=utf-8");

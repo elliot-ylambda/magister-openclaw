@@ -65,9 +65,13 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Google media generation: trust the exact Magister loopback credential-broker route for image requests and carry the private-network policy through Veo REST fallbacks, restoring brokered image and video generation without exposing provider credentials to tenant machines.
+- Magister approvals: defer exact-action approval rendering to the trusted inline web card, suppress duplicate approval links, and keep link-only surfaces on the canonical approval URL.
+- Magister/permissions: resume the originating agent session after an exact action is approved or denied, preserve denial notes as untrusted agent feedback, and deliver Slack continuations back to the originating thread.
 - Magister/email approvals: expose a separate native tool for approved sends from the project's built-in agent address.
 - Magister/Slack approvals: forward trusted Slack runtime session context to native actions so approval cards can return to the exact originating channel thread without exposing routing fields to the model.
 - Magister/runtime safety: require live gateway commit attestation for artifact, corpus, memory, user-profile, and heartbeat writes; reclaim bounded per-attempt scratch space; and reject stale mutation owners before atomic promotion.
+- Magister/workflows: expose typed template discovery, input-aware forking, and durable run actions so project agents can start workflows without blocked shell-network requests.
 - Security/dependencies: refresh vulnerable runtime and test packages, move Baileys to the fixed rc13 release, and backport three Pi coding-agent protections for managed install paths, credential-file permissions, and exported Markdown URLs.
 - Plugins/install: honor the beta update channel for onboarding and doctor-managed plugin installs by requesting floating npm and ClawHub specs with `@beta` while keeping persistent install records on the catalog default. Thanks @vincentkoc.
 - WhatsApp/onboarding: canonicalize setup and pairing allowlist entries to WhatsApp's digit-only phone ids while still accepting E.164, JID, and `whatsapp:` inputs, so personal-phone allowlists match WhatsApp Web sender ids after setup. Thanks @vincentkoc.

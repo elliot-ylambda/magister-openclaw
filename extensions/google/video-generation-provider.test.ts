@@ -252,6 +252,60 @@ describe("google video generation provider", () => {
     expect(result.videos[0]?.buffer).toEqual(Buffer.from("rest-video"));
   });
 
+  it("allows the brokered REST video fallback on the configured loopback route", async () => {
+    vi.spyOn(providerAuthRuntime, "resolveApiKeyForProvider").mockResolvedValue({
+      apiKey: "broker-local",
+      source: "env",
+      mode: "api-key",
+    });
+    generateVideosMock.mockRejectedValue(Object.assign(new Error("sdk 404"), { status: 404 }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          done: true,
+          response: {
+            generateVideoResponse: {
+              generatedSamples: [
+                {
+                  video: {
+                    videoBytes: Buffer.from("brokered-rest-video").toString("base64"),
+                    mimeType: "video/mp4",
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = buildGoogleVideoGenerationProvider();
+    const result = await provider.generateVideo({
+      provider: "google",
+      model: "veo-3.1-fast-generate-preview",
+      prompt: "A tiny robot watering a windowsill garden",
+      cfg: {
+        models: {
+          providers: {
+            google: {
+              baseUrl: "http://127.0.0.1:18796/api/gemini/v1beta",
+              models: [],
+              request: { allowPrivateNetwork: true },
+            },
+          },
+        },
+      },
+      durationSeconds: 4,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "http://127.0.0.1:18796/api/gemini/v1beta/models/veo-3.1-fast-generate-preview:predictLongRunning",
+    );
+    expect(result.videos[0]?.buffer).toEqual(Buffer.from("brokered-rest-video"));
+  });
+
   it("does not fall back to REST when SDK video generation with reference inputs returns 404", async () => {
     vi.spyOn(providerAuthRuntime, "resolveApiKeyForProvider").mockResolvedValue({
       apiKey: "google-key",
@@ -374,11 +428,11 @@ describe("google video generation provider", () => {
 
   // Magister patch — see resolveGoogleGeneratedVideoDownloadUrl in
   // video-generation-provider.ts. When configured baseUrl is our internal
-  // gateway proxy (http://magister-gateway.internal), direct download from
+  // loopback credential broker, direct download from
   // canonical Google must be skipped — the agent uses GATEWAY_TOKEN, not the
   // real Gemini key. SDK fallback (client.files.download) routes through the
   // configured baseUrl and the proxy follows Google's 302 server-side.
-  it("falls back to the SDK download path when configured baseUrl is the internal http proxy", async () => {
+  it("falls back to the SDK download path when configured baseUrl is the local broker", async () => {
     vi.spyOn(providerAuthRuntime, "resolveApiKeyForProvider").mockResolvedValue({
       apiKey: "gateway-token",
       source: "env",
@@ -420,8 +474,9 @@ describe("google video generation provider", () => {
         models: {
           providers: {
             google: {
-              baseUrl: "http://magister-gateway.internal:8081/api/gemini/v1beta",
+              baseUrl: "http://127.0.0.1:18796/api/gemini/v1beta",
               models: [],
+              request: { allowPrivateNetwork: true },
             },
           },
         },
@@ -430,6 +485,13 @@ describe("google video generation provider", () => {
 
     expect(downloadMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(createGoogleGenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        httpOptions: expect.objectContaining({
+          baseUrl: "http://127.0.0.1:18796/api/gemini",
+        }),
+      }),
+    );
     expect(result.videos).toHaveLength(1);
     expect(result.videos?.[0]?.buffer?.toString()).toBe("sdk-downloaded-mp4");
   });

@@ -1,3 +1,4 @@
+import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import { selectApplicableRuntimeConfig } from "../config/config.js";
 import type { AgentModelConfig } from "../config/types.agents-shared.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -298,6 +299,7 @@ export function createOpenClawTools(
     currentThreadTs?: string;
     /** Current inbound message id for action fallbacks. */
     currentMessageId?: string | number;
+    sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
     /** Reply-to mode for auto-threading. */
     replyToMode?: "off" | "first" | "all" | "batched";
     /** Mutable ref to track if a reply was sent (for "first" mode). */
@@ -480,6 +482,7 @@ export function createOpenClawTools(
         currentChannelProvider: options?.agentChannel,
         currentThreadTs: options?.currentThreadTs,
         currentMessageId: options?.currentMessageId,
+        sourceReplyDeliveryMode: options?.sourceReplyDeliveryMode,
         replyToMode: options?.replyToMode,
         hasRepliedRef: options?.hasRepliedRef,
         sandboxRoot: options?.sandboxRoot,

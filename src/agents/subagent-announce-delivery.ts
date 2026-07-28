@@ -537,7 +537,9 @@ async function maybeQueueSubagentAnnounce(params: {
   return "none";
 }
 
-function extractTaskCompletionFallbackText(event: AgentInternalEvent): string {
+type AgentTaskCompletionInternalEvent = Extract<AgentInternalEvent, { type: "task_completion" }>;
+
+function extractTaskCompletionFallbackText(event: AgentTaskCompletionInternalEvent): string {
   const result = event.result.trim();
   if (result) {
     return result;
@@ -557,7 +559,7 @@ function extractTaskCompletionFallbackText(event: AgentInternalEvent): string {
 }
 
 function formatTaskCompletionFallbackBlock(params: {
-  event: AgentInternalEvent;
+  event: AgentTaskCompletionInternalEvent;
   text: string;
   includeTaskLabel: boolean;
 }): string {

@@ -14,6 +14,7 @@ import { createHookRunner, type HookRunner } from "./hooks.js";
 type HookRunnerGlobalState = {
   hookRunner: HookRunner | null;
   registry: GlobalHookRunnerRegistry | null;
+  registryPinned: boolean;
 };
 
 const hookRunnerGlobalStateKey = Symbol.for("openclaw.plugins.hook-runner-global-state");
@@ -21,6 +22,7 @@ const getState = () =>
   resolveGlobalSingleton<HookRunnerGlobalState>(hookRunnerGlobalStateKey, () => ({
     hookRunner: null,
     registry: null,
+    registryPinned: false,
   }));
 
 const getLog = () => createSubsystemLogger("plugins");
@@ -29,7 +31,7 @@ const getLog = () => createSubsystemLogger("plugins");
  * Initialize the global hook runner with a plugin registry.
  * Called once when plugins are loaded during gateway startup.
  */
-export function initializeGlobalHookRunner(registry: GlobalHookRunnerRegistry): void {
+function installGlobalHookRunner(registry: GlobalHookRunnerRegistry): void {
   const state = getState();
   const log = getLog();
   state.registry = registry;
@@ -49,6 +51,27 @@ export function initializeGlobalHookRunner(registry: GlobalHookRunnerRegistry): 
   if (hookCount > 0) {
     log.debug(`hook runner initialized with ${hookCount} registered hooks`);
   }
+}
+
+export function initializeGlobalHookRunner(registry: GlobalHookRunnerRegistry): void {
+  const state = getState();
+  if (state.registryPinned && state.registry !== registry) {
+    return;
+  }
+  installGlobalHookRunner(registry);
+}
+
+/**
+ * Keep the gateway's hook registry authoritative across later plugin loads.
+ *
+ * Tool and binding discovery can activate other registries after gateway
+ * startup. Those registries must not replace lifecycle hooks that own durable
+ * completion callbacks. Gateway reloads call this again with their new
+ * registry, which deliberately advances the pin.
+ */
+export function pinGlobalHookRunnerRegistry(registry: GlobalHookRunnerRegistry): void {
+  installGlobalHookRunner(registry);
+  getState().registryPinned = true;
 }
 
 /**
@@ -102,4 +125,5 @@ export function resetGlobalHookRunner(): void {
   const state = getState();
   state.hookRunner = null;
   state.registry = null;
+  state.registryPinned = false;
 }

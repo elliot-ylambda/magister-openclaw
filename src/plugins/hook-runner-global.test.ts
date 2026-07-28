@@ -52,4 +52,33 @@ describe("hook-runner-global", () => {
 
     await expectGlobalRunnerState({ hasRunner: false });
   });
+
+  it("keeps pinned gateway lifecycle hooks across later registry initialization", async () => {
+    const mod = await importHookRunnerGlobalModule();
+    const agentEnd = vi.fn();
+    const gatewayRegistry = createMockPluginRegistry([
+      { hookName: "agent_end", handler: agentEnd },
+    ]);
+    const laterRegistry = createMockPluginRegistry([
+      { hookName: "message_received", handler: vi.fn() },
+    ]);
+
+    mod.pinGlobalHookRunnerRegistry(gatewayRegistry);
+    mod.initializeGlobalHookRunner(laterRegistry);
+
+    expect(mod.getGlobalPluginRegistry()).toBe(gatewayRegistry);
+    expect(mod.getGlobalHookRunner()?.hasHooks("agent_end")).toBe(true);
+    expect(mod.getGlobalHookRunner()?.hasHooks("message_received")).toBe(false);
+
+    await mod.getGlobalHookRunner()?.runAgentEnd(
+      { messages: [], success: true },
+      {
+        runId: "run-1",
+        agentId: "marketing",
+        sessionKey: "agent:marketing:slack:channel:c1",
+      },
+    );
+
+    expect(agentEnd).toHaveBeenCalledOnce();
+  });
 });

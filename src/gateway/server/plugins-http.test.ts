@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { onDiagnosticEvent, resetDiagnosticEventsForTest } from "../../infra/diagnostic-events.js";
 import { registerPluginHttpRoute } from "../../plugins/http-registry.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry.js";
 import {
@@ -129,8 +130,42 @@ async function invokeRouteAndCollectRuntimeScopes(params: {
 
 describe("createGatewayPluginRequestHandler", () => {
   afterEach(() => {
+    resetDiagnosticEventsForTest();
     releasePinnedPluginHttpRouteRegistry();
     setActivePluginRegistry(createEmptyPluginRegistry());
+  });
+
+  it("emits a content-free diagnostic when a plugin route throws", async () => {
+    const events: unknown[] = [];
+    const stop = onDiagnosticEvent((event) => events.push(event));
+    const handler = createGatewayPluginRequestHandler({
+      registry: createTestRegistry({
+        httpRoutes: [
+          createRoute({
+            path: "/broken",
+            pluginId: "private-plugin-id",
+            handler: async () => {
+              throw new Error("private request content");
+            },
+          }),
+        ],
+      }),
+      log: createPluginLog(),
+    });
+    const { res } = makeMockHttpResponse();
+
+    const handled = await handler({ url: "/broken" } as IncomingMessage, res);
+    stop();
+
+    expect(handled).toBe(true);
+    expect(res.statusCode).toBe(500);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "http.request.error",
+      surface: "plugin_http",
+      failureKind: "handler_exception",
+    });
+    expect(JSON.stringify(events)).not.toContain("private");
   });
 
   it("keeps unauthenticated plugin routes off operator runtime scopes", async () => {

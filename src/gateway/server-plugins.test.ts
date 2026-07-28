@@ -1,4 +1,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  getGlobalHookRunner,
+  getGlobalPluginRegistry,
+  resetGlobalHookRunner,
+} from "../plugins/hook-runner-global.js";
 import type { PluginLookUpTable } from "../plugins/plugin-lookup-table.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import type { PluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
@@ -350,6 +355,7 @@ afterEach(() => {
   serverPluginsModule.clearFallbackGatewayContext();
   runtimeModule.clearGatewaySubagentRuntime();
   runtimeRegistryModule.resetPluginRuntimeStateForTest();
+  resetGlobalHookRunner();
 });
 
 describe("loadGatewayPlugins", () => {
@@ -1317,6 +1323,45 @@ describe("loadGatewayPlugins", () => {
     });
 
     expect(order).toEqual(["hook", "prime"]);
+  });
+
+  test("registers completion webhooks on the deferred plugin registry", () => {
+    const { prepareGatewayPluginLoad } = serverPluginBootstrapModule;
+    const pluginRegistry = createRegistry([]);
+    loadOpenClawPlugins.mockReturnValue(pluginRegistry);
+
+    prepareGatewayPluginLoad({
+      cfg: {
+        subagent: {
+          completionWebhook: "https://gateway.internal/callbacks/subagent",
+          webhookToken: "subagent-token",
+        },
+        slackCompletion: {
+          completionWebhook: "https://gateway.internal/callbacks/slack",
+          webhookToken: "slack-token",
+        },
+      },
+      workspaceDir: "/tmp",
+      log: createTestLog(),
+      coreGatewayHandlers: {},
+      baseMethods: [],
+    });
+
+    expect(pluginRegistry.typedHooks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pluginId: "magister-subagent-completion-webhook",
+          hookName: "subagent_ended",
+        }),
+        expect.objectContaining({
+          pluginId: "magister-slack-completion-webhook",
+          hookName: "agent_end",
+        }),
+      ]),
+    );
+    expect(getGlobalPluginRegistry()).toBe(pluginRegistry);
+    expect(getGlobalHookRunner()?.hasHooks("agent_end")).toBe(true);
+    expect(getGlobalHookRunner()?.hasHooks("subagent_ended")).toBe(true);
   });
 
   test("shares fallback context across module reloads for existing runtimes", async () => {

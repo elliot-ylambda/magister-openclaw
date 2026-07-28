@@ -1459,10 +1459,10 @@ function ensureListener() {
         }
         if (phase === "start") {
           patch.status = "running";
-        } else if (phase === "end") {
+        } else if (phase === "end" && current.taskKind !== "approval_continuation") {
           patch.status = evt.data?.aborted === true ? "timed_out" : "succeeded";
           patch.endedAt = endedAt ?? now;
-        } else if (phase === "error") {
+        } else if (phase === "error" && current.taskKind !== "approval_continuation") {
           patch.status = "failed";
           patch.endedAt = endedAt ?? now;
           patch.error = typeof evt.data?.error === "string" ? evt.data.error : current.error;
