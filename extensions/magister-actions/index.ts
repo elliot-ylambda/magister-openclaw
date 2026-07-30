@@ -1145,6 +1145,8 @@ export function createContextualMagisterActionTool(
   return createMagisterActionTool(api, action, fetchImpl, context);
 }
 
+export const magisterStandaloneToolNames = ["search_project_corpus"] as const;
+
 export default definePluginEntry({
   id: "magister-actions",
   name: "Magister Actions",
@@ -1164,7 +1166,9 @@ export default definePluginEntry({
       gatewayRuntimeScopeSurface: "write-default",
       handler: handleArtifactPromotion,
     });
-    api.registerTool(() => createCorpusSearchTool(), { name: "search_project_corpus" });
+    api.registerTool(() => createCorpusSearchTool(), {
+      name: magisterStandaloneToolNames[0],
+    });
     for (const action of contract.actions) {
       api.registerTool(
         (context) => createContextualMagisterActionTool(api, action, fetch, context),

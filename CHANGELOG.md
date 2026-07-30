@@ -65,6 +65,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Magister/actions: keep the plugin manifest's declared tool contract aligned with every registered native and standalone tool, restoring project-corpus search and plan-item status updates in agent turns.
 - Google media generation: trust the exact Magister loopback credential-broker route for image requests and carry the private-network policy through Veo REST fallbacks, restoring brokered image and video generation without exposing provider credentials to tenant machines.
 - Magister approvals: defer exact-action approval rendering to the trusted inline web card, suppress duplicate approval links, and keep link-only surfaces on the canonical approval URL.
 - Magister/permissions: resume the originating agent session after an exact action is approved or denied, preserve denial notes as untrusted agent feedback, and deliver Slack continuations back to the originating thread.

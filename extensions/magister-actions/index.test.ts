@@ -14,6 +14,7 @@ import {
   actionTimeoutMs,
   createContextualMagisterActionTool,
   createMagisterActionTool,
+  magisterStandaloneToolNames,
   nativeActionContract,
   parseActionEnvelope,
 } from "./index.js";
@@ -113,11 +114,14 @@ afterEach(() => {
 });
 
 describe("Magister action manifest contract", () => {
-  it("declares every generated tool exactly once", () => {
+  it("declares every registered tool exactly once", () => {
     const manifest = JSON.parse(readFileSync(join(dir, "openclaw.plugin.json"), "utf8")) as {
       contracts: { tools: string[] };
     };
-    const tools = nativeActionContract.actions.map((row) => row.tool_name);
+    const tools = [
+      ...magisterStandaloneToolNames,
+      ...nativeActionContract.actions.map((row) => row.tool_name),
+    ];
     expect(new Set(tools).size).toBe(tools.length);
     expect(manifest.contracts.tools).toEqual(tools);
   });
