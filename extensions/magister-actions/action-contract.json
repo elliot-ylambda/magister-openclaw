@@ -161,6 +161,39 @@
       "tool_name": "magister_run_workflow"
     },
     {
+      "action": "update_plan_item_status",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Update one active marketing-plan item using the verified current chat or plan-task workflow context.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked_reason": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "plan_item_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["ready", "running", "completed", "blocked", "failed", "skipped"],
+            "type": "string"
+          }
+        },
+        "required": ["plan_item_id", "status"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_update_plan_item_status"
+    },
+    {
       "action": "list_firehose_matches",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -1584,6 +1617,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "684d3b4789248f6adb9521e8b5f8adf147d3d89e50e1ddb523734eced96bff21",
+  "registry_revision": "30a206af81b00960226feb0b11a3bf7637edf3be26624fcd3cf724585daec031",
   "schema_version": 1
 }
