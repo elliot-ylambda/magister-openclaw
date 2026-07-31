@@ -744,6 +744,323 @@
       "tool_name": "magister_get_action_approval"
     },
     {
+      "action": "generate_gemini_image",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to generate a new Gemini image and persist it in project Assets. Existing-image edits are not supported by this action.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "default": "gemini-image.png",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "model": {
+            "default": "gemini-3.1-flash-image",
+            "enum": [
+              "gemini-2.5-flash-image",
+              "gemini-3.1-flash-lite-image",
+              "gemini-3.1-flash-image",
+              "gemini-3-pro-image"
+            ],
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "prompt"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_generate_gemini_image"
+    },
+    {
+      "action": "generate_elevenlabs_voice",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to generate one ElevenLabs voice asset.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "VoiceSettingsArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "similarity_boost": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "stability": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "style": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "use_speaker_boost": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "default": "voiceover.mp3",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "model": {
+            "default": "eleven_multilingual_v2",
+            "enum": ["eleven_multilingual_v2", "eleven_turbo_v2_5"],
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "voice_id": {
+            "default": "EXAVITQu4vr4xnSDxMaL",
+            "enum": [
+              "EXAVITQu4vr4xnSDxMaL",
+              "JBFqnCBsd6RMkjVDRZzb",
+              "CwhRBWXzGAHq8TQ4Fs17",
+              "IKne3meq5aSn9XLyUdCD",
+              "FGY2WhTYpPnrIDTdsKH5"
+            ],
+            "type": "string"
+          },
+          "voice_settings": {
+            "$ref": "#/$defs/VoiceSettingsArgs"
+          }
+        },
+        "required": ["idempotency_key", "text"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_generate_elevenlabs_voice"
+    },
+    {
+      "action": "generate_ideogram_image",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to generate one to four Ideogram image assets.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "aspect_ratio": {
+            "default": "1x1",
+            "enum": [
+              "1x1",
+              "16x9",
+              "9x16",
+              "4x3",
+              "3x4",
+              "3x2",
+              "2x3",
+              "4x5",
+              "5x4",
+              "10x16",
+              "16x10",
+              "2x1",
+              "1x2",
+              "3x1",
+              "1x3"
+            ],
+            "type": "string"
+          },
+          "filename": {
+            "default": "ideogram-image.png",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "magic_prompt": {
+            "default": "AUTO",
+            "enum": ["AUTO", "ON", "OFF"],
+            "type": "string"
+          },
+          "num_images": {
+            "default": 1,
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rendering_speed": {
+            "default": "DEFAULT",
+            "enum": ["FLASH", "TURBO", "DEFAULT", "QUALITY"],
+            "type": "string"
+          },
+          "style_type": {
+            "default": "AUTO",
+            "enum": ["AUTO", "GENERAL", "REALISTIC", "DESIGN", "FICTION"],
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "prompt"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_generate_ideogram_image"
+    },
+    {
+      "action": "submit_fal_generation",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to submit one prompt-only job to an allowlisted fal image or video model, then poll magister_get_fal_generation.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "model_id": {
+            "enum": [
+              "fal-ai/flux/schnell",
+              "fal-ai/flux/dev",
+              "fal-ai/flux-pro/v1.1",
+              "fal-ai/bytedance/seedance/v1/lite/text-to-video",
+              "fal-ai/bytedance/seedance/v1/pro/text-to-video",
+              "fal-ai/veo3.1/fast",
+              "fal-ai/kling-video/v2/master/text-to-video"
+            ],
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "model_id", "prompt"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_submit_fal_generation"
+    },
+    {
+      "action": "get_fal_generation",
+      "approval_policy": "none",
+      "async_status_adapter": "job",
+      "description": "Poll one project-bound fal job and persist completed media in project Assets.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_handle": {
+            "maxLength": 193,
+            "minLength": 73,
+            "pattern": "^[A-Za-z0-9_-]{8,128}\\.[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "model_id": {
+            "enum": [
+              "fal-ai/flux/schnell",
+              "fal-ai/flux/dev",
+              "fal-ai/flux-pro/v1.1",
+              "fal-ai/bytedance/seedance/v1/lite/text-to-video",
+              "fal-ai/bytedance/seedance/v1/pro/text-to-video",
+              "fal-ai/veo3.1/fast",
+              "fal-ai/kling-video/v2/master/text-to-video"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["model_id", "job_handle"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_fal_generation"
+    },
+    {
+      "action": "automate_browser",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to run one bounded user-directed browser task. The action accepts no arbitrary provider options and is never blind-retried.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "task": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "task"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "external_write",
+      "spend_limited": true,
+      "tool_name": "magister_automate_browser"
+    },
+    {
       "action": "integration_read",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -1988,6 +2305,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
+  "registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
   "schema_version": 1
 }
