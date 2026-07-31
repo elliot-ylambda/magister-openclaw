@@ -362,7 +362,7 @@ describe("typed gateway execution", () => {
     });
     const output = resultJson(await tool.execute("call-2", {}));
     expect(output.ok).toBe(false);
-    expect((output.error as { code: string }).code).toBe("not_authorized");
+    expect((output.error as { code: string }).code).toBe("transport_unavailable");
   });
 
   it("uses the fixed local broker without exposing a gateway credential", async () => {
@@ -715,7 +715,7 @@ describe("typed gateway execution", () => {
     );
     const output = resultJson(await tool.execute("call-3", {}));
     expect(output.ok).toBe(false);
-    expect((output.error as { code: string }).code).toBe("upstream_failed");
+    expect((output.error as { code: string }).code).toBe("transport_unavailable");
   });
 
   it("rejects an operator-configured non-internal endpoint before fetch", async () => {
@@ -729,7 +729,7 @@ describe("typed gateway execution", () => {
     );
     const output = resultJson(await tool.execute("call-4", {}));
     expect(output.ok).toBe(false);
-    expect((output.error as { code: string }).code).toBe("not_authorized");
+    expect((output.error as { code: string }).code).toBe("transport_unavailable");
   });
 
   it("bounds gateway response bytes", async () => {
@@ -923,7 +923,7 @@ describe("typed gateway execution", () => {
       );
 
       expect(output.ok).toBe(false);
-      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { code: string }).code).toBe("asset_invalid");
       expect((output.error as { message: string }).message).toContain("too small");
       expect(fetched).toBe(false);
     } finally {
@@ -958,7 +958,7 @@ describe("typed gateway execution", () => {
       );
 
       expect(output.ok).toBe(false);
-      expect((output.error as { code: string }).code).toBe("validation_error");
+      expect((output.error as { code: string }).code).toBe("asset_invalid");
       expect((output.error as { message: string }).message).toContain("hash mismatch");
       expect(fetched).toBe(false);
     } finally {

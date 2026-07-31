@@ -744,6 +744,377 @@
       "tool_name": "magister_get_action_approval"
     },
     {
+      "action": "integration_read",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Run one server-allowlisted, read-only JSON operation against an enabled connected integration. Use only a relative path and documented routing headers; credentials and upstream hosts are Gateway-owned.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Model-visible bounded JSON integration request.\n\nProject identity, upstream host, credentials, approval state, and risk are\nintentionally absent. The Gateway derives all of them from trusted state.",
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_integration_read"
+    },
+    {
+      "action": "integration_change",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval for one reversible external integration change. The Gateway rejects reads, paid-spend changes, and deletes sent here.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path", "idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "spend_limited": false,
+      "tool_name": "magister_integration_change"
+    },
+    {
+      "action": "integration_spend",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval for one paid-spend integration mutation. The Gateway independently classifies and applies provider spend guardrails.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path", "idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "spend",
+      "spend_limited": false,
+      "tool_name": "magister_integration_spend"
+    },
+    {
+      "action": "integration_delete",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval for one destructive integration delete. The Gateway independently verifies that the canonical operation is a delete.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path", "idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "delete",
+      "spend_limited": false,
+      "tool_name": "magister_integration_delete"
+    },
+    {
       "action": "send_email",
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
@@ -1617,6 +1988,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "30a206af81b00960226feb0b11a3bf7637edf3be26624fcd3cf724585daec031",
+  "registry_revision": "bad7f9bcefb8d5209bb797b803e073c6f75d64ffb1a19ea44aed2ec51090fa04",
   "schema_version": 1
 }
