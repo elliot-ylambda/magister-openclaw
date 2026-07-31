@@ -1015,7 +1015,7 @@ describe("envelope validator", () => {
     ).toBeNull();
   });
 
-  it("rejects contradictory success and terminal state combinations", () => {
+  it("accepts a successful poll that observes a terminal operation failure", () => {
     expect(
       parseActionEnvelope(
         envelope({
@@ -1024,6 +1024,29 @@ describe("envelope validator", () => {
             terminal: true,
             poll_after_seconds: 0,
             stale_seconds: 0,
+          },
+        }),
+      ),
+    ).not.toBeNull();
+  });
+
+  it("rejects contradictory terminal state combinations", () => {
+    expect(
+      parseActionEnvelope(
+        envelope({
+          ok: false,
+          status: {
+            state: "succeeded",
+            terminal: true,
+            poll_after_seconds: 0,
+            stale_seconds: 0,
+          },
+          error: {
+            code: "upstream_failed",
+            message: "failed",
+            retryable: false,
+            retry_after_seconds: null,
+            user_action: null,
           },
         }),
       ),

@@ -8,7 +8,7 @@
       "mcp_tool_actions": ["llm"],
       "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
-      "remediation": "A purpose-built Hosted Agent action is not available yet.",
+      "remediation": "Core model traffic is host-owned and is not a model-visible tool.",
       "skill_name": null,
       "status": "unsupported",
       "transport_modes": []
@@ -933,15 +933,41 @@
           "idempotency_policy": "safe_retry",
           "side_effect": "none",
           "tool_name": "magister_integration_read"
+        },
+        {
+          "action": "create_blog_post",
+          "approval_policy": "none",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "draft",
+          "tool_name": "magister_create_blog_post"
+        },
+        {
+          "action": "update_blog_post",
+          "approval_policy": "none",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "draft",
+          "tool_name": "magister_update_blog_post"
+        },
+        {
+          "action": "publish_content",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "external_write",
+          "tool_name": "magister_publish_content"
         }
       ],
-      "mcp_tool_actions": ["proxy:wordpress"],
+      "mcp_tool_actions": [
+        "proxy:wordpress",
+        "create_blog_post",
+        "update_blog_post",
+        "publish_content"
+      ],
       "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["wordpress"],
       "remediation": null,
       "skill_name": "magister-wordpress",
       "status": "typed",
-      "transport_modes": ["json_v1"]
+      "transport_modes": ["json_v1", "native_json"]
     },
     {
       "capability_id": "shopify",
@@ -2339,14 +2365,22 @@
       "capability_id": "web_vitals",
       "connection_slug": null,
       "delegation_safe_tools": [],
-      "hosted_agent_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
       "mcp_tool_actions": ["proxy:pagespeed", "proxy:crux"],
       "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
-      "proxy_services": [],
-      "remediation": "A purpose-built Hosted Agent action is not available yet.",
+      "proxy_services": ["pagespeed", "crux"],
+      "remediation": null,
       "skill_name": "magister-web-vitals",
-      "status": "unsupported",
-      "transport_modes": []
+      "status": "typed",
+      "transport_modes": ["json_v1"]
     },
     {
       "capability_id": "youtube_data",
@@ -2763,6 +2797,6 @@
     }
   ],
   "native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
-  "registry_revision": "aa8086096e1c0dab32dcf6d5164a5a1174a33a592c02f5d457bd970f65b0e856",
+  "registry_revision": "59d906e492615ee9707a4d9341e448fa91619a08a4c62b4ce353b1014a87c3c2",
   "schema_version": 1
 }

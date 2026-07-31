@@ -246,7 +246,6 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
   if (
     status.terminal !== (state !== "running") ||
     (status.terminal && status.poll_after_seconds !== 0) ||
-    (value.ok && state === "failed") ||
     (!value.ok && state === "succeeded")
   ) {
     return null;
