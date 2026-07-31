@@ -6,7 +6,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["llm"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": null,
@@ -27,7 +27,7 @@
         }
       ],
       "mcp_tool_actions": ["web_search"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-brave-search",
@@ -48,7 +48,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:resend"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["resend"],
       "remediation": null,
       "skill_name": "magister-resend",
@@ -69,7 +69,7 @@
         }
       ],
       "mcp_tool_actions": ["dataforseo"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["dataforseo"],
       "remediation": null,
       "skill_name": "magister-dataforseo",
@@ -136,7 +136,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -203,7 +203,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -270,7 +270,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -337,7 +337,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -404,7 +404,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -471,7 +471,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -538,7 +538,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -605,7 +605,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -672,7 +672,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -739,7 +739,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -806,7 +806,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -873,7 +873,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -894,7 +894,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:webflow"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["webflow"],
       "remediation": null,
       "skill_name": "magister-webflow",
@@ -915,7 +915,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:wix"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["wix"],
       "remediation": null,
       "skill_name": "magister-wix",
@@ -936,7 +936,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:wordpress"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["wordpress"],
       "remediation": null,
       "skill_name": "magister-wordpress",
@@ -957,7 +957,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:shopify"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["shopify"],
       "remediation": null,
       "skill_name": "magister-shopify",
@@ -978,7 +978,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:posthog"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["posthog"],
       "remediation": null,
       "skill_name": "magister-posthog",
@@ -999,7 +999,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:google_analytics"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["ga4"],
       "remediation": null,
       "skill_name": "magister-google-analytics",
@@ -1020,7 +1020,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:google_search_console"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["search_console"],
       "remediation": null,
       "skill_name": "magister-google-analytics",
@@ -1041,7 +1041,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:fathom"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["fathom"],
       "remediation": null,
       "skill_name": "magister-fathom",
@@ -1062,7 +1062,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:mixpanel"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["mixpanel"],
       "remediation": null,
       "skill_name": "magister-mixpanel",
@@ -1083,7 +1083,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:hotjar"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["hotjar"],
       "remediation": null,
       "skill_name": "magister-hotjar",
@@ -1104,7 +1104,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:ahrefs"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["ahrefs"],
       "remediation": null,
       "skill_name": "magister-ahrefs",
@@ -1125,7 +1125,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:github"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["github"],
       "remediation": null,
       "skill_name": "magister-github",
@@ -1146,7 +1146,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:vercel"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["vercel"],
       "remediation": null,
       "skill_name": "magister-vercel",
@@ -1159,7 +1159,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["proxy:slack"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-slack",
@@ -1187,7 +1187,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:google_ads"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["google_ads"],
       "remediation": null,
       "skill_name": "magister-google-ads",
@@ -1254,7 +1254,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -1321,7 +1321,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -1388,7 +1388,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -1455,7 +1455,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -1522,7 +1522,7 @@
         "publish_social_post",
         "get_social_analytics"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-zernio",
@@ -1543,7 +1543,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:hubspot"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["hubspot"],
       "remediation": null,
       "skill_name": "magister-hubspot",
@@ -1564,7 +1564,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:apollo"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["apollo"],
       "remediation": null,
       "skill_name": "magister-apollo",
@@ -1585,7 +1585,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:intercom"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["intercom"],
       "remediation": null,
       "skill_name": "magister-intercom",
@@ -1606,7 +1606,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:instantly"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["instantly"],
       "remediation": null,
       "skill_name": "magister-instantly",
@@ -1627,7 +1627,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:google_workspace"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [
         "google_drive",
         "google_sheets",
@@ -1654,7 +1654,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:gmail", "send_email"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-gmail",
@@ -1675,7 +1675,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:notion"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["notion"],
       "remediation": null,
       "skill_name": null,
@@ -1696,7 +1696,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:stripe"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["stripe"],
       "remediation": null,
       "skill_name": "magister-stripe",
@@ -1717,7 +1717,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:zapier"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["zapier"],
       "remediation": null,
       "skill_name": "magister-zapier",
@@ -1738,7 +1738,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:buffer"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["buffer"],
       "remediation": null,
       "skill_name": "magister-buffer",
@@ -1759,7 +1759,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:typefully"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["typefully"],
       "remediation": null,
       "skill_name": "magister-typefully",
@@ -1780,7 +1780,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:postbridge"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["postbridge"],
       "remediation": null,
       "skill_name": "magister-postbridge",
@@ -1801,7 +1801,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:kit"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["kit"],
       "remediation": null,
       "skill_name": "magister-kit",
@@ -1822,7 +1822,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:activecampaign"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["activecampaign"],
       "remediation": null,
       "skill_name": "magister-activecampaign",
@@ -1843,7 +1843,7 @@
         }
       ],
       "mcp_tool_actions": ["route:email", "send_agent_email"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-email",
@@ -1864,7 +1864,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:apify"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["apify"],
       "remediation": null,
       "skill_name": "magister-apify",
@@ -1885,7 +1885,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:attentive"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["attentive"],
       "remediation": null,
       "skill_name": "magister-attentive",
@@ -1906,7 +1906,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:attio"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["attio"],
       "remediation": null,
       "skill_name": "magister-attio",
@@ -1927,7 +1927,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:beehiiv"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["beehiiv"],
       "remediation": null,
       "skill_name": "magister-beehiiv",
@@ -1969,7 +1969,7 @@
         "get_ai_visibility_set",
         "run_ai_visibility_set"
       ],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-ai-visibility",
@@ -1990,7 +1990,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:context_dev"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["context_dev"],
       "remediation": null,
       "skill_name": "magister-web-context",
@@ -2011,7 +2011,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:customerio"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["customerio", "customerio_app"],
       "remediation": null,
       "skill_name": "magister-customerio",
@@ -2024,7 +2024,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["route:voice_proxy", "generate_elevenlabs_voice"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-voice",
@@ -2045,7 +2045,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:exa"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["exa"],
       "remediation": null,
       "skill_name": "magister-exa",
@@ -2058,7 +2058,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["route:fal_proxy", "submit_fal_generation", "get_fal_generation"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-video",
@@ -2079,7 +2079,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:firecrawl", "call_integration_api"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["firecrawl"],
       "remediation": null,
       "skill_name": "magister-firecrawl",
@@ -2100,7 +2100,7 @@
         }
       ],
       "mcp_tool_actions": ["route:firehose", "list_firehose_matches"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": null,
       "skill_name": "magister-firehose",
@@ -2113,7 +2113,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["route:gemini_proxy", "generate_gemini_image"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-gemini-image",
@@ -2134,7 +2134,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:hunter"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["hunter"],
       "remediation": null,
       "skill_name": "magister-hunter",
@@ -2147,7 +2147,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["route:image_proxy", "generate_ideogram_image"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-ideogram",
@@ -2168,7 +2168,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:klaviyo"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["klaviyo"],
       "remediation": null,
       "skill_name": "magister-klaviyo",
@@ -2189,7 +2189,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:loops"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["loops"],
       "remediation": null,
       "skill_name": "magister-loops",
@@ -2210,7 +2210,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:mailchimp"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["mailchimp"],
       "remediation": null,
       "skill_name": "magister-mailchimp",
@@ -2231,7 +2231,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:moltsets", "call_integration_api"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["moltsets"],
       "remediation": null,
       "skill_name": "magister-moltsets",
@@ -2252,7 +2252,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:pipedrive"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["pipedrive"],
       "remediation": null,
       "skill_name": "magister-pipedrive",
@@ -2273,7 +2273,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:postscript"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["postscript"],
       "remediation": null,
       "skill_name": "magister-postscript",
@@ -2294,7 +2294,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:scrapecreators"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["scrapecreators"],
       "remediation": null,
       "skill_name": "magister-social-research",
@@ -2307,7 +2307,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["route:tabstack_proxy"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-browser-automation",
@@ -2328,7 +2328,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:truelist"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["truelist"],
       "remediation": null,
       "skill_name": "magister-truelist",
@@ -2341,7 +2341,7 @@
       "delegation_safe_tools": [],
       "hosted_agent_tools": [],
       "mcp_tool_actions": ["proxy:pagespeed", "proxy:crux"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
       "skill_name": "magister-web-vitals",
@@ -2362,7 +2362,7 @@
         }
       ],
       "mcp_tool_actions": ["proxy:youtube"],
-      "minimum_native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
+      "minimum_native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
       "proxy_services": ["youtube"],
       "remediation": null,
       "skill_name": "magister-youtube",
@@ -2748,6 +2748,13 @@
       "tool_name": "magister_update_blog_post"
     },
     {
+      "action": "update_plan_item_status",
+      "approval_policy": "none",
+      "idempotency_policy": "safe_retry",
+      "side_effect": "internal_write",
+      "tool_name": "magister_update_plan_item_status"
+    },
+    {
       "action": "web_search",
       "approval_policy": "none",
       "idempotency_policy": "safe_retry",
@@ -2755,7 +2762,7 @@
       "tool_name": "web_search"
     }
   ],
-  "native_action_registry_revision": "152b141bbbf0e99cf8c23533627e73881e367a679ee04d0b8fc839409daa497a",
-  "registry_revision": "4f89d953119724d61d87ab6b66584266379b7cb691b811cc2052079aa1419be7",
+  "native_action_registry_revision": "23c3be04de671dccb1c23393e4b4de5ad39293fb5594c84547625dbacd9d6483",
+  "registry_revision": "aa8086096e1c0dab32dcf6d5164a5a1174a33a592c02f5d457bd970f65b0e856",
   "schema_version": 1
 }
