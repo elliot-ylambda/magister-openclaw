@@ -9,6 +9,7 @@ import {
   type OpenClawPluginApi,
   type OpenClawPluginToolContext,
 } from "openclaw/plugin-sdk/core";
+import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { Type, type TSchema } from "typebox";
 import contractJson from "./action-contract.json" with { type: "json" };
 import { handleArtifactPromotion } from "./artifact-promotion.js";
@@ -69,6 +70,12 @@ const ERROR_CODES = new Set([
   "limit_reached",
   "upstream_failed",
   "conflict",
+  "transport_unavailable",
+  "unsupported_operation",
+  "entitlement_unavailable",
+  "approval_required",
+  "budget_exhausted",
+  "asset_invalid",
 ]);
 const STATUS_STATES = new Set(["running", "succeeded", "failed"]);
 const SIDE_EFFECTS = new Set([
@@ -239,7 +246,6 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
   if (
     status.terminal !== (state !== "running") ||
     (status.terminal && status.poll_after_seconds !== 0) ||
-    (value.ok && state === "failed") ||
     (!value.ok && state === "succeeded")
   ) {
     return null;
@@ -469,6 +475,21 @@ function failureEnvelope(
       user_action: options.userAction?.slice(0, 1000) ?? null,
     },
   };
+}
+
+function emitActionTransportFailure(
+  action: ActionContract,
+  failureKind: "configuration" | "transport" | "contract",
+  errorCode: string,
+  startedAt = Date.now(),
+) {
+  emitTrustedDiagnosticEvent({
+    type: "tool.execution.error",
+    toolName: action.tool_name,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    errorCategory: `magister_action_${failureKind}`,
+    errorCode,
+  });
 }
 
 function ambiguousWriteUserAction(sideEffect: string): string | null {
@@ -899,13 +920,20 @@ export function createMagisterActionTool(
         : action.description,
     parameters: action.input_schema as unknown as TSchema,
     async execute(callId: string, rawParams: Record<string, unknown>) {
+      const transportStartedAt = Date.now();
       const brokerEnabled = process.env.MAGISTER_BROKER_BASE_URL === "http://127.0.0.1:18796";
       const gatewayToken =
         process.env.GATEWAY_TOKEN ?? (brokerEnabled ? "broker-local" : undefined);
       if (!gatewayToken) {
+        emitActionTransportFailure(
+          action,
+          "configuration",
+          "machine_credential_unavailable",
+          transportStartedAt,
+        );
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: "not_authorized",
+            code: "transport_unavailable",
             message: "Project machine credential is unavailable.",
             userAction: "Retry after the project machine is reprovisioned or repaired.",
           }),
@@ -916,9 +944,15 @@ export function createMagisterActionTool(
       try {
         config = resolveConfig(api);
       } catch {
+        emitActionTransportFailure(
+          action,
+          "configuration",
+          "action_endpoint_untrusted",
+          transportStartedAt,
+        );
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: "not_authorized",
+            code: "transport_unavailable",
             message: "The Magister action endpoint is not trusted.",
             userAction: "Restore the system-managed magister-actions plugin configuration.",
           }),
@@ -1003,6 +1037,9 @@ export function createMagisterActionTool(
           const retryAfterHeader = response.headers.get("retry-after");
           const retryAfter = retryAfterHeader === null ? null : Number(retryAfterHeader);
           const serverFailure = response.status >= 500;
+          if (serverFailure) {
+            emitActionTransportFailure(action, "transport", "gateway_http_5xx", transportStartedAt);
+          }
           return jsonResult(
             failureEnvelope(action, callId, {
               code:
@@ -1033,9 +1070,15 @@ export function createMagisterActionTool(
         }
         const envelope = parseActionEnvelope(decoded);
         if (!envelope) {
+          emitActionTransportFailure(
+            action,
+            "contract",
+            "invalid_action_envelope",
+            transportStartedAt,
+          );
           return jsonResult(
             failureEnvelope(action, callId, {
-              code: "upstream_failed",
+              code: "transport_unavailable",
               message: "Gateway returned an invalid Magister action envelope.",
               retryable: false,
               userAction: "Do not infer success; report the typed-tool contract failure.",
@@ -1109,9 +1152,25 @@ export function createMagisterActionTool(
         const artifactInvalid = error instanceof ArtifactValidationError;
         const mediaInvalid = error instanceof SocialMediaValidationError;
         const inputInvalid = artifactInvalid || mediaInvalid;
+        if (!inputInvalid) {
+          emitActionTransportFailure(
+            action,
+            tooLarge ? "contract" : "transport",
+            timedOut
+              ? "action_timeout"
+              : tooLarge
+                ? "response_too_large"
+                : "action_transport_failed",
+            transportStartedAt,
+          );
+        }
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: inputInvalid ? "validation_error" : "upstream_failed",
+            code: artifactInvalid
+              ? "asset_invalid"
+              : mediaInvalid
+                ? "validation_error"
+                : "transport_unavailable",
             message:
               inputInvalid && error instanceof Error
                 ? error.message
