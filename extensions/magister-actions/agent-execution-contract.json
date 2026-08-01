@@ -9,6 +9,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": "Core model traffic is host-owned and is not a model-visible tool.",
+      "rollout_service": null,
       "skill_name": null,
       "status": "unsupported",
       "transport_modes": []
@@ -30,6 +31,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-brave-search",
       "status": "typed",
       "transport_modes": ["brokered_read"]
@@ -51,6 +53,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["resend"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-resend",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -72,6 +75,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["dataforseo"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-dataforseo",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -139,6 +143,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -206,6 +211,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -273,6 +279,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -340,6 +347,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -407,6 +415,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -474,6 +483,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -541,6 +551,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -608,6 +619,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -675,6 +687,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -742,6 +755,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -809,6 +823,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -876,6 +891,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -897,6 +913,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["webflow"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-webflow",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -918,6 +935,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["wix"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-wix",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -965,6 +983,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["wordpress"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-wordpress",
       "status": "typed",
       "transport_modes": ["json_v1", "native_json"]
@@ -986,6 +1005,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["shopify"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-shopify",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1007,6 +1027,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["posthog"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-posthog",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1028,6 +1049,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["ga4"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-google-analytics",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1049,6 +1071,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["search_console"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-google-analytics",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1070,6 +1093,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["fathom"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-fathom",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1091,6 +1115,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["mixpanel"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-mixpanel",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1112,6 +1137,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["hotjar"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-hotjar",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1133,6 +1159,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["ahrefs"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-ahrefs",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1154,6 +1181,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["github"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-github",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1175,6 +1203,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["vercel"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-vercel",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1188,6 +1217,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": "A purpose-built Hosted Agent action is not available yet.",
+      "rollout_service": null,
       "skill_name": "magister-slack",
       "status": "unsupported",
       "transport_modes": []
@@ -1216,6 +1246,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["google_ads"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-google-ads",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1283,6 +1314,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1350,6 +1382,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1417,6 +1450,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1484,6 +1518,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1551,6 +1586,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zernio",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1572,6 +1608,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["hubspot"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-hubspot",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1593,6 +1630,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["apollo"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-apollo",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1614,6 +1652,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["intercom"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-intercom",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1635,6 +1674,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["instantly"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-instantly",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1662,6 +1702,7 @@
         "google_calendar"
       ],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-google-drive",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1683,6 +1724,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-gmail",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1704,6 +1746,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["notion"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": null,
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1725,6 +1768,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["stripe"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-stripe",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1746,6 +1790,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["zapier"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-zapier",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1767,6 +1812,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["buffer"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-buffer",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1788,6 +1834,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["typefully"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-typefully",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1809,6 +1856,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["postbridge"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-postbridge",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1830,6 +1878,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["kit"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-kit",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1851,6 +1900,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["activecampaign"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-activecampaign",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1872,6 +1922,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-email",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -1893,6 +1944,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["apify"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-apify",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1914,6 +1966,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["attentive"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-attentive",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1935,6 +1988,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["attio"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-attio",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1956,6 +2010,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["beehiiv"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-beehiiv",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -1998,6 +2053,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-ai-visibility",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2019,6 +2075,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["context_dev"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-web-context",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2040,6 +2097,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["customerio", "customerio_app"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-customerio",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2061,6 +2119,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": "elevenlabs",
       "skill_name": "magister-voice",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2082,6 +2141,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["exa"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-exa",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2110,6 +2170,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": "fal",
       "skill_name": "magister-video",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2131,6 +2192,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["firecrawl"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-firecrawl",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2152,6 +2214,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-firehose",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2173,6 +2236,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": "gemini",
       "skill_name": "magister-gemini-image",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2194,6 +2258,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["hunter"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-hunter",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2215,6 +2280,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": "ideogram",
       "skill_name": "magister-ideogram",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2236,6 +2302,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["klaviyo"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-klaviyo",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2257,6 +2324,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["loops"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-loops",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2278,6 +2346,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["mailchimp"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-mailchimp",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2299,6 +2368,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["moltsets"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-moltsets",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2320,6 +2390,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["pipedrive"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-pipedrive",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2341,6 +2412,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["postscript"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-postscript",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2362,6 +2434,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["scrapecreators"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-social-research",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2383,6 +2456,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": [],
       "remediation": null,
+      "rollout_service": "tabstack",
       "skill_name": "magister-browser-automation",
       "status": "typed",
       "transport_modes": ["native_json"]
@@ -2404,6 +2478,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["truelist"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-truelist",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2425,6 +2500,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["pagespeed", "crux"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-web-vitals",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2446,6 +2522,7 @@
       "minimum_native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
       "proxy_services": ["youtube"],
       "remediation": null,
+      "rollout_service": null,
       "skill_name": "magister-youtube",
       "status": "typed",
       "transport_modes": ["json_v1"]
@@ -2886,6 +2963,6 @@
     }
   ],
   "native_action_registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
-  "registry_revision": "52698701a0642bae98e7ad582ec3a54a545371e7ec7dae81875594bbf62b796d",
+  "registry_revision": "b5e62c3cfeb005d7fbfbedb379845d95dfe5ef9f05c1be16aa9af7d3164fb425",
   "schema_version": 1
 }
