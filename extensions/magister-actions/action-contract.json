@@ -86,6 +86,31 @@
       "tool_name": "magister_list_workflows"
     },
     {
+      "action": "get_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read one active project workflow's complete authoring and schedule state by UUID.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_workflow"
+    },
+    {
       "action": "list_workflow_templates",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -131,6 +156,410 @@
       "side_effect": "internal_write",
       "spend_limited": false,
       "tool_name": "magister_fork_workflow_template"
+    },
+    {
+      "action": "create_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create one reusable project workflow from bounded typed steps. Use a stable idempotency key and list existing workflows first to avoid duplicate intent.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "WorkflowInputArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "default": "",
+                "maxLength": 160,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                "type": "string"
+              },
+              "placeholder": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "type": {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,39}$",
+                "type": "string"
+              },
+              "value": {}
+            },
+            "required": ["name", "type"],
+            "type": "object"
+          },
+          "WorkflowStepArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "default": "",
+                "maxLength": 8000,
+                "type": "string"
+              },
+              "integrations": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "order": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "skill": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$",
+                "type": "string"
+              },
+              "skills": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]+$",
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._:-]+$",
+                "type": "string"
+              }
+            },
+            "required": ["order", "title"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "focus_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/WorkflowInputArgs"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "notify_on_complete": {
+            "default": false,
+            "type": "boolean"
+          },
+          "prompt": {
+            "default": "",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "required_connections": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/$defs/WorkflowStepArgs"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "title", "steps"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_create_workflow"
+    },
+    {
+      "action": "update_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Update selected fields on one active project workflow. Inputs and steps replace their complete arrays when supplied.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "WorkflowInputArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "default": "",
+                "maxLength": 160,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                "type": "string"
+              },
+              "placeholder": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "type": {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,39}$",
+                "type": "string"
+              },
+              "value": {}
+            },
+            "required": ["name", "type"],
+            "type": "object"
+          },
+          "WorkflowStepArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "default": "",
+                "maxLength": 8000,
+                "type": "string"
+              },
+              "integrations": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "order": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "skill": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$",
+                "type": "string"
+              },
+              "skills": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]+$",
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._:-]+$",
+                "type": "string"
+              }
+            },
+            "required": ["order", "title"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "focus_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/WorkflowInputArgs"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "notify_on_complete": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "required_connections": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/$defs/WorkflowStepArgs"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]+$",
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_update_workflow"
+    },
+    {
+      "action": "schedule_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Request a recurring schedule for one workflow. This only mints one human-approval link; the schedule is installed after the user approves the exact cadence.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cron_expr": {
+            "maxLength": 100,
+            "minLength": 5,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "max_runs": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "starts_at": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "workflow_id", "cron_expr"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_schedule_workflow"
+    },
+    {
+      "action": "unschedule_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Remove the recurring schedule from one active project workflow.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_unschedule_workflow"
     },
     {
       "action": "run_workflow",
@@ -2305,6 +2734,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "7c75ad2e1ab1a1f8b9854935a1599341ed262c8abf1d27fc1b2951dc6b25dbb3",
+  "registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
   "schema_version": 1
 }
