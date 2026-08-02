@@ -4,7 +4,10 @@ import { KeyedAsyncQueue, type OpenClawPluginApi } from "openclaw/plugin-sdk/cor
 import {
   createConversationSessionState,
   listConversationSessionStates,
+  pruneShadowCheckpoints,
   readConversationSessionState,
+  removeConversationSessionState,
+  selectConversationSessionStatesForPruning,
   writeConversationSessionState,
   writeShadowCheckpoint,
 } from "./checkpoint-state.js";
@@ -34,6 +37,10 @@ const CHECKPOINT_CHAR_THRESHOLD = 10_000;
 const CHECKPOINT_USER_TURN_THRESHOLD = 20;
 const MAX_MODEL_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 30 * 60_000] as const;
+const STATE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
+const STATE_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1_000;
+const MAX_SESSION_STATE_FILES = 500;
+const MAX_SHADOW_CHECKPOINT_FILES = 500;
 const EXCLUDED_SESSION_PATTERN =
   /(?:^|:)(?:cron|heartbeat|subagent|workflow|reviewer|memory-flush)(?:$|:)/i;
 
@@ -60,6 +67,7 @@ export class ConversationCheckpointManager {
   private readonly stateQueue = new KeyedAsyncQueue();
   private readonly activeFinalizations = new Set<string>();
   private readonly knownWorkspaces = new Set<string>();
+  private readonly lastMaintenanceAt = new Map<string, number>();
   private interval: NodeJS.Timeout | undefined;
 
   constructor(
@@ -129,12 +137,15 @@ export class ConversationCheckpointManager {
     if (!identity) {
       return;
     }
-    this.scheduleFinalize(
-      this.resolveWorkspaceDir(ctx),
-      hashIdentifier(identity),
-      true,
-      "session_end",
-    );
+    const workspaceDir = this.resolveWorkspaceDir(ctx);
+    const sessionHash = hashIdentifier(identity);
+    void this.markSessionEnded(workspaceDir, sessionHash, ctx.agentId ?? "main")
+      .then(() => this.scheduleFinalize(workspaceDir, sessionHash, true, "session_end"))
+      .catch((error) => {
+        this.api.logger.warn(
+          `magister-memory: session-end checkpoint failed (error=${errorCode(error)})`,
+        );
+      });
   }
 
   async buildPromptContext(ctx: AgentContext): Promise<string | undefined> {
@@ -204,8 +215,13 @@ export class ConversationCheckpointManager {
     this.knownWorkspaces.add(workspaceDir);
     return this.stateQueue.enqueue(`${workspaceDir}:${sessionHash}`, async () => {
       const state = await readConversationSessionState({ workspaceDir, sessionHash, agentId });
-      const delta = extractConversationDelta(entries, state.lastMessageFingerprint);
+      const delta = extractConversationDelta(
+        entries,
+        state.lastMessageFingerprint,
+        state.lastMessageCount,
+      );
       state.lastMessageFingerprint = entries[entries.length - 1].fingerprint;
+      state.lastMessageCount = entries.length;
       if (delta.length === 0) {
         await writeConversationSessionState(workspaceDir, state);
         return { workspaceDir, sessionHash, forceFinalize: false };
@@ -216,13 +232,8 @@ export class ConversationCheckpointManager {
           hasToolWork: containsToolWorkInLatestTurn(messages),
         })
       ) {
-        const knownFingerprints = new Set([
-          ...state.pending.map((entry) => entry.fingerprint),
-          ...(state.inFlight?.entries.map((entry) => entry.fingerprint) ?? []),
-        ]);
-        const additions = delta.filter((entry) => !knownFingerprints.has(entry.fingerprint));
         state.pending = boundEntriesFromEnd(
-          [...state.pending, ...additions],
+          [...state.pending, ...delta],
           this.config.maxInputChars * 2,
         );
         state.pendingUserTurns = countUserTurns(state.pending);
@@ -245,8 +256,15 @@ export class ConversationCheckpointManager {
     for (const workspaceDir of this.knownWorkspaces) {
       try {
         const states = await listConversationSessionStates(workspaceDir);
+        const nowMs = Date.now();
+        if (
+          nowMs - (this.lastMaintenanceAt.get(workspaceDir) ?? 0) >=
+          STATE_MAINTENANCE_INTERVAL_MS
+        ) {
+          await this.maintainCheckpointState(workspaceDir, states, nowMs);
+          this.lastMaintenanceAt.set(workspaceDir, nowMs);
+        }
         for (const state of states) {
-          const nowMs = Date.now();
           if (
             (state.inFlight && (!state.retryAt || state.retryAt <= nowMs)) ||
             this.isDue(state, nowMs)
@@ -320,7 +338,11 @@ export class ConversationCheckpointManager {
           );
           return;
         }
-        summary = buildFallbackSummary(claimed.inFlight.entries, this.config.maxCheckpointChars);
+        summary = buildFallbackSummary(
+          claimed.inFlight.entries,
+          this.config.maxCheckpointChars,
+          claimed.previousSummary,
+        );
       }
       await this.persistPreparedSummary(
         workspaceDir,
@@ -413,7 +435,13 @@ export class ConversationCheckpointManager {
         };
       }
       const nowMs = Date.now();
-      if (state.pending.length === 0 || (!force && !this.isDue(state, nowMs))) {
+      if (state.pending.length === 0) {
+        if (state.endedAt !== undefined && !state.inFlight) {
+          await removeConversationSessionState(workspaceDir, sessionHash);
+        }
+        return undefined;
+      }
+      if (!force && !this.isDue(state, nowMs)) {
         return undefined;
       }
       const entries = state.pending;
@@ -506,8 +534,74 @@ export class ConversationCheckpointManager {
       state.retryCount = 0;
       state.sequence = Math.max(state.sequence, params.sequence);
       state.previousSummary = params.summary;
-      await writeConversationSessionState(params.workspaceDir, state);
+      if (state.endedAt !== undefined && state.pending.length === 0) {
+        await removeConversationSessionState(params.workspaceDir, params.sessionHash);
+      } else {
+        await writeConversationSessionState(params.workspaceDir, state);
+      }
     });
+  }
+
+  private async markSessionEnded(
+    workspaceDir: string,
+    sessionHash: string,
+    agentId: string,
+  ): Promise<void> {
+    await this.stateQueue.enqueue(`${workspaceDir}:${sessionHash}`, async () => {
+      const state = await readConversationSessionState({ workspaceDir, sessionHash, agentId });
+      state.endedAt = Date.now();
+      await writeConversationSessionState(workspaceDir, state);
+    });
+  }
+
+  private async maintainCheckpointState(
+    workspaceDir: string,
+    states: ConversationSessionState[],
+    nowMs: number,
+  ): Promise<void> {
+    const retentionMs = Math.max(STATE_RETENTION_MS, this.config.recentDays * 24 * 60 * 60 * 1_000);
+    const stateByHash = new Map(states.map((state) => [state.sessionHash, state]));
+    const selected = selectConversationSessionStatesForPruning({
+      states,
+      nowMs,
+      retentionMs,
+      maxStates: MAX_SESSION_STATE_FILES,
+    });
+    let sessionsDeleted = 0;
+    for (const sessionHash of selected) {
+      const snapshot = stateByHash.get(sessionHash);
+      if (!snapshot) {
+        continue;
+      }
+      await this.stateQueue.enqueue(`${workspaceDir}:${sessionHash}`, async () => {
+        const current = await readConversationSessionState({
+          workspaceDir,
+          sessionHash,
+          agentId: snapshot.agentId,
+        });
+        if (
+          current.updatedAt !== snapshot.updatedAt ||
+          current.pending.length > 0 ||
+          current.inFlight ||
+          current.retryAt !== undefined
+        ) {
+          return;
+        }
+        await removeConversationSessionState(workspaceDir, sessionHash);
+        sessionsDeleted += 1;
+      });
+    }
+    const shadowDeleted = await pruneShadowCheckpoints({
+      workspaceDir,
+      nowMs,
+      retentionMs,
+      maxFiles: MAX_SHADOW_CHECKPOINT_FILES,
+    });
+    if (sessionsDeleted > 0 || shadowDeleted > 0) {
+      this.api.logger.info(
+        `magister-memory: pruned checkpoint state (sessions=${sessionsDeleted}, shadow=${shadowDeleted})`,
+      );
+    }
   }
 
   private async deferPreparedCheckpoint(params: {

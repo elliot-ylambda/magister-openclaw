@@ -21,6 +21,10 @@
         "additionalProperties": false,
         "properties": {
           "mode": { "type": "string", "enum": ["off", "shadow", "active"] },
+          "legacyMemoryFlushStateBeforeActive": {
+            "type": "string",
+            "enum": ["unset", "enabled", "disabled"]
+          },
           "model": { "type": "string" },
           "idleMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
           "recentDays": { "type": "integer", "minimum": 1, "maximum": 365 },

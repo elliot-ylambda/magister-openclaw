@@ -10,6 +10,7 @@ import type {
   TranscriptEntry,
 } from "./conversation-types.js";
 import { isRecord } from "./file-utils.js";
+import { scanMemoryContent } from "./threat-scan.js";
 
 type SummarizerContext = {
   workspaceDir: string;
@@ -74,14 +75,22 @@ export async function summarizeCheckpoint(params: {
 export function buildFallbackSummary(
   entries: TranscriptEntry[],
   maxCheckpointChars: number,
+  previousSummary?: string,
 ): CheckpointSummary {
-  const transcript = entries
-    .slice(-6)
-    .map((entry) => `${entry.role}: ${entry.text}`)
-    .join(" ");
-  const summary = sanitizeReferenceText(transcript, maxCheckpointChars);
+  const userTurns = entries.filter((entry) => entry.role === "user").length;
+  const safePrevious =
+    previousSummary && !scanMemoryContent(previousSummary)
+      ? sanitizeReferenceText(previousSummary, Math.floor(maxCheckpointChars * 0.7))
+      : "";
+  const fallbackNote = `A later conversation with ${userTurns} user ${userTurns === 1 ? "turn" : "turns"} was captured, but its details were not persisted because the summary model failed.`;
+  const summary = sanitizeReferenceText(
+    [safePrevious ? `Previous checkpoint: ${safePrevious}` : "", fallbackNote]
+      .filter(Boolean)
+      .join(" "),
+    maxCheckpointChars,
+  );
   return {
-    summary: summary || "Conversation checkpoint was captured without a model summary.",
+    summary: summary || "Conversation details were not persisted because summarization failed.",
     topics: [],
     source: "fallback",
   };

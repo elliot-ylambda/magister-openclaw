@@ -107,6 +107,59 @@ describe("conversation checkpoint integration", () => {
     expect(await manager.buildPromptContext(newContext)).toBe(recall);
   });
 
+  it("removes quiescent session state after a session-end checkpoint", async () => {
+    const runEmbeddedPiAgent = vi.fn(async () => ({
+      payloads: [
+        {
+          text: JSON.stringify({
+            summary: "The completed planning session produced a launch decision.",
+            topics: ["launch"],
+          }),
+        },
+      ],
+    }));
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      undefined,
+    );
+    const manager = new ConversationCheckpointManager(api, config);
+    const ctx = {
+      agentId: "marketing",
+      sessionId: "ended-session",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const sessionHash = hashIdentifier(ctx.sessionId);
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: "Complete the detailed campaign launch plan." },
+          { role: "assistant", content: "The launch plan and decision are complete." },
+        ],
+      },
+      ctx,
+    );
+
+    manager.scheduleSessionEnd(ctx);
+
+    const statePath = join(
+      dir,
+      ".magister",
+      "state",
+      "conversation-checkpoints",
+      "sessions",
+      `${sessionHash}.json`,
+    );
+    await vi.waitFor(async () => {
+      expect(
+        await readFile(join(dir, "memory", `${new Date().toISOString().slice(0, 10)}.md`), "utf8"),
+      ).toContain("completed planning session");
+      await expect(access(statePath)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
   it("checkpoints a meaningful short chat after the idle window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(Date.UTC(2026, 6, 22, 12));

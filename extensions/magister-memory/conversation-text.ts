@@ -69,6 +69,7 @@ export function extractTranscriptEntries(messages: unknown[]): TranscriptEntry[]
 export function extractConversationDelta(
   entries: TranscriptEntry[],
   lastFingerprint?: string,
+  lastMessageCount?: number,
 ): TranscriptEntry[] {
   if (entries.length === 0) {
     return [];
@@ -76,9 +77,17 @@ export function extractConversationDelta(
   if (!lastFingerprint) {
     return boundEntriesFromEnd(entries, 24_000);
   }
-  const cursor = entries.findLastIndex((entry) => entry.fingerprint === lastFingerprint);
-  if (cursor >= 0) {
-    return entries.slice(cursor + 1);
+  if (
+    lastMessageCount !== undefined &&
+    lastMessageCount > 0 &&
+    lastMessageCount <= entries.length &&
+    entries[lastMessageCount - 1]?.fingerprint === lastFingerprint
+  ) {
+    return entries.slice(lastMessageCount);
+  }
+  if (lastMessageCount !== undefined) {
+    const lastUser = entries.findLastIndex((entry) => entry.role === "user");
+    return entries.slice(lastUser >= 0 ? lastUser : Math.max(0, entries.length - 2));
   }
   const lastUser = entries.findLastIndex((entry) => entry.role === "user");
   return entries.slice(lastUser >= 0 ? lastUser : Math.max(0, entries.length - 2));

@@ -38,16 +38,34 @@ describe("checkpoint summarizer output", () => {
     expect(parseSummaryResponse('{"topics":[]}', 1_200)).toBeUndefined();
   });
 
-  it("builds a bounded deterministic fallback", () => {
+  it("builds a bounded deterministic fallback without copying raw conversation text", () => {
+    const sensitive = ["sk", "proj", "A".repeat(32)].join("-");
     const fallback = buildFallbackSummary(
       [
         { role: "user", text: "u".repeat(300), fingerprint: "1".repeat(64) },
-        { role: "assistant", text: "a".repeat(300), fingerprint: "2".repeat(64) },
+        {
+          role: "assistant",
+          text: `Use credential ${sensitive}`,
+          fingerprint: "2".repeat(64),
+        },
       ],
       250,
     );
     expect(fallback.summary.length).toBeLessThanOrEqual(250);
     expect(fallback.source).toBe("fallback");
+    expect(fallback.summary).not.toContain(sensitive);
+    expect(fallback.summary).not.toContain("u".repeat(20));
+  });
+
+  it("preserves a safe previous checkpoint when the next summary falls back", () => {
+    const fallback = buildFallbackSummary(
+      [{ role: "user", text: "Continue the project work", fingerprint: "1".repeat(64) }],
+      250,
+      "The campaign launch plan is approved.",
+    );
+
+    expect(fallback.summary).toContain("The campaign launch plan is approved.");
+    expect(fallback.summary).toContain("details were not persisted");
   });
 
   it("reserves bounded prompt space for the newest transcript tail", async () => {

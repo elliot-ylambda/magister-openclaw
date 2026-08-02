@@ -32,6 +32,23 @@ describe("conversation text capture", () => {
     expect(extractConversationDelta(entries, "0".repeat(64))).toEqual(entries.slice(2));
   });
 
+  it("uses the observed message count to preserve a turn with a repeated assistant reply", () => {
+    const first = extractTranscriptEntries([
+      { role: "user", content: "Complete the first meaningful project task." },
+      { role: "assistant", content: "Done." },
+    ]);
+    const second = extractTranscriptEntries([
+      { role: "user", content: "Complete the first meaningful project task." },
+      { role: "assistant", content: "Done." },
+      { role: "user", content: "Complete a different meaningful project task." },
+      { role: "assistant", content: "Done." },
+    ]);
+
+    expect(extractConversationDelta(second, first.at(-1)?.fingerprint, first.length)).toEqual(
+      second.slice(2),
+    );
+  });
+
   it("skips greetings and acknowledgements but keeps durable context", () => {
     expect(
       isMeaningfulConversation(extractTranscriptEntries([{ role: "user", content: "Thanks!" }])),

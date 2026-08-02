@@ -1,4 +1,4 @@
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   CheckpointInFlight,
@@ -18,6 +18,7 @@ export function createConversationSessionState(params: {
   sessionHash: string;
   agentId: string;
 }): ConversationSessionState {
+  const nowMs = Date.now();
   return {
     version: STATE_VERSION,
     sessionHash: params.sessionHash,
@@ -25,6 +26,7 @@ export function createConversationSessionState(params: {
     pending: [],
     pendingUserTurns: 0,
     lastActivityAt: 0,
+    updatedAt: nowMs,
     sequence: 0,
     retryCount: 0,
     recallFrozen: false,
@@ -44,10 +46,24 @@ export async function writeConversationSessionState(
   workspaceDir: string,
   state: ConversationSessionState,
 ): Promise<void> {
+  state.updatedAt = Date.now();
   await atomicWriteFile(
     sessionStatePath(workspaceDir, state.sessionHash),
     `${JSON.stringify(state)}\n`,
   );
+}
+
+export async function removeConversationSessionState(
+  workspaceDir: string,
+  sessionHash: string,
+): Promise<void> {
+  try {
+    await unlink(sessionStatePath(workspaceDir, sessionHash));
+  } catch (error) {
+    if (!isNodeErrorWithCode(error, "ENOENT")) {
+      throw error;
+    }
+  }
 }
 
 export async function listConversationSessionStates(
@@ -91,6 +107,102 @@ export async function writeShadowCheckpoint(params: {
   );
 }
 
+export function selectConversationSessionStatesForPruning(params: {
+  states: ConversationSessionState[];
+  nowMs: number;
+  retentionMs: number;
+  maxStates: number;
+}): string[] {
+  const removable = params.states.filter(isQuiescentSessionState);
+  const selected = new Set<string>();
+  const cutoffMs = params.nowMs - Math.max(0, params.retentionMs);
+  for (const state of removable) {
+    if (state.endedAt !== undefined || state.updatedAt < cutoffMs) {
+      selected.add(state.sessionHash);
+    }
+  }
+
+  let remaining = params.states.length - selected.size;
+  const maxStates = Math.max(1, Math.floor(params.maxStates));
+  if (remaining > maxStates) {
+    const oldest = removable
+      .filter((state) => !selected.has(state.sessionHash))
+      .toSorted(
+        (left, right) =>
+          left.updatedAt - right.updatedAt || left.sessionHash.localeCompare(right.sessionHash),
+      );
+    for (const state of oldest) {
+      if (remaining <= maxStates) {
+        break;
+      }
+      selected.add(state.sessionHash);
+      remaining -= 1;
+    }
+  }
+  return [...selected];
+}
+
+export async function pruneShadowCheckpoints(params: {
+  workspaceDir: string;
+  nowMs: number;
+  retentionMs: number;
+  maxFiles: number;
+}): Promise<number> {
+  const directory = join(checkpointStateRoot(params.workspaceDir), "shadow");
+  let names: string[];
+  try {
+    names = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+  } catch (error) {
+    if (isNodeErrorWithCode(error, "ENOENT")) {
+      return 0;
+    }
+    throw error;
+  }
+  const files = await Promise.all(
+    names.map(async (name) => {
+      const path = join(directory, name);
+      const parsed = await readJsonIfExists(path);
+      const createdAt = isRecord(parsed) ? readNonNegativeNumber(parsed.createdAt) : undefined;
+      const modifiedAt = createdAt ?? (await stat(path)).mtimeMs;
+      return { name, path, modifiedAt };
+    }),
+  );
+  const selected = new Set<string>();
+  const cutoffMs = params.nowMs - Math.max(0, params.retentionMs);
+  for (const file of files) {
+    if (file.modifiedAt < cutoffMs) {
+      selected.add(file.name);
+    }
+  }
+  let remaining = files.length - selected.size;
+  const maxFiles = Math.max(1, Math.floor(params.maxFiles));
+  if (remaining > maxFiles) {
+    for (const file of files
+      .filter((candidate) => !selected.has(candidate.name))
+      .toSorted(
+        (left, right) => left.modifiedAt - right.modifiedAt || left.name.localeCompare(right.name),
+      )) {
+      if (remaining <= maxFiles) {
+        break;
+      }
+      selected.add(file.name);
+      remaining -= 1;
+    }
+  }
+  await Promise.all(
+    files
+      .filter((file) => selected.has(file.name))
+      .map((file) =>
+        unlink(file.path).catch((error) => {
+          if (!isNodeErrorWithCode(error, "ENOENT")) {
+            throw error;
+          }
+        }),
+      ),
+  );
+  return selected.size;
+}
+
 function sessionStatePath(workspaceDir: string, sessionHash: string): string {
   return join(checkpointStateRoot(workspaceDir), "sessions", `${sessionHash}.json`);
 }
@@ -115,9 +227,17 @@ function parseSessionState(
     ...(readString(value.lastMessageFingerprint)
       ? { lastMessageFingerprint: readString(value.lastMessageFingerprint) }
       : {}),
+    ...(readNonNegativeInteger(value.lastMessageCount) !== undefined
+      ? { lastMessageCount: readNonNegativeInteger(value.lastMessageCount) }
+      : {}),
     pending,
     pendingUserTurns: readNonNegativeInteger(value.pendingUserTurns) ?? countUsers(pending),
     lastActivityAt: readNonNegativeNumber(value.lastActivityAt) ?? 0,
+    updatedAt:
+      readNonNegativeNumber(value.updatedAt) ?? readNonNegativeNumber(value.lastActivityAt) ?? 0,
+    ...(readNonNegativeNumber(value.endedAt) !== undefined
+      ? { endedAt: readNonNegativeNumber(value.endedAt) }
+      : {}),
     sequence: readNonNegativeInteger(value.sequence) ?? 0,
     retryCount: readNonNegativeInteger(value.retryCount) ?? 0,
     ...(readNonNegativeNumber(value.retryAt) !== undefined
@@ -206,6 +326,10 @@ function readNonNegativeInteger(value: unknown): number | undefined {
 
 function countUsers(entries: TranscriptEntry[]): number {
   return entries.filter((entry) => entry.role === "user").length;
+}
+
+function isQuiescentSessionState(state: ConversationSessionState): boolean {
+  return state.pending.length === 0 && !state.inFlight && state.retryAt === undefined;
 }
 
 function isNodeErrorWithCode(error: unknown, code: string): boolean {

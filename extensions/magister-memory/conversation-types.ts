@@ -49,9 +49,12 @@ export type ConversationSessionState = {
   sessionHash: string;
   agentId: string;
   lastMessageFingerprint?: string;
+  lastMessageCount?: number;
   pending: TranscriptEntry[];
   pendingUserTurns: number;
   lastActivityAt: number;
+  updatedAt: number;
+  endedAt?: number;
   sequence: number;
   retryCount: number;
   retryAt?: number;
