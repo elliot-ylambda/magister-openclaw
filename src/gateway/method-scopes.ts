@@ -132,6 +132,7 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "send",
     "poll",
     "agent",
+    "magister.approval.continue",
     "agent.wait",
     "wake",
     "talk.mode",

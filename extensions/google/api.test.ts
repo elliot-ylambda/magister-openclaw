@@ -265,4 +265,37 @@ describe("google generative ai helpers", () => {
       }),
     ).toThrow("Google Generative AI baseUrl must use https://generativelanguage.googleapis.com");
   });
+
+  it.each(["image", "video"] as const)(
+    "trusts the exact Magister credential broker route for %s capability",
+    (capability) => {
+      expect(
+        resolveGoogleGenerativeAiHttpRequestConfig({
+          apiKey: "broker-local",
+          baseUrl: "http://127.0.0.1:18796/api/gemini/v1beta",
+          capability,
+          transport: "http",
+          request: { allowPrivateNetwork: true },
+        }),
+      ).toMatchObject({
+        baseUrl: "http://127.0.0.1:18796/api/gemini/v1beta",
+        allowPrivateNetwork: true,
+      });
+    },
+  );
+
+  it.each(["http://127.0.0.1:18797/api/gemini/v1beta", "http://127.0.0.1:18796/api/search/v1beta"])(
+    "rejects non-broker loopback Gemini route %s",
+    (baseUrl) => {
+      expect(() =>
+        resolveGoogleGenerativeAiHttpRequestConfig({
+          apiKey: "broker-local",
+          baseUrl,
+          capability: "image",
+          transport: "http",
+          request: { allowPrivateNetwork: true },
+        }),
+      ).toThrow("Google Generative AI baseUrl must use https://generativelanguage.googleapis.com");
+    },
+  );
 });

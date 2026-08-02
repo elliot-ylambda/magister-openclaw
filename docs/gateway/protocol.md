@@ -394,6 +394,7 @@ enumeration of `src/gateway/server-methods/*.ts`.
     - `artifacts.list`, `artifacts.get`, and `artifacts.download` expose transcript-derived artifact summaries and downloads for an explicit `sessionKey`, `runId`, or `taskId` scope. Run and task queries resolve the owning session server-side and only return transcript media with matching provenance; unsafe or local URL sources return unsupported downloads instead of fetching server-side.
     - `agent.identity.get` returns the effective assistant identity for an agent or session.
     - `agent.wait` waits for a run to finish and returns the terminal snapshot when available.
+    - `magister.approval.continue` is an admin-scoped Magister control-plane method that resumes the exact existing agent session after a permission decision. It deduplicates by permission id, preserves the backing session without resetting it, and can deliver the resulting reply to the originating Slack thread.
 
   </Accordion>
 

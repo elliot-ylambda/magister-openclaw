@@ -5,7 +5,10 @@ import {
   setTaskOutboxIntentByRunId,
 } from "../../tasks/task-registry.js";
 import type { TaskOutboxEventType, TaskRuntime } from "../../tasks/task-registry.types.js";
-import { enqueueDurableWebhook } from "./durable-webhook-outbox.js";
+import {
+  DurableWebhookReplayConflictError,
+  enqueueDurableWebhook,
+} from "./durable-webhook-outbox.js";
 
 function configuredUrl(cfg: OpenClawConfig, eventType: TaskOutboxEventType): string | undefined {
   const raw =
@@ -83,14 +86,22 @@ export async function reconstructTaskCompletionOutbox(params: {
       unavailable += 1;
       continue;
     }
-    await enqueueDurableWebhook({
-      eventId: task.eventId,
-      eventType: task.outboxEventType,
-      url,
-      payload: task.terminalPayload,
-      stateDir: params.stateDir,
-    });
-    reconstructed += 1;
+    try {
+      await enqueueDurableWebhook({
+        eventId: task.eventId,
+        eventType: task.outboxEventType,
+        url,
+        payload: task.terminalPayload,
+        stateDir: params.stateDir,
+      });
+      reconstructed += 1;
+    } catch (error) {
+      if (error instanceof DurableWebhookReplayConflictError) {
+        invalid += 1;
+        continue;
+      }
+      throw error;
+    }
   }
   return { reconstructed, unavailable, invalid };
 }

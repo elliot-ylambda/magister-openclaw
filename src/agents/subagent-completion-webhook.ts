@@ -10,6 +10,7 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { enqueueAndDeliverDurableWebhook } from "../infra/outbound/durable-webhook-outbox.js";
 import { persistCompletionOutboxIntent } from "../infra/outbound/task-outbox-reconciliation.js";
+import type { GlobalHookRunnerRegistry } from "../plugins/hook-registry.types.js";
 import { getGlobalPluginRegistry } from "../plugins/hook-runner-global.js";
 import type {
   PluginHookHandlerMap,
@@ -140,7 +141,10 @@ export async function sendSubagentCompletionWebhook(params: {
  * `event.targetSessionKey`. Token usage / startedAt are not exposed by the
  * registry's public reader API, so we omit them — runtime_ms defaults to 0.
  */
-export function registerSubagentCompletionWebhookHook(cfg: OpenClawConfig): void {
+export function registerSubagentCompletionWebhookHook(
+  cfg: OpenClawConfig,
+  registryOverride?: GlobalHookRunnerRegistry,
+): void {
   const url = trimToOptionalString(cfg.subagent?.completionWebhook);
   // webhookToken is SecretInput (string | SecretRef). Only inline string tokens
   // are supported here, matching how `cron.webhookToken` is consumed in
@@ -150,7 +154,10 @@ export function registerSubagentCompletionWebhookHook(cfg: OpenClawConfig): void
   if (!url || !token) {
     return;
   }
-  const registry = getGlobalPluginRegistry();
+  // Gateway startup can defer plugin loading until after the HTTP listener is
+  // attached. In that path the global registry does not exist when core
+  // startup first runs, so accept the freshly loaded registry explicitly.
+  const registry = registryOverride ?? getGlobalPluginRegistry();
   if (!registry) {
     return;
   }

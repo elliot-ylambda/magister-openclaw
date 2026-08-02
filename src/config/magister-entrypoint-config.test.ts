@@ -141,6 +141,8 @@ function buildCanaryRuntimeConfig() {
             "magister_list_integrations",
             "magister_get_marketing_plan",
             "magister_list_workflow_status",
+            "magister_list_workflows",
+            "magister_list_workflow_templates",
             "magister_list_firehose_matches",
             "magister_get_compile_run",
             "magister_get_audit_health",

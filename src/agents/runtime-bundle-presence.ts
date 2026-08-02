@@ -33,6 +33,10 @@ export type PendingPromptPresence = {
   sentPath: string;
   metricSentPath: string;
   payload: Record<string, unknown>;
+  modelRequestPendingPath: string;
+  modelRequestSentPath: string;
+  modelRequestPayload: Record<string, unknown>;
+  modelRequestSend?: Promise<void>;
   modelRequestStartedAtMs?: number;
   firstTokenLatencyMs?: number;
 };
@@ -136,7 +140,7 @@ async function atomicJson(filePath: string, value: unknown): Promise<void> {
   }
 }
 
-async function sendPromptPresence(
+async function sendRuntimeEvidence(
   payload: Record<string, unknown>,
   timeoutMs: number,
 ): Promise<boolean> {
@@ -165,14 +169,18 @@ async function sendPromptPresence(
   }
 }
 
-async function markSent(record: PendingPromptPresence): Promise<void> {
-  await atomicJson(record.sentPath, {
+async function markSent(params: {
+  pendingPath: string;
+  sentPath: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  await atomicJson(params.sentPath, {
     acknowledged_at: Date.now(),
-    release_id: record.payload.release_id,
-    session_id: record.payload.session_id,
+    release_id: params.payload.release_id,
+    session_id: params.payload.session_id,
   });
-  await unlink(record.pendingPath).catch(() => {});
-  await fsyncDirectory(path.dirname(record.pendingPath));
+  await unlink(params.pendingPath).catch(() => {});
+  await fsyncDirectory(path.dirname(params.pendingPath));
 }
 
 export async function beginPromptPresence(params: {
@@ -212,30 +220,76 @@ export async function beginPromptPresence(params: {
       skills_sha256: state.active.skills_sha256,
       templates_sha256: state.active.templates_sha256,
     },
+    modelRequestPendingPath: path.join(directory, "model-request-pending", `${identity}.json`),
+    modelRequestSentPath: path.join(directory, "model-request-sent", `${identity}.json`),
+    modelRequestPayload: {
+      boot_id: state.boot_id,
+      lease: state.lease,
+      machine_id: state.machine_id,
+      manifest_sha256: state.active.manifest_sha256,
+      phase: "model_request_started",
+      process_generation: state.process_generation,
+      release_id: state.active.release_id,
+      session_id: sessionId,
+      skills_sha256: state.active.skills_sha256,
+      templates_sha256: state.active.templates_sha256,
+    },
   };
-  if (fs.existsSync(record.sentPath)) {
-    return undefined;
-  }
-  if (!fs.existsSync(record.pendingPath)) {
-    await atomicJson(record.pendingPath, record.payload);
-  } else {
-    try {
-      record.payload = JSON.parse(await readFile(record.pendingPath, "utf8"));
-    } catch {
+  if (!fs.existsSync(record.sentPath)) {
+    if (!fs.existsSync(record.pendingPath)) {
       await atomicJson(record.pendingPath, record.payload);
+    } else {
+      try {
+        record.payload = JSON.parse(await readFile(record.pendingPath, "utf8"));
+      } catch {
+        await atomicJson(record.pendingPath, record.payload);
+      }
     }
-  }
-  if (await sendPromptPresence(record.payload, PRE_REQUEST_TIMEOUT_MS)) {
-    await markSent(record);
+    if (await sendRuntimeEvidence(record.payload, PRE_REQUEST_TIMEOUT_MS)) {
+      await markSent({
+        pendingPath: record.pendingPath,
+        sentPath: record.sentPath,
+        payload: record.payload,
+      });
+    }
   }
   return record;
 }
 
-export function markPromptRequestStarted(record: PendingPromptPresence | undefined): void {
+export async function markPromptRequestStarted(
+  record: PendingPromptPresence | undefined,
+): Promise<void> {
   if (!record) {
     return;
   }
   record.modelRequestStartedAtMs = Date.now();
+  if (fs.existsSync(record.modelRequestSentPath)) {
+    return;
+  }
+  try {
+    if (!fs.existsSync(record.modelRequestPendingPath)) {
+      await atomicJson(record.modelRequestPendingPath, record.modelRequestPayload);
+    } else {
+      try {
+        record.modelRequestPayload = JSON.parse(
+          await readFile(record.modelRequestPendingPath, "utf8"),
+        );
+      } catch {
+        await atomicJson(record.modelRequestPendingPath, record.modelRequestPayload);
+      }
+    }
+  } catch {
+    return;
+  }
+  record.modelRequestSend = (async () => {
+    if (await sendRuntimeEvidence(record.modelRequestPayload, PRE_REQUEST_TIMEOUT_MS)) {
+      await markSent({
+        pendingPath: record.modelRequestPendingPath,
+        sentPath: record.modelRequestSentPath,
+        payload: record.modelRequestPayload,
+      });
+    }
+  })().catch(() => {});
 }
 
 export function recordPromptFirstToken(record: PendingPromptPresence | undefined): void {
@@ -255,19 +309,28 @@ export async function retryPromptPresence(
   if (!record) {
     return;
   }
+  await record.modelRequestSend;
   const promptPending = fs.existsSync(record.pendingPath);
+  const modelRequestPending = fs.existsSync(record.modelRequestPendingPath);
   const metricPending =
     record.firstTokenLatencyMs !== undefined && !fs.existsSync(record.metricSentPath);
-  if (!promptPending && !metricPending) {
+  if (!promptPending && !modelRequestPending && !metricPending) {
     return;
   }
   const payload =
     record.firstTokenLatencyMs === undefined
       ? record.payload
       : { ...record.payload, first_token_latency_ms: record.firstTokenLatencyMs };
-  if (await sendPromptPresence(payload, POST_REQUEST_TIMEOUT_MS)) {
+  if (
+    (promptPending || metricPending) &&
+    (await sendRuntimeEvidence(payload, POST_REQUEST_TIMEOUT_MS))
+  ) {
     if (promptPending) {
-      await markSent(record);
+      await markSent({
+        pendingPath: record.pendingPath,
+        sentPath: record.sentPath,
+        payload: record.payload,
+      });
     }
     if (metricPending) {
       await atomicJson(record.metricSentPath, {
@@ -277,5 +340,15 @@ export async function retryPromptPresence(
         session_id: record.payload.session_id,
       });
     }
+  }
+  if (
+    modelRequestPending &&
+    (await sendRuntimeEvidence(record.modelRequestPayload, POST_REQUEST_TIMEOUT_MS))
+  ) {
+    await markSent({
+      pendingPath: record.modelRequestPendingPath,
+      sentPath: record.modelRequestSentPath,
+      payload: record.modelRequestPayload,
+    });
   }
 }

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   emitDiagnosticEvent,
   onDiagnosticEvent,
@@ -42,6 +42,42 @@ afterEach(() => {
 });
 
 describe("gateway HTTP request trace scope", () => {
+  it("emits a content-free diagnostic for an unhandled HTTP request failure", async () => {
+    const events: unknown[] = [];
+    const stop = onDiagnosticEvent((event) => events.push(event));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const httpServer = createGatewayHttpServer({
+      canvasHost: null,
+      clients: new Set(),
+      controlUiEnabled: false,
+      controlUiBasePath: "/__control__",
+      openAiChatCompletionsEnabled: false,
+      openResponsesEnabled: false,
+      resolvedAuth,
+      getRuntimeConfig: () => {
+        throw new Error("private config content");
+      },
+    });
+
+    const port = await listen(httpServer);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/broken`);
+      expect(response.status).toBe(500);
+    } finally {
+      await closeServer(httpServer);
+      stop();
+      consoleError.mockRestore();
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "http.request.error",
+      surface: "gateway_http",
+      failureKind: "unhandled_exception",
+    });
+    expect(JSON.stringify(events)).not.toContain("private");
+  });
+
   it("threads active request trace through logs and diagnostics", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-gateway-request-trace-"));
     const logPath = path.join(dir, "gateway.log");
