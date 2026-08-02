@@ -9,6 +9,8 @@ import {
 import { Type } from "typebox";
 import { mirrorAudit } from "./audit-mirror.js";
 import { withContextLock } from "./context-lock.js";
+import { resolveConversationCheckpointConfig } from "./conversation-config.js";
+import { ConversationCheckpointManager } from "./conversation-manager.js";
 import { MemoryStore, type MemoryTarget } from "./memory-store.js";
 import { memoryOperationId, withHostMutationBoundary } from "./mutation-boundary.js";
 
@@ -26,6 +28,7 @@ type MemoryPluginConfig = {
   memoryCharLimit?: number;
   userCharLimit?: number;
   auditEndpoint?: string;
+  conversationCheckpoints?: unknown;
 };
 
 type MemoryToolParams = {
@@ -199,9 +202,48 @@ export default definePluginEntry({
   id: "magister-memory",
   name: "Magister Memory",
   description:
-    "Bounded, file-backed agent memory with tool-mediated writes, threat scanning, and gateway audit mirroring.",
+    "Bounded curated memory with episodic conversation checkpoints and recent-chat continuity.",
   register(api) {
+    const checkpointManager = new ConversationCheckpointManager(
+      api,
+      resolveConversationCheckpointConfig(api.pluginConfig),
+    );
     api.registerTool((ctx) => createMemoryTool(api, ctx), { name: "memory" });
+    api.on("agent_end", async (event, ctx) => {
+      try {
+        await checkpointManager.captureAgentEnd(event, ctx);
+      } catch {
+        api.logger.warn("magister-memory: conversation capture failed");
+      }
+    });
+    api.on("before_compaction", async (event, ctx) => {
+      try {
+        await checkpointManager.captureBeforeCompaction(event.messages, ctx);
+      } catch {
+        api.logger.warn("magister-memory: pre-compaction capture failed");
+      }
+    });
+    api.on("session_end", (event, ctx) => {
+      checkpointManager.scheduleSessionEnd({
+        ...ctx,
+        sessionId: event.sessionId,
+        sessionKey: event.sessionKey ?? ctx.sessionKey,
+      });
+    });
+    api.on("before_prompt_build", async (_event, ctx) => {
+      try {
+        const recentContext = await checkpointManager.buildPromptContext(ctx);
+        return recentContext ? { prependSystemContext: recentContext } : undefined;
+      } catch {
+        api.logger.warn("magister-memory: recent conversation recall failed");
+        return undefined;
+      }
+    });
+    api.registerService({
+      id: "magister-memory-conversation-checkpoints",
+      start: (ctx) => checkpointManager.start(ctx.workspaceDir),
+      stop: () => checkpointManager.stop(),
+    });
   },
 });
 
@@ -210,3 +252,5 @@ export { createMemoryTool };
 export { MemoryStore } from "./memory-store.js";
 export { mirrorAudit } from "./audit-mirror.js";
 export { scanMemoryContent } from "./threat-scan.js";
+export { ConversationCheckpointManager } from "./conversation-manager.js";
+export { resolveConversationCheckpointConfig } from "./conversation-config.js";
