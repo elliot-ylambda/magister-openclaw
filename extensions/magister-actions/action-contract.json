@@ -69,6 +69,560 @@
       "tool_name": "magister_list_workflow_status"
     },
     {
+      "action": "list_workflows",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List the active tracked workflows configured for this project.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_list_workflows"
+    },
+    {
+      "action": "get_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read one active project workflow's complete authoring and schedule state by UUID.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_workflow"
+    },
+    {
+      "action": "list_workflow_templates",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List active workflow templates and whether this project already forked them.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_list_workflow_templates"
+    },
+    {
+      "action": "fork_workflow_template",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create or reuse a project workflow from one template slug and optional configured inputs. The gateway owns input-aware deduplication.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "inputs": {
+            "additionalProperties": true,
+            "maxProperties": 30,
+            "type": "object"
+          },
+          "template_slug": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "required": ["template_slug"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_fork_workflow_template"
+    },
+    {
+      "action": "create_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create one reusable project workflow from bounded typed steps. Use a stable idempotency key and list existing workflows first to avoid duplicate intent.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "WorkflowInputArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "default": "",
+                "maxLength": 160,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                "type": "string"
+              },
+              "placeholder": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "type": {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,39}$",
+                "type": "string"
+              },
+              "value": {}
+            },
+            "required": ["name", "type"],
+            "type": "object"
+          },
+          "WorkflowStepArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "default": "",
+                "maxLength": 8000,
+                "type": "string"
+              },
+              "integrations": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "order": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "skill": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$",
+                "type": "string"
+              },
+              "skills": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]+$",
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._:-]+$",
+                "type": "string"
+              }
+            },
+            "required": ["order", "title"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "focus_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/WorkflowInputArgs"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "notify_on_complete": {
+            "default": false,
+            "type": "boolean"
+          },
+          "prompt": {
+            "default": "",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "required_connections": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/$defs/WorkflowStepArgs"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]+$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "title", "steps"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_create_workflow"
+    },
+    {
+      "action": "update_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Update selected fields on one active project workflow. Inputs and steps replace their complete arrays when supplied.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "WorkflowInputArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "default": "",
+                "maxLength": 160,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+                "type": "string"
+              },
+              "placeholder": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "type": {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,39}$",
+                "type": "string"
+              },
+              "value": {}
+            },
+            "required": ["name", "type"],
+            "type": "object"
+          },
+          "WorkflowStepArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "default": "",
+                "maxLength": 8000,
+                "type": "string"
+              },
+              "integrations": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "order": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "skill": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$",
+                "type": "string"
+              },
+              "skills": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]+$",
+                "type": "string"
+              },
+              "tool": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._:-]+$",
+                "type": "string"
+              }
+            },
+            "required": ["order", "title"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "focus_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/$defs/WorkflowInputArgs"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "notify_on_complete": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "required_connections": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/$defs/WorkflowStepArgs"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]+$",
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_update_workflow"
+    },
+    {
+      "action": "schedule_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Request a recurring schedule for one workflow. This only mints one human-approval link; the schedule is installed after the user approves the exact cadence.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cron_expr": {
+            "maxLength": 100,
+            "minLength": 5,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "max_runs": {
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "starts_at": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "workflow_id", "cron_expr"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_schedule_workflow"
+    },
+    {
+      "action": "unschedule_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Remove the recurring schedule from one active project workflow.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_unschedule_workflow"
+    },
+    {
+      "action": "run_workflow",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Start one active project workflow as a durable tracked run for the verified current chat turn, then return immediately.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "notify": {
+            "type": "boolean"
+          },
+          "workflow_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          }
+        },
+        "required": ["workflow_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_run_workflow"
+    },
+    {
+      "action": "update_plan_item_status",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Update one active marketing-plan item using the verified current chat or plan-task workflow context.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked_reason": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "plan_item_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["ready", "running", "completed", "blocked", "failed", "skipped"],
+            "type": "string"
+          }
+        },
+        "required": ["plan_item_id", "status"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_update_plan_item_status"
+    },
+    {
       "action": "list_firehose_matches",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -788,10 +1342,698 @@
       "tool_name": "magister_get_action_approval"
     },
     {
+      "action": "generate_gemini_image",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to generate a new Gemini image and persist it in project Assets. Existing-image edits are not supported by this action.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "default": "gemini-image.png",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "model": {
+            "default": "gemini-3.1-flash-image",
+            "enum": [
+              "gemini-2.5-flash-image",
+              "gemini-3.1-flash-lite-image",
+              "gemini-3.1-flash-image",
+              "gemini-3-pro-image"
+            ],
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "prompt"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_generate_gemini_image"
+    },
+    {
+      "action": "generate_elevenlabs_voice",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to generate one ElevenLabs voice asset.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "VoiceSettingsArgs": {
+            "additionalProperties": false,
+            "properties": {
+              "similarity_boost": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "stability": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "style": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "use_speaker_boost": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "default": "voiceover.mp3",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "model": {
+            "default": "eleven_multilingual_v2",
+            "enum": ["eleven_multilingual_v2", "eleven_turbo_v2_5"],
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "voice_id": {
+            "default": "EXAVITQu4vr4xnSDxMaL",
+            "enum": [
+              "EXAVITQu4vr4xnSDxMaL",
+              "JBFqnCBsd6RMkjVDRZzb",
+              "CwhRBWXzGAHq8TQ4Fs17",
+              "IKne3meq5aSn9XLyUdCD",
+              "FGY2WhTYpPnrIDTdsKH5"
+            ],
+            "type": "string"
+          },
+          "voice_settings": {
+            "$ref": "#/$defs/VoiceSettingsArgs"
+          }
+        },
+        "required": ["idempotency_key", "text"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_generate_elevenlabs_voice"
+    },
+    {
+      "action": "generate_ideogram_image",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to generate one to four Ideogram image assets.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "aspect_ratio": {
+            "default": "1x1",
+            "enum": [
+              "1x1",
+              "16x9",
+              "9x16",
+              "4x3",
+              "3x4",
+              "3x2",
+              "2x3",
+              "4x5",
+              "5x4",
+              "10x16",
+              "16x10",
+              "2x1",
+              "1x2",
+              "3x1",
+              "1x3"
+            ],
+            "type": "string"
+          },
+          "filename": {
+            "default": "ideogram-image.png",
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "magic_prompt": {
+            "default": "AUTO",
+            "enum": ["AUTO", "ON", "OFF"],
+            "type": "string"
+          },
+          "num_images": {
+            "default": 1,
+            "maximum": 4,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rendering_speed": {
+            "default": "DEFAULT",
+            "enum": ["FLASH", "TURBO", "DEFAULT", "QUALITY"],
+            "type": "string"
+          },
+          "style_type": {
+            "default": "AUTO",
+            "enum": ["AUTO", "GENERAL", "REALISTIC", "DESIGN", "FICTION"],
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "prompt"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_generate_ideogram_image"
+    },
+    {
+      "action": "submit_fal_generation",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to submit one prompt-only job to an allowlisted fal image or video model, then poll magister_get_fal_generation.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "model_id": {
+            "enum": [
+              "fal-ai/flux/schnell",
+              "fal-ai/flux/dev",
+              "fal-ai/flux-pro/v1.1",
+              "fal-ai/bytedance/seedance/v1/lite/text-to-video",
+              "fal-ai/bytedance/seedance/v1/pro/text-to-video",
+              "fal-ai/veo3.1/fast",
+              "fal-ai/kling-video/v2/master/text-to-video"
+            ],
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "model_id", "prompt"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "spend",
+      "spend_limited": true,
+      "tool_name": "magister_submit_fal_generation"
+    },
+    {
+      "action": "get_fal_generation",
+      "approval_policy": "none",
+      "async_status_adapter": "job",
+      "description": "Poll one project-bound fal job and persist completed media in project Assets.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_handle": {
+            "maxLength": 193,
+            "minLength": 73,
+            "pattern": "^[A-Za-z0-9_-]{8,128}\\.[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "model_id": {
+            "enum": [
+              "fal-ai/flux/schnell",
+              "fal-ai/flux/dev",
+              "fal-ai/flux-pro/v1.1",
+              "fal-ai/bytedance/seedance/v1/lite/text-to-video",
+              "fal-ai/bytedance/seedance/v1/pro/text-to-video",
+              "fal-ai/veo3.1/fast",
+              "fal-ai/kling-video/v2/master/text-to-video"
+            ],
+            "type": "string"
+          }
+        },
+        "required": ["model_id", "job_handle"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_fal_generation"
+    },
+    {
+      "action": "automate_browser",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval to run one bounded user-directed browser task. The action accepts no arbitrary provider options and is never blind-retried.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "task": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "task"],
+        "type": "object"
+      },
+      "retry_policy": "none",
+      "side_effect": "external_write",
+      "spend_limited": true,
+      "tool_name": "magister_automate_browser"
+    },
+    {
+      "action": "integration_read",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Run one server-allowlisted, read-only JSON operation against an enabled connected integration. Use only a relative path and documented routing headers; credentials and upstream hosts are Gateway-owned.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Model-visible bounded JSON integration request.\n\nProject identity, upstream host, credentials, approval state, and risk are\nintentionally absent. The Gateway derives all of them from trusted state.",
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_integration_read"
+    },
+    {
+      "action": "integration_change",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval for one reversible external integration change. The Gateway rejects reads, paid-spend changes, and deletes sent here.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path", "idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "spend_limited": false,
+      "tool_name": "magister_integration_change"
+    },
+    {
+      "action": "integration_spend",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval for one paid-spend integration mutation. The Gateway independently classifies and applies provider spend guardrails.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path", "idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "spend",
+      "spend_limited": false,
+      "tool_name": "magister_integration_spend"
+    },
+    {
+      "action": "integration_delete",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request exact approval for one destructive integration delete. The Gateway independently verifies that the canonical operation is a delete.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "IntegrationQueryPair": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+                "type": "string"
+              },
+              "value": {
+                "maxLength": 8192,
+                "pattern": "^[^\\x00\\r\\n]*$",
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"],
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "form": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 20,
+            "type": "object"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "method": {
+            "maxLength": 7,
+            "minLength": 3,
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "query": {
+            "items": {
+              "$ref": "#/$defs/IntegrationQueryPair"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "site_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 131072,
+            "type": "string"
+          }
+        },
+        "required": ["service", "method", "path", "idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "delete",
+      "spend_limited": false,
+      "tool_name": "magister_integration_delete"
+    },
+    {
       "action": "send_email",
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
-      "description": "Request one-time human approval to send this exact email payload.",
+      "description": "Request one-time approval to send this exact payload from the user's connected Gmail.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -850,10 +2092,74 @@
       "tool_name": "magister_send_email"
     },
     {
+      "action": "send_agent_email",
+      "approval_policy": "exact_payload",
+      "async_status_adapter": "synchronous",
+      "description": "Request one-time approval to send this exact payload from the project's Magister agent email.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bcc": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "body": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "cc": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "html": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "reply_to": {
+            "maxLength": 320,
+            "minLength": 3,
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 998,
+            "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "maxLength": 320,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "to", "subject", "body"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "spend_limited": false,
+      "tool_name": "magister_send_agent_email"
+    },
+    {
       "action": "create_social_draft",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Create an unpublished social draft; scheduling and publishing are separate approvals.",
+      "description": "Create an unpublished social draft from the exact supplied media. media_urls accepts saved generated image/video paths or stable public assets; never substitute or regenerate media. Scheduling and publishing are separate approvals.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -1437,13 +2743,14 @@
                 "type": "string"
               },
               "sha256": {
+                "description": "Omit this \u2014 it is computed and attested automatically from the file bytes. Never hand-compute or guess a hash.",
                 "maxLength": 64,
                 "minLength": 64,
                 "pattern": "^[a-f0-9]{64}$",
                 "type": "string"
               }
             },
-            "required": ["path", "sha256"],
+            "required": ["path"],
             "type": "object"
           },
           "CompletionBlocker": {
@@ -1596,6 +2903,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "8bffffa57e41ae01663136a7cf4a668b09c075ea246eea4910d2a648ad66e83e",
+  "registry_revision": "efaa6dd98db174eaefab85ba4c101885f064408ea00a3f5397f69dae10f71528",
   "schema_version": 1
 }

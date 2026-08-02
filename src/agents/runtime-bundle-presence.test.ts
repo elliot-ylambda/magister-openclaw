@@ -122,6 +122,40 @@ describe("runtime bundle prompt presence", () => {
     });
   });
 
+  it("retries durable model-request evidence after the request", async () => {
+    const workspace = await activeWorkspace();
+    vi.stubEnv("GATEWAY_TOKEN", "machine-token");
+    let modelRequestAttempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        if (typeof init.body !== "string") {
+          throw new TypeError("expected JSON request body");
+        }
+        const payload = JSON.parse(init.body);
+        if (payload.phase === "model_request_started") {
+          modelRequestAttempts += 1;
+          return { ok: modelRequestAttempts > 1 } as Response;
+        }
+        return { ok: true } as Response;
+      }),
+    );
+
+    const record = await beginPromptPresence({
+      workspaceDir: workspace,
+      sessionId: "session-request-retry",
+    });
+    await markPromptRequestStarted(record);
+    await retryPromptPresence(record);
+
+    expect(modelRequestAttempts).toBe(2);
+    expect(fs.existsSync(record!.modelRequestPendingPath)).toBe(false);
+    expect(JSON.parse(await readFile(record!.modelRequestSentPath, "utf8"))).toMatchObject({
+      release_id: releaseId,
+      session_id: "session-request-retry",
+    });
+  });
+
   it("does not report a candidate when the active marker disagrees", async () => {
     const workspace = await activeWorkspace();
     await writeFile(
@@ -139,7 +173,7 @@ describe("runtime bundle prompt presence", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("records first-token latency through an idempotent prompt ACK", async () => {
+  it("records model-request evidence before sending and preserves first-token latency", async () => {
     const workspace = await activeWorkspace();
     vi.stubEnv("GATEWAY_TOKEN", "machine-token");
     const payloads: Array<Record<string, unknown>> = [];
@@ -149,26 +183,50 @@ describe("runtime bundle prompt presence", () => {
         if (typeof init.body !== "string") {
           throw new TypeError("expected JSON request body");
         }
-        payloads.push(JSON.parse(init.body));
+        const payload = JSON.parse(init.body);
+        if (payload.phase === "model_request_started") {
+          const pending = path.join(
+            workspace,
+            ".magister",
+            "runtime",
+            "prompt-presence",
+            "model-request-pending",
+          );
+          expect(fs.readdirSync(pending)).toHaveLength(1);
+        }
+        payloads.push(payload);
         return { ok: true } as Response;
       }),
     );
     const now = vi.spyOn(Date, "now");
-    now.mockReturnValueOnce(1_000);
+    now.mockReturnValue(1_000);
     const record = await beginPromptPresence({
       workspaceDir: workspace,
       sessionId: "session-latency",
     });
     expect(record).toBeDefined();
 
-    now.mockReturnValueOnce(2_000);
-    markPromptRequestStarted(record);
-    now.mockReturnValueOnce(2_125);
+    now.mockReturnValue(2_000);
+    await markPromptRequestStarted(record);
+    now.mockReturnValue(2_125);
     recordPromptFirstToken(record);
     await retryPromptPresence(record);
 
-    expect(payloads).toHaveLength(2);
-    expect(payloads[1]).toMatchObject({ first_token_latency_ms: 125 });
+    expect(payloads).toHaveLength(3);
+    expect(payloads[1]).toMatchObject({
+      phase: "model_request_started",
+      release_id: releaseId,
+      session_id: "session-latency",
+    });
+    expect(payloads[2]).toMatchObject({
+      phase: "prompt_present",
+      first_token_latency_ms: 125,
+    });
+    expect(fs.existsSync(record!.modelRequestPendingPath)).toBe(false);
+    expect(JSON.parse(await readFile(record!.modelRequestSentPath, "utf8"))).toMatchObject({
+      release_id: releaseId,
+      session_id: "session-latency",
+    });
     expect(JSON.parse(await readFile(record!.metricSentPath, "utf8"))).toMatchObject({
       first_token_latency_ms: 125,
       release_id: releaseId,

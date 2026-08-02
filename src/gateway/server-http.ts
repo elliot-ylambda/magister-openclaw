@@ -17,6 +17,7 @@ import type { CanvasHostHandler } from "../canvas-host/server.js";
 import { resolveBundledChannelGatewayAuthBypassPaths } from "../channels/plugins/gateway-auth-bypass.js";
 import { getRuntimeConfig } from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { emitDiagnosticEvent } from "../infra/diagnostic-events.js";
 import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
@@ -794,6 +795,11 @@ export function createGatewayHttpServer(opts: {
       res.end("Not Found");
     } catch (err) {
       console.error("[gateway-http] unhandled error in request handler:", err);
+      emitDiagnosticEvent({
+        type: "http.request.error",
+        surface: "gateway_http",
+        failureKind: "unhandled_exception",
+      });
       res.statusCode = 500;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Internal Server Error");

@@ -17,7 +17,11 @@ import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import { shouldIncludeSkill } from "./config.js";
 import { normalizeSkillFilter } from "./filter.js";
 import { resolveOpenClawMetadata, resolveSkillInvocationPolicy } from "./frontmatter.js";
-import { loadSkillsFromDirSafe, readSkillFrontmatterSafe } from "./local-loader.js";
+import {
+  loadSkillsFromDirSafe,
+  readSkillFileSafe,
+  readSkillFrontmatterSafe,
+} from "./local-loader.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
 import { formatSkillsForPrompt, type Skill } from "./skill-contract.js";
@@ -128,6 +132,8 @@ const DEFAULT_MAX_SKILLS_IN_PROMPT = 150;
 const DEFAULT_MAX_SKILLS_PROMPT_CHARS = 18_000;
 const DEFAULT_MAX_SKILL_FILE_BYTES = 256_000;
 const DEFAULT_MIN_RAW_ENTRIES_PER_DIRECTORY_SCAN = 1_000;
+const PRELOADED_SKILL_MAX_CHARS = 12_000;
+const PRELOADED_SKILLS_PROMPT_MAX_CHARS = 24_000;
 const DEFAULT_MAX_RAW_ENTRIES_PER_DIRECTORY_SCAN = 10_000;
 const TASK_SELECTED_SKILL_LIMIT = 8;
 const TASK_SELECTED_SKILL_PROMPT_MAX_CHARS = 12_000;
@@ -1129,6 +1135,75 @@ function renderTaskSelectedSkillsPrompt(params: {
     .join("\n");
 }
 
+function stripSkillFrontmatter(content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  if (!normalized.startsWith("---")) {
+    return normalized.trim();
+  }
+  const endIndex = normalized.indexOf("\n---", 3);
+  if (endIndex === -1) {
+    return normalized.trim();
+  }
+  return normalized.slice(endIndex + 4).trim();
+}
+
+function renderPreloadedSkillsPrompt(params: {
+  skills: Skill[];
+  runtimeChannel?: string;
+  config?: OpenClawConfig;
+  agentId?: string;
+}): string {
+  const runtimeChannel = params.runtimeChannel?.trim().toLowerCase();
+  if (!runtimeChannel) {
+    return "";
+  }
+  const limits = resolveSkillsLimits(params.config, params.agentId);
+  const candidates = params.skills
+    .filter((skill) => skill.preloadChannels?.includes(runtimeChannel))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "en"));
+  const rendered: string[] = [];
+  let renderedChars = 0;
+
+  for (const skill of candidates) {
+    const raw = readSkillFileSafe({
+      rootDir: skill.baseDir ?? path.dirname(skill.filePath),
+      filePath: skill.filePath,
+      maxBytes: Math.min(limits.maxSkillFileBytes, PRELOADED_SKILL_MAX_CHARS * 4),
+    });
+    const body = raw ? stripSkillFrontmatter(raw) : "";
+    if (!body || body.length > PRELOADED_SKILL_MAX_CHARS) {
+      skillsLogger.warn(
+        `unable to preload skill body for ${skill.name} on ${runtimeChannel}: missing or over ${PRELOADED_SKILL_MAX_CHARS} characters`,
+      );
+      continue;
+    }
+    const block = [
+      `  <preloaded_skill name="${escapeXml(skill.name)}" location="${escapeXml(skill.filePath)}">`,
+      body,
+      "  </preloaded_skill>",
+    ].join("\n");
+    if (renderedChars + block.length > PRELOADED_SKILLS_PROMPT_MAX_CHARS) {
+      skillsLogger.warn(
+        `preloaded skills prompt reached ${PRELOADED_SKILLS_PROMPT_MAX_CHARS} characters; omitting ${skill.name}`,
+      );
+      continue;
+    }
+    rendered.push(block);
+    renderedChars += block.length;
+  }
+
+  if (rendered.length === 0) {
+    return "";
+  }
+  return [
+    "The following skill instructions are preloaded for the current channel. Follow them directly; do not use the read tool to reload their SKILL.md files.",
+    "<preloaded_skills>",
+    ...rendered,
+    "</preloaded_skills>",
+  ].join("\n");
+}
+
 // Budget reserved for the compact-mode warning line prepended by the caller.
 const COMPACT_WARNING_OVERHEAD = 150;
 
@@ -1335,7 +1410,12 @@ function resolveWorkspaceSkillPromptState(
   );
   const promptEntries = eligible.filter((entry) => isSkillVisibleInAvailableSkillsPrompt(entry));
   const remoteNote = opts?.eligibility?.remote?.note?.trim();
-  const resolvedSkills = promptEntries.map((entry) => entry.skill);
+  const resolvedSkills = promptEntries.map((entry) => {
+    const preloadChannels = entry.metadata?.preloadChannels;
+    return preloadChannels?.length
+      ? { ...entry.skill, preloadChannels: preloadChannels.slice() }
+      : entry.skill;
+  });
   // Derive prompt-facing skills with compacted paths (e.g. ~/...) once.
   // Budget checks and final render both use this same representation so the
   // tier decision is based on the exact strings that end up in the prompt.
@@ -1370,42 +1450,46 @@ export function resolveSkillsPromptForRun(params: {
   workspaceDir: string;
   agentId?: string;
   taskText?: string;
+  runtimeChannel?: string;
 }): string {
-  if (params.taskText === undefined) {
-    const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
-    if (snapshotPrompt) {
-      return snapshotPrompt;
-    }
-    if (params.entries && params.entries.length > 0) {
-      const prompt = buildWorkspaceSkillsPrompt(params.workspaceDir, {
-        entries: params.entries,
-        config: params.config,
-        agentId: params.agentId,
-      });
-      return prompt.trim() ? prompt : "";
-    }
-    return "";
-  }
-  if (params.skillsSnapshot?.resolvedSkills) {
-    return renderTaskSelectedSkillsPrompt({
-      skills: params.skillsSnapshot.resolvedSkills,
-      taskText: params.taskText ?? "",
-      workspaceDir: params.workspaceDir,
-    });
-  }
-  if (params.entries && params.entries.length > 0) {
-    const state = resolveWorkspaceSkillPromptState(params.workspaceDir, {
+  let resolvedState: ReturnType<typeof resolveWorkspaceSkillPromptState> | undefined;
+  let resolvedSkills = params.skillsSnapshot?.resolvedSkills;
+  if (!resolvedSkills && params.entries && params.entries.length > 0) {
+    resolvedState = resolveWorkspaceSkillPromptState(params.workspaceDir, {
       entries: params.entries,
       config: params.config,
       agentId: params.agentId,
     });
-    return renderTaskSelectedSkillsPrompt({
-      skills: state.resolvedSkills,
+    resolvedSkills = resolvedState.resolvedSkills;
+  }
+  const preloadedPrompt = resolvedSkills
+    ? renderPreloadedSkillsPrompt({
+        skills: resolvedSkills,
+        runtimeChannel: params.runtimeChannel,
+        config: params.config,
+        agentId: params.agentId,
+      })
+    : "";
+  let routedPrompt = "";
+
+  if (params.taskText === undefined) {
+    const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
+    if (snapshotPrompt) {
+      routedPrompt = snapshotPrompt;
+    } else if (resolvedState) {
+      routedPrompt = resolvedState.prompt.trim();
+    }
+  } else if (resolvedSkills) {
+    routedPrompt = renderTaskSelectedSkillsPrompt({
+      skills: resolvedSkills,
       taskText: params.taskText ?? "",
       workspaceDir: params.workspaceDir,
     });
+  } else {
+    routedPrompt = params.skillsSnapshot?.prompt?.trim() ?? "";
   }
-  return params.skillsSnapshot?.prompt?.trim() ?? "";
+
+  return [preloadedPrompt, routedPrompt].filter(Boolean).join("\n\n");
 }
 
 export function loadWorkspaceSkillEntries(

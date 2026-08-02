@@ -155,6 +155,7 @@ const BASE_METHODS = [
   "message.action",
   "send",
   "agent",
+  "magister.approval.continue",
   "agent.identity.get",
   "agent.wait",
   // WebChat WebSocket-native chat methods

@@ -227,5 +227,15 @@ describe("installUnhandledRejectionHandler - fatal detection", () => {
         expect.stringContaining("This operation was aborted"),
       );
     });
+
+    it("does not exit on OpenAI SDK APIUserAbortError", () => {
+      const abortErr = new Error("Request was aborted.");
+
+      expectExitCodeFromUnhandled(abortErr, []);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[openclaw] Suppressed AbortError:",
+        expect.stringContaining("Request was aborted."),
+      );
+    });
   });
 });

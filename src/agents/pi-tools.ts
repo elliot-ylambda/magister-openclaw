@@ -1,4 +1,5 @@
 import { createCodingTools, createReadTool } from "@mariozechner/pi-coding-agent";
+import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import { HEARTBEAT_RESPONSE_TOOL_NAME } from "../auto-reply/heartbeat-tool-response.js";
 import type { ModelCompatConfig } from "../config/types.models.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -315,6 +316,7 @@ export function createOpenClawCodingTools(options?: {
   currentThreadTs?: string;
   /** Current inbound message id for action fallbacks (e.g. Telegram react). */
   currentMessageId?: string | number;
+  sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   /** Group id for channel-level tool policy resolution. */
   groupId?: string | null;
   /** Group channel label (e.g. #general) for channel-level tool policy resolution. */
@@ -732,6 +734,7 @@ export function createOpenClawCodingTools(options?: {
           currentChannelId: options?.currentChannelId,
           currentThreadTs: options?.currentThreadTs,
           currentMessageId: options?.currentMessageId,
+          sourceReplyDeliveryMode: options?.sourceReplyDeliveryMode,
           modelProvider: options?.modelProvider,
           modelId: options?.modelId,
           replyToMode: options?.replyToMode,

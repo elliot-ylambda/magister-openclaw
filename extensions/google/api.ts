@@ -46,14 +46,24 @@ type GoogleGenerativeAiRequestOverrides = ProviderRequestTransportOverrides & {
   allowPrivateNetwork?: boolean;
 };
 
-// Magister fork patch: allow http:// to a fixed allowlist of internal Fly hostnames so
-// image/audio/video generation can route through the gateway proxy (gemini_proxy.py),
-// which injects the real Gemini key server-side. The .internal TLD is Fly's private 6PN
-// namespace and is unreachable from public DNS or outside our Fly org. See
-// openclaw-image/entrypoint.sh and docs/openclaw-sync.md (Fork-specific patches).
+// Magister fork patch: allow http:// to the internal Fly gateway and the exact local
+// credential-broker route so image/audio/video generation can reach gemini_proxy.py
+// without exposing the real Gemini key to tenant processes. The .internal TLD is Fly's
+// private 6PN namespace; the loopback listener and path are fixed by the machine image.
+// See openclaw-image/entrypoint.sh and docs/openclaw-sync.md (Fork-specific patches).
 const TRUSTED_INTERNAL_GENAI_HOSTNAMES: ReadonlySet<string> = new Set([
   "magister-gateway.internal",
 ]);
+const TRUSTED_LOCAL_GENAI_BROKER_ORIGIN = "http://127.0.0.1:18796";
+const TRUSTED_LOCAL_GENAI_BROKER_PATH = "/api/gemini";
+
+function isTrustedLocalGenAiBrokerUrl(url: URL): boolean {
+  return (
+    url.origin === TRUSTED_LOCAL_GENAI_BROKER_ORIGIN &&
+    (url.pathname === TRUSTED_LOCAL_GENAI_BROKER_PATH ||
+      url.pathname.startsWith(`${TRUSTED_LOCAL_GENAI_BROKER_PATH}/`))
+  );
+}
 
 function resolveTrustedGoogleGenerativeAiBaseUrl(baseUrl?: string): string {
   const normalized =
@@ -72,7 +82,8 @@ function resolveTrustedGoogleGenerativeAiBaseUrl(baseUrl?: string): string {
     url.protocol === "https:" && hostname === "generativelanguage.googleapis.com";
   const isTrustedInternalProxy =
     url.protocol === "http:" && TRUSTED_INTERNAL_GENAI_HOSTNAMES.has(hostname);
-  if (!isCanonicalGoogle && !isTrustedInternalProxy) {
+  const isTrustedLocalBroker = isTrustedLocalGenAiBrokerUrl(url);
+  if (!isCanonicalGoogle && !isTrustedInternalProxy && !isTrustedLocalBroker) {
     throw new Error(
       "Google Generative AI baseUrl must use https://generativelanguage.googleapis.com",
     );

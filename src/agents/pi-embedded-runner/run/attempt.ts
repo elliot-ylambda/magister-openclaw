@@ -703,6 +703,7 @@ export async function runEmbeddedAttempt(
     config: params.config,
     agentId: params.agentId,
   });
+  const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
   const effectiveFsWorkspaceOnly = resolveAttemptFsWorkspaceOnly({
     config: params.config,
     sessionAgentId,
@@ -744,6 +745,7 @@ export async function runEmbeddedAttempt(
       workspaceDir: effectiveWorkspace,
       agentId: sessionAgentId,
       taskText: params.prompt,
+      runtimeChannel,
     });
     const skillsCatalogPrompt = resolveSkillsCatalogForRun({
       skillsSnapshot: params.skillsSnapshot,
@@ -865,6 +867,7 @@ export async function runEmbeddedAttempt(
             currentChannelId: params.currentChannelId,
             currentThreadTs: params.currentThreadTs,
             currentMessageId: params.currentMessageId,
+            sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
             includeCoreTools: toolConstructionPlan.includeCoreTools,
             toolConstructionPlan: toolConstructionPlan.codingToolConstructionPlan,
             replyToMode: params.replyToMode,
@@ -1155,7 +1158,6 @@ export async function runEmbeddedAttempt(
     });
 
     const machineName = await getMachineDisplayName();
-    const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
     const runtimeCapabilities = collectRuntimeChannelCapabilities({
       cfg: params.config,
       channel: runtimeChannel,
@@ -3075,7 +3077,7 @@ export async function runEmbeddedAttempt(
             }
             try {
               if (promptSubmission.runtimeOnly) {
-                markPromptRequestStarted(promptPresence);
+                await markPromptRequestStarted(promptPresence);
                 await abortable(activeSession.prompt(promptForModel));
               } else {
                 const runtimeContext = promptSubmission.runtimeContext?.trim();
@@ -3086,7 +3088,7 @@ export async function runEmbeddedAttempt(
 
                 // Only pass images option if there are actually images to pass
                 // This avoids potential issues with models that don't expect the images parameter
-                markPromptRequestStarted(promptPresence);
+                await markPromptRequestStarted(promptPresence);
                 if (imageResult.images.length > 0) {
                   await abortable(
                     activeSession.prompt(promptForModel, { images: imageResult.images }),

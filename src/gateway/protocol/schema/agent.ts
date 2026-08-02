@@ -2,11 +2,12 @@ import { Type } from "typebox";
 import {
   AGENT_INTERNAL_EVENT_SOURCES,
   AGENT_INTERNAL_EVENT_STATUSES,
+  AGENT_INTERNAL_EVENT_TYPE_APPROVAL_RESOLUTION,
   AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION,
 } from "../../../agents/internal-event-contract.js";
 import { InputProvenanceSchema, NonEmptyString, SessionLabelString } from "./primitives.js";
 
-export const AgentInternalEventSchema = Type.Object(
+const AgentTaskCompletionInternalEventSchema = Type.Object(
   {
     type: Type.Literal(AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION),
     source: Type.String({ enum: [...AGENT_INTERNAL_EVENT_SOURCES] }),
@@ -23,6 +24,34 @@ export const AgentInternalEventSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+const AgentApprovalResolutionInternalEventSchema = Type.Object(
+  {
+    type: Type.Literal(AGENT_INTERNAL_EVENT_TYPE_APPROVAL_RESOLUTION),
+    approvalId: Type.String({
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      maxLength: 36,
+    }),
+    operationId: Type.String({ pattern: "^op_[a-f0-9]{32}$", maxLength: 128 }),
+    action: Type.String({ minLength: 1, maxLength: 160 }),
+    decision: Type.Union([Type.Literal("allowed"), Type.Literal("denied")]),
+    executionState: Type.Union([
+      Type.Literal("not_started"),
+      Type.Literal("succeeded"),
+      Type.Literal("failed"),
+    ]),
+    summary: Type.String({ minLength: 1, maxLength: 500 }),
+    result: Type.Optional(Type.String({ maxLength: 12_000 })),
+    denialNote: Type.Optional(Type.String({ maxLength: 500 })),
+    replyInstruction: Type.String({ minLength: 1, maxLength: 1_500 }),
+  },
+  { additionalProperties: false },
+);
+
+export const AgentInternalEventSchema = Type.Union([
+  AgentTaskCompletionInternalEventSchema,
+  AgentApprovalResolutionInternalEventSchema,
+]);
 
 export const AgentEventSchema = Type.Object(
   {
@@ -170,6 +199,10 @@ export const AgentParamsSchema = Type.Object(
     ),
     acpTurnSource: Type.Optional(Type.Literal("manual_spawn")),
     internalEvents: Type.Optional(Type.Array(AgentInternalEventSchema)),
+    // Admin-only receiver escape hatch used by magister.approval.continue.
+    // It preserves the exact existing backing session even after its ordinary
+    // freshness/reset window has elapsed.
+    preserveExistingSession: Type.Optional(Type.Boolean()),
     inputProvenance: Type.Optional(InputProvenanceSchema),
     voiceWakeTrigger: Type.Optional(Type.String()),
     idempotencyKey: NonEmptyString,

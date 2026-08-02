@@ -9,6 +9,7 @@ import {
   type OpenClawPluginApi,
   type OpenClawPluginToolContext,
 } from "openclaw/plugin-sdk/core";
+import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { Type, type TSchema } from "typebox";
 import contractJson from "./action-contract.json" with { type: "json" };
 import { handleArtifactPromotion } from "./artifact-promotion.js";
@@ -32,13 +33,33 @@ const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/action
 const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const ARTIFACT_PROMOTION_TIMEOUT_MS = 90_000;
+const SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_WORKSPACE_DIR = "/data/.openclaw/workspace";
 const MAX_COMPLETION_ARTIFACT_BYTES = 16 * 1024 * 1024;
+// A real consolidated report is never this small. Placeholder gaming is real:
+// run 6e06af15 attested a 3-byte "abc" file because its hash is a famous test
+// vector the model knew by heart.
+const MIN_COMPLETION_ARTIFACT_BYTES = 500;
+const MAX_SOCIAL_MEDIA_BYTES = 200 * 1024 * 1024;
+const SOCIAL_MEDIA_CONTENT_TYPES = new Map([
+  [".gif", "image/gif"],
+  [".jpeg", "image/jpeg"],
+  [".jpg", "image/jpeg"],
+  [".mov", "video/quicktime"],
+  [".mp4", "video/mp4"],
+  [".png", "image/png"],
+  [".webm", "video/webm"],
+  [".webp", "image/webp"],
+]);
 const HEARTBEAT_SESSION_RE =
   /(?:^|:)heartbeat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[1-9][0-9]*$/i;
 const WORKFLOW_SESSION_RE =
   /^workflow_run:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SLACK_SESSION_RE =
+  /^(?:agent:[^:]+:)?slack:(?:(?:direct|group|channel):[a-z0-9_-]+(?::thread:[0-9]+\.[0-9]+)?|[a-z0-9_-]+:[a-z0-9_-]+)$/i;
+const WEBCHAT_SESSION_RE =
+  /^agent:[a-z0-9_-]{1,80}:webchat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEARTBEAT_NOTE_MAX_BYTES = 64 * 1024;
 
 const ERROR_CODES = new Set([
@@ -49,6 +70,12 @@ const ERROR_CODES = new Set([
   "limit_reached",
   "upstream_failed",
   "conflict",
+  "transport_unavailable",
+  "unsupported_operation",
+  "entitlement_unavailable",
+  "approval_required",
+  "budget_exhausted",
+  "asset_invalid",
 ]);
 const STATUS_STATES = new Set(["running", "succeeded", "failed"]);
 const SIDE_EFFECTS = new Set([
@@ -79,6 +106,7 @@ type ActionContract = {
   description: string;
   input_schema: Record<string, unknown>;
   side_effect: string;
+  approval_policy: "none" | "exact_payload";
 };
 
 type Contract = {
@@ -218,7 +246,6 @@ export function parseActionEnvelope(value: unknown): ActionEnvelope | null {
   if (
     status.terminal !== (state !== "running") ||
     (status.terminal && status.poll_after_seconds !== 0) ||
-    (value.ok && state === "failed") ||
     (!value.ok && state === "succeeded")
   ) {
     return null;
@@ -282,16 +309,25 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
   if (!sessionKey) {
     return undefined;
   }
-  if (WORKFLOW_SESSION_RE.test(sessionKey) || HEARTBEAT_SESSION_RE.test(sessionKey)) {
+  if (
+    WORKFLOW_SESSION_RE.test(sessionKey) ||
+    HEARTBEAT_SESSION_RE.test(sessionKey) ||
+    SLACK_SESSION_RE.test(sessionKey) ||
+    WEBCHAT_SESSION_RE.test(sessionKey)
+  ) {
     return sessionKey;
   }
   return undefined;
 }
 
 export function actionTimeoutMs(action: string, configuredTimeoutMs: number): number {
-  return action === "promote_artifact"
-    ? Math.max(configuredTimeoutMs, ARTIFACT_PROMOTION_TIMEOUT_MS)
-    : configuredTimeoutMs;
+  if (action === "promote_artifact") {
+    return Math.max(configuredTimeoutMs, ARTIFACT_PROMOTION_TIMEOUT_MS);
+  }
+  if (action === "create_social_draft") {
+    return Math.max(configuredTimeoutMs, SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS);
+  }
+  return configuredTimeoutMs;
 }
 
 function actionAvailableInContext(
@@ -441,6 +477,21 @@ function failureEnvelope(
   };
 }
 
+function emitActionTransportFailure(
+  action: ActionContract,
+  failureKind: "configuration" | "transport" | "contract",
+  errorCode: string,
+  startedAt = Date.now(),
+) {
+  emitTrustedDiagnosticEvent({
+    type: "tool.execution.error",
+    toolName: action.tool_name,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    errorCategory: `magister_action_${failureKind}`,
+    errorCode,
+  });
+}
+
 function ambiguousWriteUserAction(sideEffect: string): string | null {
   return sideEffect === "none"
     ? null
@@ -471,6 +522,226 @@ function resolveConfig(api: OpenClawPluginApi): Required<PluginConfig> {
 }
 
 class ArtifactValidationError extends Error {}
+
+class SocialMediaValidationError extends Error {}
+
+function localSocialMediaPath(reference: string, workspaceDir: string): string | null {
+  if (reference.startsWith("file:")) {
+    let parsed: URL;
+    try {
+      parsed = new URL(reference);
+    } catch {
+      throw new SocialMediaValidationError("The social media file URL is invalid.");
+    }
+    if (parsed.protocol !== "file:" || parsed.hostname) {
+      throw new SocialMediaValidationError("Remote file URLs cannot be used as social media.");
+    }
+    return decodeURIComponent(parsed.pathname);
+  }
+  if (isAbsolute(reference)) {
+    return reference;
+  }
+  if (reference === "resources" || reference.startsWith("resources/")) {
+    return resolve(workspaceDir, reference);
+  }
+  return null;
+}
+
+function pathIsInside(root: string, candidate: string): boolean {
+  const child = relative(root, candidate);
+  return child === "" || (!child.startsWith("..") && !isAbsolute(child));
+}
+
+async function allowedSocialMediaRoots(workspaceDir: string): Promise<string[]> {
+  const candidates = [
+    resolve(workspaceDir, "resources"),
+    resolve(process.env.OPENCLAW_STATE_DIR ?? "/data/.openclaw", "media/tool-image-generation"),
+    resolve(process.env.OPENCLAW_STATE_DIR ?? "/data/.openclaw", "media/tool-video-generation"),
+  ];
+  const roots: string[] = [];
+  for (const candidate of candidates) {
+    try {
+      roots.push(await realpath(candidate));
+    } catch {
+      // A generation directory is optional until that provider has produced media.
+    }
+  }
+  return roots;
+}
+
+function socialMediaTicketEndpoint(actionEndpoint: string): string {
+  const endpoint = new URL(actionEndpoint);
+  endpoint.pathname = "/api/agent/actions/social_media_upload_ticket";
+  endpoint.search = "";
+  endpoint.hash = "";
+  return endpoint.toString();
+}
+
+async function uploadExactSocialMedia(
+  reference: string,
+  options: {
+    workspaceDir: string;
+    actionEndpoint: string;
+    gatewayToken: string;
+    fetchImpl: FetchLike;
+    signal: AbortSignal;
+    accountIds: string[];
+  },
+): Promise<string> {
+  const { workspaceDir, actionEndpoint, gatewayToken, fetchImpl, signal, accountIds } = options;
+  const unresolvedPath = localSocialMediaPath(reference, workspaceDir);
+  if (unresolvedPath === null) {
+    return reference;
+  }
+  let filePath: string;
+  try {
+    filePath = await realpath(unresolvedPath);
+  } catch {
+    throw new SocialMediaValidationError("The exact social media file does not exist.");
+  }
+  const roots = await allowedSocialMediaRoots(workspaceDir);
+  if (!roots.some((root) => pathIsInside(root, filePath))) {
+    throw new SocialMediaValidationError(
+      "Social media files must come from generated media or workspace resources.",
+    );
+  }
+  const extension = path.extname(filePath).toLowerCase();
+  const contentType = SOCIAL_MEDIA_CONTENT_TYPES.get(extension);
+  if (!contentType) {
+    throw new SocialMediaValidationError("The social media file type is not supported.");
+  }
+  let size: number;
+  try {
+    const fileStat = await stat(filePath);
+    if (!fileStat.isFile()) {
+      throw new Error("not a file");
+    }
+    size = fileStat.size;
+  } catch {
+    throw new SocialMediaValidationError("The exact social media file cannot be read.");
+  }
+  if (size > MAX_SOCIAL_MEDIA_BYTES) {
+    throw new SocialMediaValidationError("The social media file exceeds the 200 MB limit.");
+  }
+  if (size === 0) {
+    throw new SocialMediaValidationError("The exact social media file is empty.");
+  }
+  const content = await readFile(filePath);
+  if (content.byteLength > MAX_SOCIAL_MEDIA_BYTES) {
+    throw new SocialMediaValidationError("The social media file exceeds the 200 MB limit.");
+  }
+  const filename = `${createHash("sha256").update(content).digest("hex")}${extension}`;
+  const ticketResponse = await fetchImpl(socialMediaTicketEndpoint(actionEndpoint), {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${gatewayToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      filename,
+      content_type: contentType,
+      account_ids: accountIds,
+    }),
+    signal,
+  });
+  if (!ticketResponse.ok) {
+    throw new Error(`Zernio media ticket failed with HTTP ${ticketResponse.status}.`);
+  }
+  const ticketText = await readBoundedBody(ticketResponse, 64 * 1024);
+  let ticket: unknown;
+  try {
+    ticket = JSON.parse(ticketText);
+  } catch {
+    ticket = null;
+  }
+  const uploadUrl = isRecord(ticket) ? (ticket.uploadUrl ?? ticket.uploadURL) : undefined;
+  const publicUrl = isRecord(ticket) ? (ticket.publicUrl ?? ticket.publicURL) : undefined;
+  if (typeof uploadUrl !== "string" || typeof publicUrl !== "string") {
+    throw new Error("Zernio media ticket omitted its upload URLs.");
+  }
+  let uploadTarget: URL;
+  let publicTarget: URL;
+  try {
+    uploadTarget = new URL(uploadUrl);
+    publicTarget = new URL(publicUrl);
+  } catch {
+    throw new Error("Zernio media ticket returned invalid URLs.");
+  }
+  if (
+    uploadTarget.protocol !== "https:" ||
+    !uploadTarget.hostname ||
+    publicTarget.protocol !== "https:" ||
+    publicTarget.hostname.toLowerCase() !== "media.zernio.com" ||
+    publicTarget.username !== "" ||
+    publicTarget.password !== "" ||
+    !["", "443"].includes(publicTarget.port)
+  ) {
+    throw new Error("Zernio media ticket returned unsafe URLs.");
+  }
+  const uploadResponse = await fetchImpl(uploadTarget, {
+    method: "PUT",
+    headers: { "content-type": contentType },
+    body: content,
+    signal,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error(`Zernio media upload failed with HTTP ${uploadResponse.status}.`);
+  }
+  return publicTarget.toString();
+}
+
+async function prepareExactSocialMedia(
+  action: string,
+  rawParams: Record<string, unknown>,
+  options: {
+    workspaceDir: string;
+    actionEndpoint: string;
+    gatewayToken: string;
+    fetchImpl: FetchLike;
+    signal: AbortSignal;
+  },
+): Promise<Record<string, unknown>> {
+  const { workspaceDir, actionEndpoint, gatewayToken, fetchImpl, signal } = options;
+  if (action !== "create_social_draft") {
+    return rawParams;
+  }
+  const rawMedia = rawParams.media_urls;
+  if (rawMedia === undefined || (Array.isArray(rawMedia) && rawMedia.length === 0)) {
+    return rawParams;
+  }
+  if (!Array.isArray(rawMedia) || rawMedia.some((item) => typeof item !== "string")) {
+    throw new SocialMediaValidationError("Social media references must be strings.");
+  }
+  const rawPlatforms = rawParams.platforms;
+  if (
+    !Array.isArray(rawPlatforms) ||
+    rawPlatforms.some(
+      (item) =>
+        !isRecord(item) ||
+        typeof item.account_id !== "string" ||
+        !/^[A-Za-z0-9_-]{1,160}$/.test(item.account_id),
+    )
+  ) {
+    throw new SocialMediaValidationError("Social media target accounts are invalid.");
+  }
+  const accountIds = [
+    ...new Set(rawPlatforms.map((item) => String((item as Record<string, unknown>).account_id))),
+  ];
+  const mediaUrls: string[] = [];
+  for (const reference of rawMedia) {
+    mediaUrls.push(
+      await uploadExactSocialMedia(reference, {
+        workspaceDir,
+        actionEndpoint,
+        gatewayToken,
+        fetchImpl,
+        signal,
+        accountIds,
+      }),
+    );
+  }
+  return { ...rawParams, media_urls: mediaUrls };
+}
 
 async function attestCompletionArtifacts(
   action: string,
@@ -509,13 +780,16 @@ async function attestCompletionArtifacts(
       throw new ArtifactValidationError("Every completion artifact must be an object.");
     }
     const path = rawArtifact.path;
-    const suppliedHash = rawArtifact.sha256;
+    // Optional: when omitted (or null) the plugin computes the hash from the
+    // file bytes below — the agent never has to hash anything itself. A
+    // supplied value is still verified against the bytes for older callers.
+    const suppliedHash = rawArtifact.sha256 ?? undefined;
     const kind = typeof rawArtifact.kind === "string" ? rawArtifact.kind : "file";
     if (
       typeof path !== "string" ||
       !/^resources\/[A-Za-z0-9._/-]{1,480}$/.test(path) ||
-      typeof suppliedHash !== "string" ||
-      !/^[a-f0-9]{64}$/.test(suppliedHash) ||
+      (suppliedHash !== undefined &&
+        (typeof suppliedHash !== "string" || !/^[a-f0-9]{64}$/.test(suppliedHash))) ||
       !/^[A-Za-z0-9._:-]{1,80}$/.test(kind)
     ) {
       throw new ArtifactValidationError("Completion artifact path or SHA-256 is invalid.");
@@ -552,8 +826,14 @@ async function attestCompletionArtifacts(
     if (content.byteLength > MAX_COMPLETION_ARTIFACT_BYTES) {
       throw new ArtifactValidationError(`Completion artifact is too large: ${path}.`);
     }
+    if (content.byteLength < MIN_COMPLETION_ARTIFACT_BYTES) {
+      throw new ArtifactValidationError(
+        `Completion artifact is too small to be a real report (${content.byteLength} bytes): ${path}. ` +
+          "Write the complete report content to that file, then resubmit.",
+      );
+    }
     const actualHash = createHash("sha256").update(content).digest("hex");
-    if (actualHash !== suppliedHash) {
+    if (suppliedHash !== undefined && actualHash !== suppliedHash) {
       throw new ArtifactValidationError(`Completion artifact hash mismatch for ${path}.`);
     }
     normalized.push({ path, sha256: actualHash, kind });
@@ -634,16 +914,26 @@ export function createMagisterActionTool(
   return {
     name: action.tool_name,
     label: action.tool_name,
-    description: action.description,
+    description:
+      action.approval_policy === "exact_payload"
+        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. When receipt.approval_presentation is "inline_web", a trusted server-owned card is already in the conversation: do not print receipt.approval_url, emit another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.approval_presentation is "slack_card_scheduled", the trusted server-owned card is already being delivered to the originating Slack thread: give one normal final reply, never call message(action=send) or a Slack/proxy tool just to acknowledge it, and end this turn. When receipt.approval_presentation is "link_only", show receipt.approval_url once and do not render a synthetic Approve button. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
+        : action.description,
     parameters: action.input_schema as unknown as TSchema,
     async execute(callId: string, rawParams: Record<string, unknown>) {
+      const transportStartedAt = Date.now();
       const brokerEnabled = process.env.MAGISTER_BROKER_BASE_URL === "http://127.0.0.1:18796";
       const gatewayToken =
         process.env.GATEWAY_TOKEN ?? (brokerEnabled ? "broker-local" : undefined);
       if (!gatewayToken) {
+        emitActionTransportFailure(
+          action,
+          "configuration",
+          "machine_credential_unavailable",
+          transportStartedAt,
+        );
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: "not_authorized",
+            code: "transport_unavailable",
             message: "Project machine credential is unavailable.",
             userAction: "Retry after the project machine is reprovisioned or repaired.",
           }),
@@ -654,9 +944,15 @@ export function createMagisterActionTool(
       try {
         config = resolveConfig(api);
       } catch {
+        emitActionTransportFailure(
+          action,
+          "configuration",
+          "action_endpoint_untrusted",
+          transportStartedAt,
+        );
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: "not_authorized",
+            code: "transport_unavailable",
             message: "The Magister action endpoint is not trusted.",
             userAction: "Restore the system-managed magister-actions plugin configuration.",
           }),
@@ -705,10 +1001,18 @@ export function createMagisterActionTool(
       const selectedTimeoutMs = actionTimeoutMs(action.action, config.timeoutMs);
       const timeout = setTimeout(() => controller.abort(), selectedTimeoutMs);
       const runtimeSessionKey = trustedRuntimeSessionKey(context);
+      const runtimeSessionId = context.sessionId?.trim();
       try {
+        const mediaPreparedParams = await prepareExactSocialMedia(action.action, rawParams, {
+          workspaceDir: config.workspaceDir,
+          actionEndpoint: config.endpoint,
+          gatewayToken,
+          fetchImpl,
+          signal: controller.signal,
+        });
         const prepared = await attestCompletionArtifacts(
           action.action,
-          rawParams,
+          mediaPreparedParams,
           gatewayToken,
           runtimeSessionKey,
           config.workspaceDir,
@@ -719,6 +1023,9 @@ export function createMagisterActionTool(
             authorization: `Bearer ${gatewayToken}`,
             "content-type": "application/json",
             ...(runtimeSessionKey ? { "x-magister-session-key": runtimeSessionKey } : {}),
+            ...(runtimeSessionKey && runtimeSessionId
+              ? { "x-magister-session-id": runtimeSessionId }
+              : {}),
             ...(prepared.attestation
               ? { "x-magister-artifact-attestation": prepared.attestation }
               : {}),
@@ -730,6 +1037,9 @@ export function createMagisterActionTool(
           const retryAfterHeader = response.headers.get("retry-after");
           const retryAfter = retryAfterHeader === null ? null : Number(retryAfterHeader);
           const serverFailure = response.status >= 500;
+          if (serverFailure) {
+            emitActionTransportFailure(action, "transport", "gateway_http_5xx", transportStartedAt);
+          }
           return jsonResult(
             failureEnvelope(action, callId, {
               code:
@@ -760,9 +1070,15 @@ export function createMagisterActionTool(
         }
         const envelope = parseActionEnvelope(decoded);
         if (!envelope) {
+          emitActionTransportFailure(
+            action,
+            "contract",
+            "invalid_action_envelope",
+            transportStartedAt,
+          );
           return jsonResult(
             failureEnvelope(action, callId, {
-              code: "upstream_failed",
+              code: "transport_unavailable",
               message: "Gateway returned an invalid Magister action envelope.",
               retryable: false,
               userAction: "Do not infer success; report the typed-tool contract failure.",
@@ -834,18 +1150,39 @@ export function createMagisterActionTool(
         const timedOut = controller.signal.aborted;
         const tooLarge = error instanceof Error && error.message === "response_too_large";
         const artifactInvalid = error instanceof ArtifactValidationError;
+        const mediaInvalid = error instanceof SocialMediaValidationError;
+        const inputInvalid = artifactInvalid || mediaInvalid;
+        if (!inputInvalid) {
+          emitActionTransportFailure(
+            action,
+            tooLarge ? "contract" : "transport",
+            timedOut
+              ? "action_timeout"
+              : tooLarge
+                ? "response_too_large"
+                : "action_transport_failed",
+            transportStartedAt,
+          );
+        }
         return jsonResult(
           failureEnvelope(action, callId, {
-            code: artifactInvalid ? "validation_error" : "upstream_failed",
-            message: artifactInvalid
-              ? error.message
-              : timedOut
-                ? `Magister action timed out after ${selectedTimeoutMs}ms.`
-                : tooLarge
-                  ? "Magister action response exceeded the configured size limit."
-                  : "Magister action transport failed.",
+            code: artifactInvalid
+              ? "asset_invalid"
+              : mediaInvalid
+                ? "validation_error"
+                : "transport_unavailable",
+            message:
+              inputInvalid && error instanceof Error
+                ? error.message
+                : timedOut
+                  ? `Magister action timed out after ${selectedTimeoutMs}ms.`
+                  : tooLarge
+                    ? "Magister action response exceeded the configured size limit."
+                    : "Magister action transport failed.",
             retryable: timedOut && action.side_effect === "none",
-            userAction: ambiguousWriteUserAction(action.side_effect),
+            userAction: mediaInvalid
+              ? "Use the exact generated image or video file from generated media or workspace resources."
+              : ambiguousWriteUserAction(action.side_effect),
           }),
         );
       } finally {
@@ -867,6 +1204,8 @@ export function createContextualMagisterActionTool(
   return createMagisterActionTool(api, action, fetchImpl, context);
 }
 
+export const magisterStandaloneToolNames = ["search_project_corpus"] as const;
+
 export default definePluginEntry({
   id: "magister-actions",
   name: "Magister Actions",
@@ -886,7 +1225,9 @@ export default definePluginEntry({
       gatewayRuntimeScopeSurface: "write-default",
       handler: handleArtifactPromotion,
     });
-    api.registerTool(() => createCorpusSearchTool(), { name: "search_project_corpus" });
+    api.registerTool(() => createCorpusSearchTool(), {
+      name: magisterStandaloneToolNames[0],
+    });
     for (const action of contract.actions) {
       api.registerTool(
         (context) => createContextualMagisterActionTool(api, action, fetch, context),
