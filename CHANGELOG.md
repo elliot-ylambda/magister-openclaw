@@ -66,6 +66,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Magister approvals: recognize the Gateway's canonical `approval_required` result while retaining rolling compatibility with the legacy code, so trusted pending approvals reach web chat instead of being silently dropped.
 - Magister/model routing: forward the canonical agent session key through provider request headers so per-session model settings and usage attribution reach the Gateway.
 - Magister/actions: route managed integration requests through typed plugin tools and accept successful polls that report terminal operation failures or denials, restoring sandboxed provider reads and approval-gated writes without raw network access.
 - Magister/actions: keep the plugin manifest's declared tool contract aligned with every registered native and standalone tool, restoring project-corpus search and plan-item status updates in agent turns.
