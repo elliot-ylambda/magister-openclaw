@@ -59,7 +59,7 @@ export function extractMagisterApprovalEvent(params: {
     envelope?.ok !== false ||
     status?.state !== "running" ||
     status.terminal !== false ||
-    error?.code !== "not_authorized" ||
+    (error?.code !== "approval_required" && error?.code !== "not_authorized") ||
     error.retryable !== false ||
     receipt?.approval_state !== "pending" ||
     receipt.approval_presentation !== "inline_web" ||
