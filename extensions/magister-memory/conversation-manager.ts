@@ -167,11 +167,13 @@ export class ConversationCheckpointManager {
       if (state.recallFrozen) {
         return state.frozenRecall;
       }
-      const checkpoints = await listRecentCheckpoints({
-        workspaceDir,
-        recentDays: this.config.recentDays,
-        userTimezone: this.userTimezone(),
-      });
+      const checkpoints = (
+        await listRecentCheckpoints({
+          workspaceDir,
+          recentDays: this.config.recentDays,
+          userTimezone: this.userTimezone(),
+        })
+      ).filter((record) => record.sessionHash !== sessionHash);
       const frozenRecall = buildRecentConversationContext({
         checkpoints,
         maxChars: this.config.maxHeaderChars,

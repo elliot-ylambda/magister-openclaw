@@ -13,11 +13,15 @@ export async function atomicWriteFile(path: string, content: string): Promise<vo
     await handle.close();
     handle = undefined;
     await rename(temporaryPath, path);
-    const directory = await open(dirname(path), "r");
     try {
-      await directory.sync();
-    } finally {
-      await directory.close();
+      const directory = await open(dirname(path), "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close().catch(() => undefined);
+      }
+    } catch {
+      // Best-effort: some platforms and filesystems do not support syncing directories.
     }
   } catch (error) {
     await handle?.close().catch(() => undefined);

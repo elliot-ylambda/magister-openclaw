@@ -41,7 +41,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const firstContext = {
@@ -107,6 +107,80 @@ describe("conversation checkpoint integration", () => {
     expect(await manager.buildPromptContext(newContext)).toBe(recall);
   });
 
+  it("excludes the current session while allowing late recall from another session", async () => {
+    const summaries = [
+      {
+        summary: "The current session produced its own campaign checkpoint.",
+        topics: ["current campaign"],
+      },
+      {
+        summary: "Another project session approved the launch positioning.",
+        topics: ["launch positioning"],
+      },
+    ];
+    const runEmbeddedPiAgent = vi.fn(async () => {
+      const summary = summaries.shift();
+      if (!summary) {
+        throw new Error("unexpected summary request");
+      }
+      return { payloads: [{ text: JSON.stringify(summary) }] };
+    });
+    const api = makeApi(runEmbeddedPiAgent);
+    const config = resolveConversationCheckpointConfig(
+      { conversationCheckpoints: { mode: "active" } },
+      null,
+    );
+    const manager = new ConversationCheckpointManager(api, config);
+    const currentContext = {
+      agentId: "marketing",
+      sessionId: "current-session",
+      workspaceDir: dir,
+      trigger: "user",
+    };
+    const otherContext = {
+      ...currentContext,
+      sessionId: "other-session",
+    };
+
+    expect(await manager.buildPromptContext(currentContext)).toBeUndefined();
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: "Build the detailed campaign plan for this session." },
+          { role: "assistant", content: "The campaign plan and milestones are complete." },
+        ],
+      },
+      currentContext,
+    );
+    await manager.finalizeSessionForTest({
+      workspaceDir: dir,
+      sessionHash: hashIdentifier(currentContext.sessionId),
+    });
+
+    expect(await manager.buildPromptContext(currentContext)).toBeUndefined();
+
+    await manager.captureAgentEnd(
+      {
+        success: true,
+        messages: [
+          { role: "user", content: "Approve the detailed positioning in another session." },
+          { role: "assistant", content: "The launch positioning is approved." },
+        ],
+      },
+      otherContext,
+    );
+    await manager.finalizeSessionForTest({
+      workspaceDir: dir,
+      sessionHash: hashIdentifier(otherContext.sessionId),
+    });
+
+    const recall = await manager.buildPromptContext(currentContext);
+    expect(recall).toContain("Another project session approved the launch positioning.");
+    expect(recall).not.toContain("current session produced its own campaign checkpoint");
+    expect(await manager.buildPromptContext(currentContext)).toBe(recall);
+  });
+
   it("removes quiescent session state after a session-end checkpoint", async () => {
     const runEmbeddedPiAgent = vi.fn(async () => ({
       payloads: [
@@ -121,7 +195,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const ctx = {
@@ -176,7 +250,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active", idleMinutes: 1 } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     manager.start(dir);
@@ -216,7 +290,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const ctx = {
@@ -284,7 +358,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "shadow" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const ctx = {
@@ -333,7 +407,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const ctx = {
@@ -401,7 +475,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const messages = [
@@ -443,7 +517,7 @@ describe("conversation checkpoint integration", () => {
     const api = makeApi(runEmbeddedPiAgent);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active" } },
-      undefined,
+      null,
     );
     const manager = new ConversationCheckpointManager(api, config);
     const ctx = {

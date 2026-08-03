@@ -73,7 +73,7 @@ describe("checkpoint summarizer output", () => {
     temporaryDirectories.push(workspaceDir);
     const config = resolveConversationCheckpointConfig(
       { conversationCheckpoints: { mode: "active", maxInputChars: 2_000 } },
-      undefined,
+      null,
     );
     const marker = "LATEST_TRANSCRIPT_MARKER";
     const prompt = await buildSummaryPrompt(config, {

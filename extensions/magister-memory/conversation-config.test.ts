@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_CONVERSATION_CHECKPOINT_CONFIG,
   resolveConversationCheckpointConfig,
 } from "./conversation-config.js";
 
 describe("resolveConversationCheckpointConfig", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("defaults to off for third-party plugin installs", () => {
-    expect(resolveConversationCheckpointConfig({}, undefined)).toEqual(
+    expect(resolveConversationCheckpointConfig({}, null)).toEqual(
       DEFAULT_CONVERSATION_CHECKPOINT_CONFIG,
     );
   });
@@ -22,7 +26,7 @@ describe("resolveConversationCheckpointConfig", () => {
           maxHeaderChars: 900,
         },
       },
-      undefined,
+      null,
     );
     expect(config).toMatchObject({
       mode: "shadow",
@@ -41,5 +45,15 @@ describe("resolveConversationCheckpointConfig", () => {
         "surprise",
       ).mode,
     ).toBe("off");
+  });
+
+  it("reads the process environment only when no explicit override is supplied", () => {
+    vi.stubEnv("MAGISTER_CONVERSATION_MEMORY_MODE", "active");
+
+    expect(resolveConversationCheckpointConfig({}).mode).toBe("active");
+    expect(
+      resolveConversationCheckpointConfig({ conversationCheckpoints: { mode: "shadow" } }, null)
+        .mode,
+    ).toBe("shadow");
   });
 });

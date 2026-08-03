@@ -13,13 +13,12 @@ export const DEFAULT_CONVERSATION_CHECKPOINT_CONFIG: ConversationCheckpointConfi
 
 export function resolveConversationCheckpointConfig(
   pluginConfig: unknown,
-  environmentMode = process.env.MAGISTER_CONVERSATION_MEMORY_MODE,
+  environmentMode: string | null | undefined = process.env.MAGISTER_CONVERSATION_MEMORY_MODE,
 ): ConversationCheckpointConfig {
   const root = isRecord(pluginConfig) ? pluginConfig : {};
   const configured = isRecord(root.conversationCheckpoints) ? root.conversationCheckpoints : {};
   const configuredMode = readMode(configured.mode) ?? DEFAULT_CONVERSATION_CHECKPOINT_CONFIG.mode;
-  const mode =
-    environmentMode === undefined ? configuredMode : (readMode(environmentMode) ?? "off");
+  const mode = environmentMode == null ? configuredMode : (readMode(environmentMode) ?? "off");
   return {
     mode,
     model: readString(configured.model) ?? DEFAULT_CONVERSATION_CHECKPOINT_CONFIG.model,
