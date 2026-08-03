@@ -86,7 +86,7 @@ describe("conversation checkpoint integration", () => {
         model: "anthropic/claude-haiku-4-5",
         disableTools: true,
         reasoningLevel: "off",
-        streamParams: { maxTokens: 512, temperature: 0 },
+        streamParams: { maxTokens: 512 },
         cleanupBundleMcpOnRunEnd: true,
         timeoutMs: 30_000,
       }),
