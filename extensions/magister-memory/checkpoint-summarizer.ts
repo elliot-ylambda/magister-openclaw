@@ -52,7 +52,10 @@ export async function summarizeCheckpoint(params: {
       bootstrapContextMode: "lightweight",
       verboseLevel: "off",
       reasoningLevel: "off",
-      streamParams: { maxTokens: 512, temperature: 0 },
+      // Let the configured provider choose its supported temperature. The
+      // Magister gateway may route this lightweight summary through a GPT-5
+      // compatible backend, which rejects an explicit temperature of 0.
+      streamParams: { maxTokens: 512 },
       silentExpected: true,
       authProfileFailurePolicy: "local",
       cleanupBundleMcpOnRunEnd: true,
