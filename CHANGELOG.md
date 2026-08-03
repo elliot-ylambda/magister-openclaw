@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Magister/memory: checkpoint meaningful conversations into bounded dated notes and inject a small frozen recent-chat summary into the next session, without automatically changing curated project or user memory.
 - Agents/skills: add channel-aware `metadata.openclaw.preloadChannels` so short surface contracts can be loaded in full on matching runtime channels while remaining catalog-only elsewhere.
 - Gateway/Windows: bind the default loopback gateway listener only to `127.0.0.1` on Windows so libuv's dual-stack `::1` behavior cannot wedge localhost HTTP requests. (#69701, fixes #69674) Thanks @SARAMALI15792.
 - Plugins/migration: emit catalog-backed install hints when `plugins.entries` or `plugins.allow` references an official external plugin that is not installed, so upgraded configs point operators to `openclaw plugins install <spec>` instead of telling them to remove valid plugin config. (#77483) Thanks @hclsys.

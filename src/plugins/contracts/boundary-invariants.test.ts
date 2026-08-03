@@ -15,6 +15,7 @@ const BUNDLED_TYPED_HOOK_REGISTRATION_FILES = [
   "extensions/diffs/src/plugin.ts",
   "extensions/discord/subagent-hooks-api.ts",
   "extensions/feishu/subagent-hooks-api.ts",
+  "extensions/magister-memory/index.ts",
   "extensions/matrix/subagent-hooks-api.ts",
   "extensions/memory-core/src/dreaming.ts",
   "extensions/memory-lancedb/index.ts",
@@ -35,6 +36,12 @@ const BUNDLED_TYPED_HOOK_REGISTRATION_GUARDS = {
     "subagent_delivery_target",
     "subagent_ended",
     "subagent_spawning",
+  ],
+  "extensions/magister-memory/index.ts": [
+    "agent_end",
+    "before_compaction",
+    "before_prompt_build",
+    "session_end",
   ],
   "extensions/matrix/subagent-hooks-api.ts": [
     "subagent_delivery_target",

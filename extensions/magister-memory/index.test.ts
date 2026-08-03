@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as auditMirror from "./audit-mirror.js";
-import { createMemoryTool } from "./index.js";
+import plugin, { createMemoryTool } from "./index.js";
 
 /**
  * These tests exercise the tool's `execute` function directly by stubbing the
@@ -29,6 +29,31 @@ describe("manifest tool contract", () => {
       contracts?: { tools?: string[] };
     };
     expect(manifest.contracts?.tools).toContain("memory");
+  });
+
+  it("registers the checkpoint lifecycle hooks and background service", () => {
+    const on = vi.fn();
+    const registerService = vi.fn();
+    const registerTool = vi.fn();
+    plugin.register({
+      config: { agents: { list: [] } },
+      pluginConfig: {},
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      on,
+      registerService,
+      registerTool,
+    } as never);
+
+    expect(registerTool).toHaveBeenCalledWith(expect.any(Function), { name: "memory" });
+    expect(on.mock.calls.map(([name]) => name)).toEqual([
+      "agent_end",
+      "before_compaction",
+      "session_end",
+      "before_prompt_build",
+    ]);
+    expect(registerService).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "magister-memory-conversation-checkpoints" }),
+    );
   });
 });
 
