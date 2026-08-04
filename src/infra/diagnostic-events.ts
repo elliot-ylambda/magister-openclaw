@@ -354,6 +354,18 @@ export type DiagnosticRunCompletedEvent = DiagnosticRunBaseEvent & {
   durationMs: number;
   outcome: "completed" | "aborted" | "error";
   errorCategory?: string;
+  /**
+   * Low-cardinality failure classification. For error outcomes this is a
+   * FailoverReason value ("timeout", "rate_limit", "auth", ...; typed as
+   * string because infra must not import agent types); for aborted outcomes
+   * it is "canceled" (external stop) or "timeout".
+   */
+  failureKind?: string;
+  /**
+   * Which terminal condition fired: "external_abort", "run_timeout",
+   * "idle_timeout", "compaction_timeout", or "tool_timeout".
+   */
+  reasonCode?: string;
 };
 
 export type DiagnosticHarnessRunPhase = "prepare" | "start" | "send" | "resolve" | "cleanup";

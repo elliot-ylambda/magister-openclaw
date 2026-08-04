@@ -3,10 +3,30 @@ import { bindAbortRelay } from "../utils/fetch-timeout.js";
 import { copyChannelAgentToolMeta } from "./channel-tools.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 
-function throwAbortError(): never {
-  const err = new Error("Aborted");
+type RunnerMarkedAbortError = Error & { openclawRunnerAborted?: boolean };
+
+function throwAbortError(runnerAborted: boolean): never {
+  const err: RunnerMarkedAbortError = new Error("Aborted");
   err.name = "AbortError";
+  if (runnerAborted) {
+    err.openclawRunnerAborted = true;
+  }
   throw err;
+}
+
+/**
+ * True when an abort-shaped error was thrown while the runner's abort signal
+ * (user cancel, session reset, shutdown) was aborted — as opposed to a
+ * provider/tool-internal AbortError during a live run. Lets the tool
+ * definition adapter rethrow real cancels instead of logging them as tool
+ * failures and feeding an error result to a model call the user stopped.
+ */
+export function isRunnerSignalAbortError(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    err.name === "AbortError" &&
+    (err as RunnerMarkedAbortError).openclawRunnerAborted === true
+  );
 }
 
 /**
@@ -61,9 +81,16 @@ export function wrapToolWithAbortSignal(
     execute: async (toolCallId, params, signal, onUpdate) => {
       const combined = combineAbortSignals(signal, abortSignal);
       if (combined?.aborted) {
-        throwAbortError();
+        throwAbortError(abortSignal.aborted);
       }
-      return await execute(toolCallId, params, combined, onUpdate);
+      try {
+        return await execute(toolCallId, params, combined, onUpdate);
+      } catch (err) {
+        if (abortSignal.aborted && err instanceof Error && err.name === "AbortError") {
+          (err as RunnerMarkedAbortError).openclawRunnerAborted = true;
+        }
+        throw err;
+      }
     },
   };
   copyPluginToolMeta(tool, wrappedTool);

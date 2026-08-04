@@ -9,6 +9,7 @@ import { redactToolDetail } from "../logging/redact.js";
 import { isPlainObject } from "../utils.js";
 import { sanitizeForConsole } from "./console-sanitize.js";
 import type { ClientToolDefinition } from "./pi-embedded-runner/run/params.js";
+import { isRunnerSignalAbortError } from "./pi-tools.abort.js";
 import type { HookContext } from "./pi-tools.before-tool-call.js";
 import {
   buildBlockedToolResult,
@@ -261,7 +262,15 @@ export function toToolDefinitions(tools: AnyAgentTool[]): ToolDefinition[] {
           });
           return result;
         } catch (err) {
-          if (signal?.aborted) {
+          // `signal` is only the framework's signal; wrapToolWithAbortSignal
+          // combines it with the runner's abort signal, so a runner-side
+          // cancel surfaces here as an AbortError while `signal` still reads
+          // unaborted. The wrapper marks those errors — rethrow them too,
+          // otherwise a canceled run logs a fake tool failure and feeds an
+          // error result back to a model call the user already stopped. An
+          // unmarked provider-internal AbortError during a live run still
+          // returns an error result below.
+          if (signal?.aborted || isRunnerSignalAbortError(err)) {
             throw err;
           }
           if (isBeforeToolCallBlockedError(err)) {

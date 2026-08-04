@@ -9,6 +9,7 @@ import type { startGatewayMaintenanceTimers } from "./server-maintenance.js";
 
 type GatewayRuntimeServiceLogger = {
   child: (name: string) => {
+    debug: (message: string) => void;
     info: (message: string) => void;
     warn: (message: string) => void;
     error: (message: string) => void;
@@ -205,9 +206,22 @@ function recoverDurableCompletionWebhooks(params: {
         },
       });
       const recoveryLog = params.log.child("durable-webhook-recovery");
-      recoveryLog.info(
-        `reconstructed=${reconstructed.reconstructed} invalid=${reconstructed.invalid} recovered=${result.delivered} deferred=${result.deferred} unavailable=${result.unavailable + reconstructed.unavailable}`,
-      );
+      const unavailable = result.unavailable + reconstructed.unavailable;
+      const summary = `reconstructed=${reconstructed.reconstructed} invalid=${reconstructed.invalid} recovered=${result.delivered} deferred=${result.deferred} unavailable=${unavailable}`;
+      // The 30s all-zeros idle line adds nothing and evicts real evidence
+      // from the bounded machine log buffer; keep it at debug and log info
+      // only when a pass actually did something.
+      if (
+        reconstructed.reconstructed ||
+        reconstructed.invalid ||
+        result.delivered ||
+        result.deferred ||
+        unavailable
+      ) {
+        recoveryLog.info(summary);
+      } else {
+        recoveryLog.debug(summary);
+      }
     } finally {
       running = false;
     }

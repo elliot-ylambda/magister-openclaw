@@ -188,6 +188,47 @@ describe("pi tool definition adapter logging", () => {
     expect(logError).not.toHaveBeenCalled();
   });
 
+  it("rethrows runner-signal aborts without logging a tool failure", async () => {
+    // The runner's cancel signal is combined with the framework signal inside
+    // wrapToolWithAbortSignal, so the adapter's own `signal` parameter reads
+    // unaborted while the tool throws an AbortError. The wrapper marks that
+    // error; the adapter must rethrow it instead of logging a fake failure.
+    const { wrapToolWithAbortSignal } = await import("./pi-tools.abort.js");
+    const runnerAbort = new AbortController();
+    const baseTool = {
+      name: "read",
+      label: "Read",
+      description: "reads files",
+      parameters: Type.Object({
+        path: Type.String(),
+      }),
+      execute: async (_toolCallId: string, _params: unknown, signal?: AbortSignal) => {
+        runnerAbort.abort();
+        if (signal?.aborted) {
+          const error = new Error("Aborted");
+          error.name = "AbortError";
+          throw error;
+        }
+        return { content: [{ type: "text" as const, text: "ok" }], details: {} };
+      },
+    } satisfies AgentTool;
+    const [def] = toToolDefinitions([wrapToolWithAbortSignal(baseTool, runnerAbort.signal)]);
+    if (!def) {
+      throw new Error("missing tool definition");
+    }
+
+    await expect(
+      def.execute(
+        "call-read-runner-abort",
+        { path: "/tmp/file" },
+        undefined,
+        undefined,
+        extensionContext,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(logError).not.toHaveBeenCalled();
+  });
+
   it("accepts nested edits arrays for the current edit schema", async () => {
     const execute = vi.fn(async (_toolCallId: string, params: unknown) => ({
       content: [{ type: "text" as const, text: JSON.stringify(params) }],

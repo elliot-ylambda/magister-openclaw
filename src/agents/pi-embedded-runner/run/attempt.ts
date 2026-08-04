@@ -246,6 +246,11 @@ import {
   shouldCreateBundleLspRuntimeForAttempt,
   shouldCreateBundleMcpRuntimeForAttempt,
 } from "./attempt-tool-construction-plan.js";
+import {
+  resolveRunCompletionDiagnostic,
+  resolveRunCompletionOutcome,
+  type RunCompletionFlags,
+} from "./run-completion.js";
 export { buildContextEnginePromptCacheInfo } from "./attempt.context-engine-helpers.js";
 import {
   rotateTranscriptAfterCompaction,
@@ -719,6 +724,16 @@ export async function runEmbeddedAttempt(
   let timedOutDuringCompaction = false;
   let timedOutDuringToolExecution = false;
   let promptError: unknown = null;
+  // Snapshot the mutable terminal flags at read time; the closures below run
+  // after the flags have settled.
+  const runCompletionFlags = (): RunCompletionFlags => ({
+    externalAbortRequested: externalAbort || Boolean(params.abortSignal?.aborted),
+    aborted,
+    timedOut,
+    idleTimedOut,
+    timedOutDuringCompaction,
+    timedOutDuringToolExecution,
+  });
   let emitDiagnosticRunCompleted:
     | ((outcome: "completed" | "aborted" | "error", err?: unknown) => void)
     | undefined;
@@ -796,12 +811,21 @@ export async function runEmbeddedAttempt(
         return;
       }
       diagnosticRunCompleted = true;
+      // Read the abort/timeout flags at emit time so the terminal event says
+      // which condition actually ended the run instead of a bare "error".
       emitTrustedDiagnosticEvent({
         type: "run.completed",
         ...diagnosticRunBase,
         durationMs: Date.now() - diagnosticRunStartedAt,
         outcome,
         ...(err ? { errorCategory: diagnosticErrorCategory(err) } : {}),
+        ...resolveRunCompletionDiagnostic({
+          outcome,
+          err,
+          flags: runCompletionFlags(),
+          provider: params.provider,
+          model: params.modelId,
+        }),
       });
     };
     const corePluginToolStages = createEmbeddedRunStageTracker();
@@ -3711,11 +3735,7 @@ export async function runEmbeddedAttempt(
         cleanupError = err;
       }
       emitDiagnosticRunCompleted?.(
-        cleanupError || promptError
-          ? "error"
-          : aborted || timedOut || idleTimedOut || timedOutDuringCompaction
-            ? "aborted"
-            : "completed",
+        resolveRunCompletionOutcome(runCompletionFlags(), cleanupError ?? promptError),
         cleanupError ?? promptError,
       );
       if (cleanupError) {
