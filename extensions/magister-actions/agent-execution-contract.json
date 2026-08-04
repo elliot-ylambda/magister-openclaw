@@ -1117,7 +1117,7 @@
       ],
       "mcp_tool_actions": ["proxy:google_analytics"],
       "minimum_native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
-      "proxy_services": ["ga4"],
+      "proxy_services": ["ga4", "ga4_admin"],
       "remediation": null,
       "rollout_service": null,
       "skill_name": "magister-google-analytics",
@@ -3584,6 +3584,6 @@
     }
   ],
   "native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
-  "registry_revision": "c7e708362ff0267d76022b877ce34c3aed59eac07c3f5cbc9f73d3b4e58a461c",
+  "registry_revision": "8f56c126170ebbdff4ebc4749ae289a9400b0a165b618348d7d3194ebea7507a",
   "schema_version": 1
 }
