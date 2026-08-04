@@ -2016,6 +2016,28 @@
       "transport_modes": ["json_v1"]
     },
     {
+      "capability_id": "blotato",
+      "connection_slug": "blotato",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:blotato"],
+      "minimum_native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
+      "proxy_services": ["blotato"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-blotato",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
       "capability_id": "brightdata",
       "connection_slug": null,
       "delegation_safe_tools": [
@@ -2077,6 +2099,28 @@
       "remediation": null,
       "rollout_service": null,
       "skill_name": "magister-web-context",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
+      "capability_id": "creatify",
+      "connection_slug": "creatify",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:creatify"],
+      "minimum_native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
+      "proxy_services": ["creatify"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-creatify",
       "status": "typed",
       "transport_modes": ["json_v1"]
     },
@@ -2240,6 +2284,28 @@
       "skill_name": "magister-gemini-image",
       "status": "typed",
       "transport_modes": ["native_json"]
+    },
+    {
+      "capability_id": "gitlab",
+      "connection_slug": "gitlab",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:gitlab"],
+      "minimum_native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
+      "proxy_services": ["gitlab"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-gitlab",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
     },
     {
       "capability_id": "hunter",
@@ -2524,6 +2590,50 @@
       "remediation": null,
       "rollout_service": null,
       "skill_name": "magister-youtube",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
+      "capability_id": "zoho_crm",
+      "connection_slug": "zoho_crm",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:zoho_crm"],
+      "minimum_native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
+      "proxy_services": ["zoho_crm"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-zoho-crm",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
+      "capability_id": "zoho_marketing_automation",
+      "connection_slug": "zoho_marketing_automation",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:zoho_marketing_automation"],
+      "minimum_native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
+      "proxy_services": ["zoho_marketing_automation"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-zoho-marketing-automation",
       "status": "typed",
       "transport_modes": ["json_v1"]
     }
@@ -2998,6 +3108,6 @@
     }
   ],
   "native_action_registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
-  "registry_revision": "547ab1345f2b69a09f0a2abaf4cf32374527981d1b3a4a7277075694cc2fa44c",
+  "registry_revision": "f7880cb3d8945ea775d3247bb1dc9c91646a89851d1aa2fcd4fbc6406c8ba040",
   "schema_version": 1
 }
