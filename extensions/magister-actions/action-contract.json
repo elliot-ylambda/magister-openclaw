@@ -2153,6 +2153,11 @@
             "maxLength": 160,
             "type": "string"
           },
+          "end_date": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
           "goal": {
             "maxLength": 500,
             "minLength": 1,
@@ -2740,6 +2745,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "1948b18c2f4251faf47f3b864ca4091c91f3acb85a58806c13f2a4a5592e0710",
+  "registry_revision": "9986460ee4149e524af6182788b06b15f4a4f41b284c7243e97df15d3e560705",
   "schema_version": 1
 }
