@@ -89,6 +89,10 @@ describe("conversation checkpoint integration", () => {
         streamParams: { maxTokens: 512 },
         cleanupBundleMcpOnRunEnd: true,
         timeoutMs: 30_000,
+        // Magister fork: an explicit session key is what puts X-Session-Id on
+        // the outbound LLM request, so the gateway can route this summary to
+        // the cheap platform-funded model instead of the project's chat model.
+        sessionKey: expect.stringMatching(/^conversation-checkpoint-/),
       }),
     );
     await expect(access(join(dir, "MEMORY.md"))).rejects.toMatchObject({ code: "ENOENT" });

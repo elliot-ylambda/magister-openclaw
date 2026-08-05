@@ -34,6 +34,12 @@ export async function summarizeCheckpoint(params: {
   try {
     const result = await params.api.runtime.agent.runEmbeddedPiAgent({
       sessionId: runId,
+      // Magister fork: the run id doubles as the session key so it reaches the
+      // gateway as X-Session-Id. Without it backfillSessionKey looks this
+      // synthetic id up in the session store, finds nothing, and sends no
+      // header at all — leaving the gateway to bill this summary at the
+      // project's chat model and BYOK key instead of the summary model.
+      sessionKey: runId,
       agentId: params.context.agentId,
       sessionFile,
       workspaceDir: params.context.workspaceDir,
