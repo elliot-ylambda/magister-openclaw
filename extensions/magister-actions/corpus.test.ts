@@ -335,6 +335,47 @@ describe("Magister corpus ingestion", () => {
     expect(timeout).toHaveBeenCalledWith(50_000);
   });
 
+  it("keeps the remote lease ID stable across per-file local observations", async () => {
+    const root = workspace();
+    process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = "1";
+    const response = await request({
+      files: [file("first.txt", "one"), file("second.txt", "two")],
+      mutation_context: {
+        project_id: "project-1",
+        operation_id: "gateway-operation-1",
+        owner_id: "gateway-owner-1",
+        project_fence: 4,
+        mode: "enforce",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const attestOperationIds = vi
+      .mocked(fetch)
+      .mock.calls.filter(([input]) => String(input).endsWith("/attest"))
+      .map(([, init]) => {
+        const payload = JSON.parse(String(init?.body)) as {
+          context: { operation_id: string };
+        };
+        return payload.context.operation_id;
+      });
+    expect(attestOperationIds).toEqual(["gateway-operation-1", "gateway-operation-1"]);
+
+    const db = new DatabaseSync(
+      path.join(root, ".magister", "state", "mutation-observations.sqlite"),
+    );
+    const observations = db
+      .prepare("SELECT operation_id, resource, state FROM mutation_observations ORDER BY resource")
+      .all() as Array<{ operation_id: string; resource: string; state: string }>;
+    db.close();
+    expect(observations).toHaveLength(2);
+    expect(new Set(observations.map((row) => row.operation_id)).size).toBe(2);
+    expect(observations.every((row) => row.operation_id.startsWith("gateway-operation-1:"))).toBe(
+      true,
+    );
+    expect(observations.map((row) => row.state)).toEqual(["promoted", "promoted"]);
+  });
+
   it("fails extraction closed when enforcement has no bounded extractor", async () => {
     workspace();
     process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = "1";
