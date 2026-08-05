@@ -2132,6 +2132,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "ad_account_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
           "body": {
             "maxLength": 20000,
             "type": "string"
@@ -2185,6 +2190,7 @@
           "idempotency_key",
           "platform",
           "account_id",
+          "ad_account_id",
           "name",
           "goal",
           "budget_amount",
@@ -2734,6 +2740,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "acba6aa47a74448f842d79cffe4488c91b5abeacf0885799945a95917c75ab83",
+  "registry_revision": "1948b18c2f4251faf47f3b864ca4091c91f3acb85a58806c13f2a4a5592e0710",
   "schema_version": 1
 }
