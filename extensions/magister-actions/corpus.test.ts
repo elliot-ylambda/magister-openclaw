@@ -245,6 +245,74 @@ describe("Magister corpus ingestion", () => {
     expect(replay.files[0]).toMatchObject({ duplicate: true, source_revision: 1 });
   });
 
+  it("persists common video containers as durable, non-extracted sources", async () => {
+    const root = workspace();
+    const mp4 = Buffer.alloc(24);
+    mp4.writeUInt32BE(24, 0);
+    mp4.write("ftyp", 4, "ascii");
+    mp4.write("isom", 8, "ascii");
+    const mov = Buffer.alloc(24);
+    mov.writeUInt32BE(24, 0);
+    mov.write("ftyp", 4, "ascii");
+    mov.write("qt  ", 8, "ascii");
+    const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(20)]);
+
+    const response = await request({
+      files: [
+        file("campaign.mp4", mp4, "video/mp4"),
+        file("campaign.mov", mov, "video/quicktime"),
+        file("campaign.webm", webm, "video/webm"),
+      ],
+      extract: true,
+      provenance: "chat",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const payload = JSON.parse(response.body) as {
+      files: Array<{ path: string; detected_mime: string; extraction_status: string }>;
+    };
+    expect(payload.files).toEqual([
+      expect.objectContaining({
+        path: path.join(root, "resources", "campaign.mp4"),
+        detected_mime: "video/mp4",
+        extraction_status: "unsupported",
+      }),
+      expect.objectContaining({
+        path: path.join(root, "resources", "campaign.mov"),
+        detected_mime: "video/quicktime",
+        extraction_status: "unsupported",
+      }),
+      expect.objectContaining({
+        path: path.join(root, "resources", "campaign.webm"),
+        detected_mime: "video/webm",
+        extraction_status: "unsupported",
+      }),
+    ]);
+    expect(fs.readFileSync(path.join(root, "resources", "campaign.mp4"))).toEqual(mp4);
+    expect(fs.readFileSync(path.join(root, "resources", "campaign.mov"))).toEqual(mov);
+    expect(fs.readFileSync(path.join(root, "resources", "campaign.webm"))).toEqual(webm);
+  });
+
+  it("accepts the HTML and JSON text formats advertised by chat", async () => {
+    const root = workspace();
+    const response = await request({
+      files: [
+        file("landing.html", "<h1>Launch</h1>", "text/html"),
+        file("brief.json", '{"audience":"teams"}', "application/json"),
+      ],
+      extract: true,
+      provenance: "chat",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(fs.readFileSync(path.join(root, "resources", "landing.html"), "utf8")).toContain(
+      "Launch",
+    );
+    expect(fs.readFileSync(path.join(root, "resources", "brief.json"), "utf8")).toContain(
+      "audience",
+    );
+  });
+
   it("fails closed without a current fenced context after local enforcement", async () => {
     workspace();
     process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = "1";
@@ -252,6 +320,7 @@ describe("Magister corpus ingestion", () => {
     expect(missing.statusCode).toBe(409);
     expect(JSON.parse(missing.body).message).toContain("current enforced mutation fence");
 
+    const timeout = vi.spyOn(AbortSignal, "timeout");
     const accepted = await request({
       files: [file("accepted.txt", "fenced")],
       mutation_context: {
@@ -263,6 +332,7 @@ describe("Magister corpus ingestion", () => {
       },
     });
     expect(accepted.statusCode).toBe(200);
+    expect(timeout).toHaveBeenCalledWith(12_000);
   });
 
   it("fails extraction closed when enforcement has no bounded extractor", async () => {

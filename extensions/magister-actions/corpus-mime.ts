@@ -6,6 +6,9 @@ const MIME_BY_EXTENSION: Record<string, readonly string[]> = {
   ".csv": ["text/csv", "text/plain"],
   ".txt": ["text/plain"],
   ".md": ["text/plain", "text/markdown"],
+  ".html": ["text/plain", "text/html"],
+  ".htm": ["text/plain", "text/html"],
+  ".json": ["text/plain", "application/json"],
   ".png": ["image/png"],
   ".jpg": ["image/jpeg"],
   ".jpeg": ["image/jpeg"],
@@ -21,6 +24,9 @@ const MIME_BY_EXTENSION: Record<string, readonly string[]> = {
     "application/zip",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ],
+  ".mp4": ["video/mp4"],
+  ".mov": ["video/quicktime", "video/mp4"],
+  ".webm": ["video/webm"],
 };
 
 export function detectMime(head: Buffer, filename: string): string {
@@ -44,6 +50,12 @@ export function detectMime(head: Buffer, filename: string): string {
     head.subarray(8, 12).toString("ascii") === "WEBP"
   ) {
     return "image/webp";
+  }
+  if (head.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) {
+    return "video/webm";
+  }
+  if (head.subarray(4, 8).toString("ascii") === "ftyp") {
+    return head.subarray(8, 12).toString("ascii") === "qt  " ? "video/quicktime" : "video/mp4";
   }
   if (head[0] === 0x50 && head[1] === 0x4b && [0x03, 0x05, 0x07].includes(head[2] ?? -1)) {
     return "application/zip";

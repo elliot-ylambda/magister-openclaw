@@ -13,6 +13,13 @@ export type LocalMutationContext = {
 
 type HostMutationResourceClass = "host:memory" | "host:user" | "host:heartbeat_note";
 
+// The attestation RPC normally completes well under a second, but a 5s abort
+// repeatedly rejected a real chat photo while Supabase connectivity was
+// briefly degraded. Keep the fence fail-closed while allowing one bounded
+// database/proxy stall to recover before the Gateway's outer ingestion retry.
+const MUTATION_GATEWAY_TIMEOUT_MS = 5_000;
+const MUTATION_ATTEST_TIMEOUT_MS = 12_000;
+
 function mutationEndpoint(pathname: string): string {
   const raw = (process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081").replace(
     /\/+$/,
@@ -41,7 +48,9 @@ async function postMutation(pathname: string, body: unknown): Promise<Record<str
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(
+      pathname === "attest" ? MUTATION_ATTEST_TIMEOUT_MS : MUTATION_GATEWAY_TIMEOUT_MS,
+    ),
   });
   if (!response.ok) {
     throw new Error(`local mutation gateway rejected ${pathname}: HTTP ${response.status}`);
