@@ -13,12 +13,14 @@ export type LocalMutationContext = {
 
 type HostMutationResourceClass = "host:memory" | "host:user" | "host:heartbeat_note";
 
-// The attestation RPC normally completes well under a second, but a 5s abort
-// repeatedly rejected a real chat photo while Supabase connectivity was
-// briefly degraded. Keep the fence fail-closed while allowing one bounded
-// database/proxy stall to recover before the Gateway's outer ingestion retry.
+// The attestation RPC normally completes well under a second. A scoped
+// machine callback performs bounded live-identity, project-token, and commit
+// checks through PostgREST, however, and those pool waits are sequential.
+// Leave the broker's single 45s request room to finish without replaying an
+// abandoned commit reservation. The Gateway's /v1/files caller remains the
+// outer 135s bound.
 const MUTATION_GATEWAY_TIMEOUT_MS = 5_000;
-const MUTATION_ATTEST_TIMEOUT_MS = 12_000;
+const MUTATION_ATTEST_TIMEOUT_MS = 50_000;
 
 function mutationEndpoint(pathname: string): string {
   const raw = (process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081").replace(

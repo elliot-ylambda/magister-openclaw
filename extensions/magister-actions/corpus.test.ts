@@ -332,7 +332,7 @@ describe("Magister corpus ingestion", () => {
       },
     });
     expect(accepted.statusCode).toBe(200);
-    expect(timeout).toHaveBeenCalledWith(12_000);
+    expect(timeout).toHaveBeenCalledWith(50_000);
   });
 
   it("fails extraction closed when enforcement has no bounded extractor", async () => {
