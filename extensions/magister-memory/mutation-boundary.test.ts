@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mirrorAudit } from "./audit-mirror.js";
 import { withHostMutationBoundary } from "./mutation-boundary.js";
 
 describe("host semantic mutation boundary", () => {
@@ -97,20 +96,5 @@ describe("host semantic mutation boundary", () => {
       ),
     ).rejects.toThrow("rejected attest");
     expect(write).not.toHaveBeenCalled();
-  });
-
-  it("treats an audit HTTP rejection as a mirrored failure", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ error: "denied" }), { status: 403 })),
-    );
-
-    await mirrorAudit(
-      { endpoint: "http://127.0.0.1:18796/api/memory/audit", gatewayToken: "broker-local" },
-      { action: "add", target: "memory", content: "fact" },
-    );
-
-    expect(error).toHaveBeenCalledWith("[magister-memory] audit mirror failed:", expect.any(Error));
   });
 });

@@ -1,7 +1,7 @@
 {
   "id": "magister-memory",
   "name": "Magister Memory",
-  "description": "Bounded curated memory with episodic conversation checkpoints, recent-chat continuity, threat scanning, and gateway audit mirroring.",
+  "description": "Bounded curated memory with episodic conversation checkpoints, recent-chat continuity, and threat scanning.",
   "activation": {
     "onStartup": true
   },
@@ -15,7 +15,6 @@
       "enabled": { "type": "boolean" },
       "memoryCharLimit": { "type": "integer", "minimum": 200, "maximum": 20000 },
       "userCharLimit": { "type": "integer", "minimum": 200, "maximum": 20000 },
-      "auditEndpoint": { "type": "string" },
       "conversationCheckpoints": {
         "type": "object",
         "additionalProperties": false,

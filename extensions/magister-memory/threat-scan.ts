@@ -84,7 +84,7 @@ const INVISIBLE_CHARS = [
 /**
  * Scan content. Returns null when content is clean, or a short reason string
  * (`"<id>: ..."`) when blocked. Reason strings start with the pattern id so
- * tests can match a stable token and operators can grep audit logs.
+ * tests and local diagnostics can match a stable token.
  */
 export function scanMemoryContent(content: string): string | null {
   for (const char of INVISIBLE_CHARS) {
