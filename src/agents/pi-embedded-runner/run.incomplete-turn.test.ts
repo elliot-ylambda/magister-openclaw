@@ -593,6 +593,124 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
     expect(mockedLog.warn).toHaveBeenCalledWith(expect.stringContaining("empty response detected"));
   });
 
+  // Retries are only useful if a subscriber is still listening when the retry
+  // answers. Every retry above `continue`s under one runId while the SDK fires
+  // `agent end` per attempt, so attempt 1's terminal event would close the
+  // stream and orphan attempt 2's answer — which is what happened on
+  // 2026-08-07: GPT-5.6 returned empty, the retry produced the real answer 13s
+  // later, and the user saw "Agent didn't return a response". These two prove
+  // the run loop's half of the contract in attempt-retry-registry.ts.
+  function lifecycleEnds(onAgentEvent: ReturnType<typeof vi.fn>) {
+    return onAgentEvent.mock.calls
+      .map((call) => call[0] as { stream?: string; data?: Record<string, unknown> })
+      .filter((evt) => evt.stream === "lifecycle" && evt.data?.phase === "end");
+  }
+
+  it("withholds an empty attempt's terminal end so the retry's answer still has a stream", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    const onAgentEvent = vi.fn();
+    const runId = "run-empty-response-withholds-terminal";
+
+    mockedRunEmbeddedAttempt.mockImplementationOnce(async () => {
+      // The subscribe layer (handleAgentEnd) consults the registry while the
+      // attempt is live; mimic that here so the withholding is recorded
+      // mid-run exactly as in production.
+      const { withholdTerminalForPendingRetry } = await import("./attempt-retry-registry.js");
+      expect(
+        withholdTerminalForPendingRetry(runId, {
+          hasAssistantVisibleText: false,
+          terminalData: { livenessState: "working" },
+        }),
+      ).toBe(true);
+      return makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [{ type: "text", text: "" }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      });
+    });
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Visible answer."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [{ type: "text", text: "Visible answer." }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      provider: "openai",
+      model: "gpt-5.4",
+      runId,
+      onAgentEvent,
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    // The retry started, so it owns the terminal — the run loop's flush must
+    // stay silent rather than emit a second `end` for the same runId.
+    expect(lifecycleEnds(onAgentEvent)).toHaveLength(0);
+  });
+
+  it("emits the withheld terminal end when the run exits without retrying", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    const onAgentEvent = vi.fn();
+    const runId = "run-empty-response-flushes-terminal";
+
+    // Anthropic reasoning-only turns are not retried, so the withheld terminal
+    // has no retry to inherit it. Without the run loop's flush, subscribers
+    // would wait out the stream with no terminal event at all.
+    mockedRunEmbeddedAttempt.mockImplementationOnce(async () => {
+      const { withholdTerminalForPendingRetry } = await import("./attempt-retry-registry.js");
+      expect(
+        withholdTerminalForPendingRetry(runId, {
+          hasAssistantVisibleText: false,
+          terminalData: { livenessState: "abandoned" },
+        }),
+      ).toBe(true);
+      return makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "anthropic",
+          model: "sonnet-4.6",
+          content: [
+            {
+              type: "thinking",
+              thinking: "internal reasoning",
+              thinkingSignature: JSON.stringify({
+                id: "rs_provider_mismatch",
+                type: "reasoning",
+              }),
+            },
+          ],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      });
+    });
+
+    await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      provider: "anthropic",
+      model: "sonnet-4.6",
+      runId,
+      onAgentEvent,
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    const ends = lifecycleEnds(onAgentEvent);
+    expect(ends).toHaveLength(1);
+    expect(ends[0]?.data?.livenessState).toBe("abandoned");
+  });
+
   it("retries zero-token empty Claude stop turns with a visible-answer continuation instruction", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(
