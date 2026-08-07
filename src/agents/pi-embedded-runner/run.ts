@@ -85,6 +85,13 @@ import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
 import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
 import { derivePromptTokens, normalizeUsage, type UsageLike } from "../usage.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
+import {
+  armAttemptRetryRecovery,
+  consumeSuppressedTerminal,
+  consumeWithheldTerminal,
+  disarmAttemptRetryRecovery,
+  noteRetryAttemptStarted,
+} from "./attempt-retry-registry.js";
 import { runPostCompactionSideEffects } from "./compaction-hooks.js";
 import { buildEmbeddedCompactionRuntimeContext } from "./compaction-runtime-context.js";
 import { runContextEngineMaintenance } from "./context-engine-maintenance.js";
@@ -93,12 +100,6 @@ import { resolveEmbeddedRunFailureSignal } from "./failure-signal.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
 import { resolveModelAsync } from "./model.js";
-import {
-  armOverflowRecovery,
-  consumeSuppressedTerminal,
-  disarmOverflowRecovery,
-  noteOverflowAttemptStarted,
-} from "./overflow-recovery-registry.js";
 import {
   createPostCompactionLoopGuard,
   PostCompactionLoopPersistedError,
@@ -874,11 +875,33 @@ export async function runEmbeddedPiAgent(
       // Magister fork: when the per-attempt terminal lifecycle error was
       // suppressed (recoverable overflow) but recovery is exiting without a
       // retry, re-emit the terminal it withheld — exactly once.
-      const emitSuppressedOverflowTerminal = (errorText: string): void => {
+      const emitSuppressedOverflowTerminal = (errorText: string): boolean => {
         if (!consumeSuppressedTerminal(params.runId)) {
-          return;
+          return false;
         }
         emitOverflowTerminal(errorText);
+        return true;
+      };
+      // Magister fork: the per-attempt handler withholds an ordinary terminal
+      // `end` while a no-visible-answer retry is still possible, because the
+      // retry reuses this runId and its answer would land on a stream the
+      // early `end` had already closed. The run is over by the time this runs,
+      // so emit exactly what was withheld — a retry that did start cleared it
+      // (noteRetryAttemptStarted) and owns its own terminal.
+      const flushWithheldTerminal = (): void => {
+        const withheld = consumeWithheldTerminal(params.runId);
+        if (!withheld) {
+          return;
+        }
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "lifecycle",
+          data: { phase: "end", ...withheld, endedAt: Date.now() },
+        });
+        void params.onAgentEvent?.({
+          stream: "lifecycle",
+          data: { phase: "end", ...withheld },
+        });
       };
       // Magister fork: surface mid-run overflow compaction to stream
       // subscribers (the gateway maps these onto its compaction UI events).
@@ -973,15 +996,22 @@ export async function runEmbeddedPiAgent(
       });
       startupStages.mark("context-engine");
       try {
-        // Magister fork: while this run still has overflow-compaction budget,
-        // a context-overflow attempt error is recoverable — the per-attempt
-        // lifecycle handler must not emit a terminal `error` for it (that
-        // would close HTTP/WS subscribers while the retried prompt keeps
-        // working headless). Disarmed in this try's finally.
-        armOverflowRecovery(
-          params.runId,
-          () => overflowCompactionAttempts < MAX_OVERFLOW_COMPACTION_ATTEMPTS,
-        );
+        // Magister fork: while this run can still retry, an attempt's terminal
+        // lifecycle event is not terminal for the run — the per-attempt handler
+        // must not emit it (that would close HTTP/WS subscribers while the
+        // retried prompt keeps working headless). Two budgets, because the two
+        // classes are knowable at different times: a context-overflow error is
+        // visible during the attempt, whereas whether a no-visible-answer
+        // attempt gets retried is decided below, after it resolves.
+        // Disarmed in this try's finally.
+        armAttemptRetryRecovery(params.runId, {
+          hasOverflowBudget: () => overflowCompactionAttempts < MAX_OVERFLOW_COMPACTION_ATTEMPTS,
+          hasNoVisibleAnswerRetryBudget: () =>
+            planningOnlyRetryAttempts < maxPlanningOnlyRetryAttempts ||
+            reasoningOnlyRetryAttempts < maxReasoningOnlyRetryAttempts ||
+            emptyResponseRetryAttempts < maxEmptyResponseRetryAttempts ||
+            compactionContinuationRetryAttempts < 1,
+        });
         const resolveActiveHookContext = () => ({
           ...hookCtx,
           sessionId: activeSessionId,
@@ -1101,9 +1131,10 @@ export async function runEmbeddedPiAgent(
             });
           }
           runLoopIterations += 1;
-          // Magister fork: a retry attempt is starting — any suppressed
-          // terminal from the previous attempt is owned by this retry now.
-          noteOverflowAttemptStarted(params.runId);
+          // Magister fork: a retry attempt is starting — any suppressed or
+          // withheld terminal from the previous attempt is owned by this retry
+          // now.
+          noteRetryAttemptStarted(params.runId);
           const runtimeAuthRetry = authRetryPending;
           authRetryPending = false;
           attemptedThinking.add(thinkLevel);
@@ -1852,7 +1883,7 @@ export async function runEmbeddedPiAgent(
             // agent-command `lifecycleEnded`) absorbs the potential double.
             consumeSuppressedTerminal(params.runId);
             emitOverflowTerminal(errorText);
-            disarmOverflowRecovery(params.runId);
+            disarmAttemptRetryRecovery(params.runId);
             attempt.setTerminalLifecycleMeta?.({
               replayInvalid: resolveReplayInvalidForAttempt(),
               livenessState: "blocked",
@@ -2903,10 +2934,18 @@ export async function runEmbeddedPiAgent(
         // a suppression would otherwise leave subscribers without a terminal
         // event. Throw paths are safe: agent-command's emission dedupes via
         // its lifecycleEnded flag, set by the onAgentEvent relay here.
-        emitSuppressedOverflowTerminal(
-          "Context overflow: recovery did not complete. Try /reset or a larger-context model.",
-        );
-        disarmOverflowRecovery(params.runId);
+        // At most one terminal: a suppressed overflow error and a withheld
+        // ordinary end cannot both be pending (each attempt takes one branch,
+        // and noteRetryAttemptStarted clears both), but emitting the error
+        // wins if that invariant ever slips.
+        if (
+          !emitSuppressedOverflowTerminal(
+            "Context overflow: recovery did not complete. Try /reset or a larger-context model.",
+          )
+        ) {
+          flushWithheldTerminal();
+        }
+        disarmAttemptRetryRecovery(params.runId);
         forgetPromptBuildDrainCacheForRun(params.runId);
         stopRuntimeAuthRefreshTimer();
         await runAgentCleanupStep({

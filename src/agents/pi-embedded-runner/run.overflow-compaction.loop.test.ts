@@ -268,8 +268,7 @@ describe("overflow compaction in run loop", () => {
       // The subscribe layer (handleAgentEnd) consults the registry while the
       // attempt is live; mimic that here so the suppression is recorded
       // mid-run exactly as in production.
-      const { shouldSuppressTerminalOverflowError } =
-        await import("./overflow-recovery-registry.js");
+      const { shouldSuppressTerminalOverflowError } = await import("./attempt-retry-registry.js");
       expect(shouldSuppressTerminalOverflowError(baseParams.runId, overflowError.message)).toBe(
         true,
       );
@@ -321,7 +320,7 @@ describe("overflow compaction in run loop", () => {
 
     // Give-up disarms the registry, so a late attempt-level lifecycle error
     // (emitted after the run returns) must pass through unsuppressed.
-    const { shouldSuppressTerminalOverflowError } = await import("./overflow-recovery-registry.js");
+    const { shouldSuppressTerminalOverflowError } = await import("./attempt-retry-registry.js");
     expect(shouldSuppressTerminalOverflowError(baseParams.runId, overflowError.message)).toBe(
       false,
     );
