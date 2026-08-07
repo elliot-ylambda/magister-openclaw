@@ -160,6 +160,7 @@ import {
   isSubagentEnvelopeSession,
   resolveSubagentCapabilityStore,
 } from "../../subagent-capabilities.js";
+import { getRootSessionKeyFromSessionStore } from "../../subagent-depth.js";
 import { resolveSystemPromptOverride } from "../../system-prompt-override.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
@@ -2212,6 +2213,7 @@ export async function runEmbeddedAttempt(
       activeSession.agent.streamFn = wrapStreamFnWithSessionHeader(
         activeSession.agent.streamFn,
         params.sessionKey,
+        getRootSessionKeyFromSessionStore(params.sessionKey, { cfg: params.config }),
       );
 
       try {

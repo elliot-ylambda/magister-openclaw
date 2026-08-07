@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
+import {
+  getRootSessionKeyFromSessionStore,
+  getSubagentDepthFromSessionStore,
+} from "./subagent-depth.js";
 import { resolveAgentTimeoutMs, resolveAgentTimeoutSeconds } from "./timeout.js";
 
 describe("getSubagentDepthFromSessionStore", () => {
@@ -111,6 +114,67 @@ describe("getSubagentDepthFromSessionStore", () => {
       },
     });
     expect(depth).toBe(1);
+  });
+});
+
+describe("getRootSessionKeyFromSessionStore", () => {
+  it("returns the direct session key when it has no parent", () => {
+    const key = "agent:marketing:webchat:session-123";
+
+    expect(getRootSessionKeyFromSessionStore(key, { store: { [key]: {} } })).toBe(key);
+  });
+
+  it("walks nested spawnedBy lineage to the owning web chat", () => {
+    const root = "agent:marketing:webchat:session-123";
+    const parent = "agent:marketing:subagent:parent";
+    const child = "agent:marketing:subagent:child";
+
+    expect(
+      getRootSessionKeyFromSessionStore(child, {
+        store: {
+          [root]: {},
+          [parent]: { spawnedBy: root },
+          [child]: { spawnedBy: parent },
+        },
+      }),
+    ).toBe(root);
+  });
+
+  it("falls back to agent-specific stores for cross-agent lineage", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-subagent-root-"));
+    const storeTemplate = path.join(tmpDir, "sessions-{agentId}.json");
+    const root = "agent:marketing:webchat:session-123";
+    const child = "agent:research:subagent:child";
+    fs.writeFileSync(
+      storeTemplate.replaceAll("{agentId}", "marketing"),
+      JSON.stringify({ [root]: {} }),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      storeTemplate.replaceAll("{agentId}", "research"),
+      JSON.stringify({ [child]: { spawnedBy: root } }),
+      "utf-8",
+    );
+
+    expect(
+      getRootSessionKeyFromSessionStore(child, {
+        cfg: { session: { store: storeTemplate } },
+      }),
+    ).toBe(root);
+  });
+
+  it("fails closed to the current key when lineage is cyclic", () => {
+    const parent = "agent:marketing:subagent:parent";
+    const child = "agent:marketing:subagent:child";
+
+    expect(
+      getRootSessionKeyFromSessionStore(child, {
+        store: {
+          [parent]: { spawnedBy: child },
+          [child]: { spawnedBy: parent },
+        },
+      }),
+    ).toBe(child);
   });
 });
 
