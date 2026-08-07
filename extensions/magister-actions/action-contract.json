@@ -35,6 +35,41 @@
       "tool_name": "magister_list_integrations"
     },
     {
+      "action": "refresh_integration",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Re-run authoritative metadata discovery for one connected integration after the user says its provider-side account structure changed. For Google Ads, optional paired manager and client IDs run one fixed read-only provider verification and bind the client only on success. Generic discovery is asynchronous; check it on the next turn.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "customer_id": {
+            "description": "Google Ads client ID to verify beneath login_customer_id.",
+            "pattern": "^\\d{10}$",
+            "type": "string"
+          },
+          "login_customer_id": {
+            "description": "Selected Google Ads manager ID for an exact client verification.",
+            "pattern": "^\\d{10}$",
+            "type": "string"
+          },
+          "service": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          }
+        },
+        "required": ["service"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_refresh_integration"
+    },
+    {
       "action": "get_marketing_plan",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -2745,6 +2780,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "9986460ee4149e524af6182788b06b15f4a4f41b284c7243e97df15d3e560705",
+  "registry_revision": "3a6cbd397f54f2d7c85eed1abd5092b20e9700e25747c6f00cc063730b2e65f4",
   "schema_version": 1
 }

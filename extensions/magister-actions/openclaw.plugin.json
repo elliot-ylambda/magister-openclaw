@@ -11,6 +11,7 @@
       "search_project_corpus",
       "magister_get_brand",
       "magister_list_integrations",
+      "magister_refresh_integration",
       "magister_get_marketing_plan",
       "magister_list_workflow_status",
       "magister_list_workflows",
