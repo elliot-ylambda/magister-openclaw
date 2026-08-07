@@ -6,8 +6,11 @@ import {
   sanitizeForConsole,
 } from "./pi-embedded-error-observation.js";
 import { classifyFailoverReason, formatAssistantErrorText } from "./pi-embedded-helpers.js";
+import {
+  shouldSuppressTerminalOverflowError,
+  withholdTerminalForPendingRetry,
+} from "./pi-embedded-runner/attempt-retry-registry.js";
 import { hasCommittedMessagingToolDeliveryEvidence } from "./pi-embedded-runner/delivery-evidence.js";
-import { shouldSuppressTerminalOverflowError } from "./pi-embedded-runner/overflow-recovery-registry.js";
 import { isIncompleteTerminalAssistantTurn } from "./pi-embedded-runner/run/incomplete-turn.js";
 import {
   consumePendingToolMediaReply,
@@ -126,7 +129,7 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
     // compact-and-retry is not terminal for the run — emitting `error` here
     // would close HTTP/WS subscribers while the retried prompt keeps working
     // headless. The run loop emits the terminal error itself if recovery
-    // gives up (see overflow-recovery-registry.ts).
+    // gives up (see attempt-retry-registry.ts).
     if (isError) {
       const overflowProbeText =
         (isAssistantMessage(lastAssistant)
@@ -165,14 +168,37 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
       });
       return;
     }
+    const endData = {
+      ...terminalMeta,
+      ...(livenessState ? { livenessState } : {}),
+      ...(replayInvalid ? { replayInvalid } : {}),
+    };
+    // Magister fork: an attempt that produced no visible answer is not
+    // terminal for the run while the run loop can still retry it — the
+    // planning-only, reasoning-only, empty-response, and compaction-
+    // continuation retries all `continue` under this same runId. Emitting
+    // `end` here closes HTTP/WS subscribers, and the retried attempt's real
+    // answer then goes nowhere (2026-08-07: GPT-5.6 returned empty, the retry
+    // answered 13s later, the user got "Agent didn't return a response").
+    // The run loop emits what we withhold, in its finally.
+    if (
+      withholdTerminalForPendingRetry(ctx.params.runId, {
+        hasAssistantVisibleText,
+        terminalData: endData,
+      })
+    ) {
+      ctx.log.debug(
+        `withholding terminal lifecycle end for a retryable empty attempt: ` +
+          `runId=${ctx.params.runId} (run loop owns the terminal)`,
+      );
+      return;
+    }
     emitAgentEvent({
       runId: ctx.params.runId,
       stream: "lifecycle",
       data: {
         phase: "end",
-        ...terminalMeta,
-        ...(livenessState ? { livenessState } : {}),
-        ...(replayInvalid ? { replayInvalid } : {}),
+        ...endData,
         endedAt: Date.now(),
       },
     });
@@ -180,9 +206,7 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
       stream: "lifecycle",
       data: {
         phase: "end",
-        ...terminalMeta,
-        ...(livenessState ? { livenessState } : {}),
-        ...(replayInvalid ? { replayInvalid } : {}),
+        ...endData,
       },
     });
   };
