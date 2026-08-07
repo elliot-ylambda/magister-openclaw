@@ -87,7 +87,10 @@ function resolveEntryForSessionKey(params: {
         return entry;
       }
     }
-    return findEntryBySessionId(params.store, params.sessionKey);
+    const entry = findEntryBySessionId(params.store, params.sessionKey);
+    if (entry) {
+      return entry;
+    }
   }
 
   if (!params.cfg) {
@@ -112,6 +115,45 @@ function resolveEntryForSessionKey(params: {
   }
 
   return undefined;
+}
+
+/** Resolve the top-level session that owns work performed by a subagent chain. */
+export function getRootSessionKeyFromSessionStore(
+  sessionKey: string | undefined | null,
+  opts?: {
+    cfg?: OpenClawConfig;
+    store?: Record<string, SessionDepthEntry>;
+  },
+): string | undefined {
+  const raw = normalizeSubagentSessionKey(sessionKey);
+  if (!raw) {
+    return undefined;
+  }
+
+  const cache = new Map<string, Record<string, SessionDepthEntry>>();
+  const visited = new Set<string>();
+  let current = raw;
+
+  for (;;) {
+    const normalizedKey = normalizeSubagentSessionKey(current);
+    if (!normalizedKey || visited.has(normalizedKey)) {
+      // Cyclic or malformed lineage must fail closed to the request's own key.
+      return raw;
+    }
+    visited.add(normalizedKey);
+
+    const entry = resolveEntryForSessionKey({
+      sessionKey: normalizedKey,
+      cfg: opts?.cfg,
+      store: opts?.store,
+      cache,
+    });
+    const parent = normalizeSubagentSessionKey(entry?.spawnedBy);
+    if (!parent) {
+      return normalizedKey;
+    }
+    current = parent;
+  }
 }
 
 export function getSubagentDepthFromSessionStore(
