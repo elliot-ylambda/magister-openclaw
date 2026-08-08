@@ -186,6 +186,28 @@ describe("Magister corpus ingestion", () => {
     expect(manifest).toEqual({ summary_revision: 0, trusted_as_project_source: 0 });
   });
 
+  it("names the crash class when a non-IngestionError escapes", async () => {
+    workspace();
+    // A bare "ingestion failed" left two production wedges (2026-08-05,
+    // 2026-08-07) undiagnosable from any off-machine surface.
+    vi.spyOn(fs.promises, "lstat").mockRejectedValue(
+      Object.assign(new Error("permission denied"), { code: "EACCES" }),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await request({
+      files: [file("brief.md", "source data", "text/markdown")],
+      provenance: "chat",
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(JSON.parse(response.body)).toEqual({
+      error: "ingestion_rejected",
+      message: "ingestion failed (EACCES)",
+    });
+    expect(consoleError).toHaveBeenCalledWith("[magister-corpus] ingestion crash class=EACCES");
+  });
+
   it("transactionally upgrades the version-one corpus while legacy reads remain valid", () => {
     const root = workspace();
     const state = path.join(root, ".magister", "state");

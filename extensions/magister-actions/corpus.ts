@@ -164,10 +164,30 @@ export async function handleCorpusIngestion(
     sendJson(res, 200, { status: "ok", files: results });
   } catch (error) {
     const status = error instanceof IngestionError ? error.statusCode : 500;
-    const message = error instanceof IngestionError ? error.message : "ingestion failed";
+    let message: string;
+    if (error instanceof IngestionError) {
+      message = error.message;
+    } else {
+      // A bare "ingestion failed" erased the crash cause from every
+      // off-machine surface — two production wedges (2026-08-05, 2026-08-07)
+      // went undiagnosable. Name the error class only: bounded identifier,
+      // no message text, so nothing sensitive leaves the machine.
+      message = `ingestion failed (${crashClass(error)})`;
+      console.error(`[magister-corpus] ingestion crash class=${crashClass(error)}`);
+    }
     sendJson(res, status, { error: "ingestion_rejected", message });
   }
   return true;
+}
+
+/** Bounded identifier for a non-IngestionError crash: fs/sqlite `code` when
+ * present (EACCES, SQLITE_BUSY, …), else the constructor name. */
+function crashClass(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  const name = error instanceof Error ? error.name : typeof error;
+  const raw = typeof code === "string" && code ? code : name;
+  const safe = raw.replace(/[^A-Za-z0-9_]/g, "").slice(0, 40);
+  return safe || "unknown";
 }
 
 export { corpusLimits };
