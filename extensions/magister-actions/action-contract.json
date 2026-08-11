@@ -789,6 +789,674 @@
       "tool_name": "magister_get_audit_health"
     },
     {
+      "action": "list_analytics_properties",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List the persisted analytics properties and source identifiers available to this project.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_list_analytics_properties"
+    },
+    {
+      "action": "read_analytics_snapshots",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read a bounded persisted analytics metric series using a property returned by magister_list_analytics_properties.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dimension": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "dimension_is_null": {
+            "default": false,
+            "type": "boolean"
+          },
+          "external_id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "from_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "metric": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "type": "string"
+          },
+          "to_date": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": ["source", "external_id", "from_date", "to_date"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_read_analytics_snapshots"
+    },
+    {
+      "action": "read_analytics_breakdown",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read one persisted top-query, top-page, source, event, campaign, or rank-distribution window.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "external_id": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,79}$",
+            "type": "string"
+          },
+          "period_end": {
+            "format": "date",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "type": "string"
+          }
+        },
+        "required": ["source", "external_id", "kind", "period_end"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_read_analytics_breakdown"
+    },
+    {
+      "action": "list_marketing_events",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read the bounded project timeline of workflow runs, emails, and published artifacts.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "from_time": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to_time": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": ["from_time", "to_time"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_list_marketing_events"
+    },
+    {
+      "action": "list_trackers",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "List project experiment trackers with each tracker's latest check-in.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": ["active", "paused", "completed", "archived"],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_list_trackers"
+    },
+    {
+      "action": "get_tracker",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read one project-owned experiment tracker and its full check-in history.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "tracker_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["tracker_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_tracker"
+    },
+    {
+      "action": "create_tracker",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Create a project-scoped experiment tracker with structured metrics and goals.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "goals": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "title"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_create_tracker"
+    },
+    {
+      "action": "update_tracker",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Update the status or linked workflow of one project-owned tracker.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["active", "paused", "completed", "archived"],
+            "type": "string"
+          },
+          "tracker_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "tracker_id"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_update_tracker"
+    },
+    {
+      "action": "get_tracker_scorecard",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Read the canonical tracker scorecard and explicit comparison dates used by Analytics and briefs.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "horizon_days": {
+            "default": 7,
+            "maximum": 90,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "limit": {
+            "default": 12,
+            "maximum": 12,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tracker_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_tracker_scorecard"
+    },
+    {
+      "action": "record_tracker_checkin",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Record one project-owned tracker check-in after reading current persisted analytics values.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "goal_progress": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "metric_values": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tracker_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["idempotency_key", "tracker_id", "summary"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_record_tracker_checkin"
+    },
+    {
+      "action": "get_brief_context",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Gather bounded findings, activity, plan tasks, scorecards, connected services, and actual social/ad accounts for a brief.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "safe_retry",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "none",
+      "spend_limited": false,
+      "tool_name": "magister_get_brief_context"
+    },
+    {
+      "action": "send_brief",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Render, archive, and email one workflow-bound brief. The Gateway derives project, run, date, kind, branding, recipients, and canonical metrics; this self-notification to the project's subscribed recipients needs no approval.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "idempotency_key",
+      "input_schema": {
+        "$defs": {
+          "ActionItem": {
+            "properties": {
+              "button_label": {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              "description": {
+                "default": "",
+                "maxLength": 300,
+                "type": "string"
+              },
+              "external": {
+                "default": false,
+                "type": "boolean"
+              },
+              "headline": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "href": {
+                "maxLength": 600,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["headline", "button_label", "href"],
+            "type": "object"
+          },
+          "ActionPlanTaskRef": {
+            "description": "Legacy link from a brief's `today` item to a plan_task.\n\nScheduled plan_execution loops own execution. This field remains accepted\nso archived and older machine-generated brief payloads still validate.",
+            "properties": {
+              "plan_task_id": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              "today_item": {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["plan_task_id", "today_item"],
+            "type": "object"
+          },
+          "CalendarItem": {
+            "properties": {
+              "day_label": {
+                "maxLength": 20,
+                "minLength": 1,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["day_label", "description"],
+            "type": "object"
+          },
+          "ConnectAsk": {
+            "description": "A \"connect this integration\" prompt surfaced inline in the brief.\n\nReplaces the lump \"Unlock more KPIs\" CTA with per-card asks tied to the\nplan: e.g. \"Connect Stripe \u2014 your plan tracks MRR but it's currently\nestimated from manual entries.\" Renders as a small button-link section\nin the React Email template (Phase 3).",
+            "properties": {
+              "href": {
+                "maxLength": 600,
+                "minLength": 1,
+                "type": "string"
+              },
+              "service": {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              "why": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["service", "why", "href"],
+            "type": "object"
+          },
+          "Delta": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/$defs/DeltaItem"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "label": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["label"],
+            "type": "object"
+          },
+          "DeltaItem": {
+            "properties": {
+              "direction": {
+                "enum": ["up", "down"],
+                "type": "string"
+              },
+              "headline": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "enum": ["keyword_move", "metric_change", "page_top", "site_change"],
+                "type": "string"
+              },
+              "link": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": ["normal", "attention"],
+                "type": "string"
+              }
+            },
+            "required": ["kind", "headline"],
+            "type": "object"
+          },
+          "ShippedItem": {
+            "properties": {
+              "headline": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "link": {
+                "type": "string"
+              }
+            },
+            "required": ["headline"],
+            "type": "object"
+          },
+          "WeeklyExtras": {
+            "properties": {
+              "lessons": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              "next_week_priorities": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "type": "array"
+              },
+              "wins": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "action_plan_tasks": {
+            "items": {
+              "$ref": "#/$defs/ActionPlanTaskRef"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "brief_kind": {
+            "default": "standard",
+            "enum": ["standard", "custom", "end-of-week"],
+            "type": "string"
+          },
+          "connect_asks": {
+            "items": {
+              "$ref": "#/$defs/ConnectAsk"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "consumed_finding_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "deltas": {
+            "$ref": "#/$defs/Delta"
+          },
+          "idempotency_key": {
+            "maxLength": 256,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "type": "string"
+          },
+          "lede": {
+            "maxLength": 600,
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "$ref": "#/$defs/ActionItem"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "next_steps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "shipped": {
+            "items": {
+              "$ref": "#/$defs/ShippedItem"
+            },
+            "maxItems": 10,
+            "type": "array"
+          },
+          "subject_summary": {
+            "maxLength": 40,
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "today": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "tomorrow": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/$defs/CalendarItem"
+            },
+            "maxItems": 7,
+            "type": "array"
+          },
+          "weekly_extras": {
+            "$ref": "#/$defs/WeeklyExtras"
+          }
+        },
+        "required": ["idempotency_key"],
+        "type": "object"
+      },
+      "retry_policy": "read_after_timeout",
+      "side_effect": "external_write",
+      "spend_limited": false,
+      "tool_name": "magister_send_brief"
+    },
+    {
       "action": "list_skills",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -2780,6 +3448,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "3a6cbd397f54f2d7c85eed1abd5092b20e9700e25747c6f00cc063730b2e65f4",
+  "registry_revision": "dd9ca7cb8fd65e6275a6838985fb8e1472d657d61b64178721cbdc183708c62d",
   "schema_version": 1
 }
