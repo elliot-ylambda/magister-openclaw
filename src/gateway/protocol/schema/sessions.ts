@@ -239,6 +239,12 @@ export const SessionsCompactParamsSchema = Type.Object(
   {
     key: NonEmptyString,
     maxLines: Type.Optional(Type.Integer({ minimum: 1 })),
+    // Who initiated the compaction. "manual" (the default when absent) is an
+    // explicit user checkpoint request and hardens the boundary — the rebuilt
+    // context starts at the summary and discards everything before it.
+    // "auto" marks a background threshold compaction (e.g. the Magister
+    // gateway's end-of-turn check) and preserves the recent-tail messages.
+    trigger: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("manual")])),
   },
   { additionalProperties: false },
 );

@@ -266,6 +266,88 @@ test("sessions.compact without maxLines runs embedded manual compaction for chec
   ws.close();
 });
 
+test("sessions.compact trigger=auto maps to the budget trigger so history survives", async () => {
+  // A background threshold compaction (the Magister gateway's end-of-turn
+  // check) must NOT run as "manual": manual hardens the boundary and discards
+  // every message before the summary. "auto" → internal "budget" preserves
+  // the recent tail.
+  const { dir } = await createSessionStoreDir();
+  await fs.writeFile(
+    path.join(dir, "sess-main.jsonl"),
+    `${JSON.stringify({ role: "user", content: "hello" })}\n`,
+    "utf-8",
+  );
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", {
+        thinkingLevel: "medium",
+        reasoningLevel: "stream",
+      }),
+    },
+  });
+
+  const { ws } = await openClient();
+  const compacted = await rpcReq<{
+    ok: true;
+    key: string;
+    compacted: boolean;
+  }>(ws, "sessions.compact", {
+    key: "main",
+    trigger: "auto",
+  });
+
+  expect(compacted.ok).toBe(true);
+  expect(compacted.payload?.compacted).toBe(true);
+  expect(embeddedRunMock.compactEmbeddedPiSession).toHaveBeenCalledTimes(1);
+  expect(embeddedRunMock.compactEmbeddedPiSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      sessionKey: "agent:main:main",
+      trigger: "budget",
+    }),
+  );
+
+  ws.close();
+});
+
+test("sessions.compact trigger=manual keeps the explicit manual trigger", async () => {
+  const { dir } = await createSessionStoreDir();
+  await fs.writeFile(
+    path.join(dir, "sess-main.jsonl"),
+    `${JSON.stringify({ role: "user", content: "hello" })}\n`,
+    "utf-8",
+  );
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", {
+        thinkingLevel: "medium",
+        reasoningLevel: "stream",
+      }),
+    },
+  });
+
+  const { ws } = await openClient();
+  const compacted = await rpcReq<{
+    ok: true;
+    key: string;
+    compacted: boolean;
+  }>(ws, "sessions.compact", {
+    key: "main",
+    trigger: "manual",
+  });
+
+  expect(compacted.ok).toBe(true);
+  expect(compacted.payload?.compacted).toBe(true);
+  expect(embeddedRunMock.compactEmbeddedPiSession).toHaveBeenCalledTimes(1);
+  expect(embeddedRunMock.compactEmbeddedPiSession).toHaveBeenCalledWith(
+    expect.objectContaining({
+      sessionKey: "agent:main:main",
+      trigger: "manual",
+    }),
+  );
+
+  ws.close();
+});
+
 test("sessions.patch preserves nested model ids under provider overrides", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gw-sessions-nested-"));
   const storePath = path.join(dir, "sessions.json");

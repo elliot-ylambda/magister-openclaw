@@ -1872,7 +1872,11 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           allowed: false,
           defaultLevel: "off",
         },
-        trigger: "manual",
+        // Wire "auto" maps to the internal "budget" trigger: it skips
+        // hardenManualCompactionBoundary (which discards ALL pre-summary
+        // context) and records the checkpoint as "auto-threshold". Absent or
+        // "manual" keeps the historical explicit-checkpoint semantics.
+        trigger: p.trigger === "auto" ? "budget" : "manual",
       });
 
       if (result.ok && result.compacted) {
