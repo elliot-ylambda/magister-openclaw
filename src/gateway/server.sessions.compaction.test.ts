@@ -211,7 +211,7 @@ test("sessions.compaction.* lists checkpoints and branches or restores from pre-
   ws.close();
 });
 
-test("sessions.compact without maxLines runs embedded manual compaction for checkpoint-capable flows", async () => {
+test("sessions.compact without a trigger defaults to budget so an omitted field can never wipe history", async () => {
   const { dir, storePath } = await createSessionStoreDir();
   await fs.writeFile(
     path.join(dir, "sess-main.jsonl"),
@@ -251,7 +251,11 @@ test("sessions.compact without maxLines runs embedded manual compaction for chec
       model: expect.any(String),
       thinkLevel: "medium",
       reasoningLevel: "stream",
-      trigger: "manual",
+      // Boundary hardening is opt-in. An older Gateway mid-rollout sends no
+      // trigger for BOTH its manual and its auto compactions; defaulting that
+      // to "manual" would keep wiping conversations on every already-updated
+      // machine for the whole rollout window.
+      trigger: "budget",
     }),
   );
 
