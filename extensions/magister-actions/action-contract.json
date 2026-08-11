@@ -1176,7 +1176,7 @@
       "action": "send_brief",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Render, archive, and email one workflow-bound brief. The Gateway derives project, run, date, kind, branding, recipients, and canonical metrics.",
+      "description": "Render, archive, and email one workflow-bound brief. The Gateway derives project, run, date, kind, branding, recipients, and canonical metrics; this self-notification to the project's subscribed recipients needs no approval.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -3448,6 +3448,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "b6368cf7ee19b2742466e19c4c792c7dd7d0b656a99b80f74940bc35dd8d4d80",
+  "registry_revision": "dd9ca7cb8fd65e6275a6838985fb8e1472d657d61b64178721cbdc183708c62d",
   "schema_version": 1
 }
