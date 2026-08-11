@@ -28,7 +28,10 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "../shared/string-coerce.js";
-import { resolveAssistantStreamDeltaText } from "./agent-event-assistant-text.js";
+import {
+  resolveAssistantMediaUrls,
+  resolveAssistantStreamDeltaText,
+} from "./agent-event-assistant-text.js";
 import {
   buildAgentMessageFromConversationEntries,
   type ConversationEntry,
@@ -674,6 +677,7 @@ export async function handleOpenAiHttpRequest(
   let finalizeRequested = false;
   let closed = false;
   let stopWatchingDisconnect = () => {};
+  const forwardedMediaUrls = new Set<string>();
 
   const maybeFinalize = () => {
     if (closed || !finalizeRequested) {
@@ -710,6 +714,17 @@ export async function handleOpenAiHttpRequest(
     }
 
     if (evt.stream === "assistant") {
+      const mediaUrls = resolveAssistantMediaUrls(evt).filter((url) => {
+        if (forwardedMediaUrls.has(url)) {
+          return false;
+        }
+        forwardedMediaUrls.add(url);
+        return true;
+      });
+      if (mediaUrls.length > 0) {
+        writeCustomSseEvent(res, "media", { urls: mediaUrls });
+      }
+
       const content = resolveAssistantStreamDeltaText(evt) ?? "";
       if (!content) {
         return;

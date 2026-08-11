@@ -66,6 +66,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Magister/web chat: preserve assistant reply media metadata across the OpenAI-compatible HTTP streaming endpoints so image-only and previously generated media replies reach the browser.
 - Magister/web chat: emit the OpenAI-compatible assistant role and run id before agent execution settles, so the Gateway receives immediate liveness and can cancel work when the browser disconnects.
 - Magister approvals: recognize the Gateway's canonical `approval_required` result while retaining rolling compatibility with the legacy code, so trusted pending approvals reach web chat instead of being silently dropped.
 - Magister/model routing: forward the canonical agent session key through provider request headers so per-session model settings and usage attribution reach the Gateway.
