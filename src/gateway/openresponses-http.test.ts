@@ -758,6 +758,46 @@ describe("OpenResponses HTTP API (e2e)", () => {
     }
   });
 
+  it("forwards deduplicated assistant media events (Magister fork)", async () => {
+    const port = enabledPort;
+    const mediaUrl = "https://media.zernio.com/media/generated-image.jpg";
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({ runId, stream: "assistant", data: { delta: "Here it is:" } });
+          emitAgentEvent({
+            runId,
+            stream: "assistant",
+            data: { text: "Here it is:", delta: "", mediaUrls: [mediaUrl, mediaUrl] },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "assistant",
+            data: { text: "Here it is:", delta: "", mediaUrls: [mediaUrl] },
+          });
+          emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "end" } });
+          setTimeout(() => resolve({ payloads: [{ text: "Here it is:" }], meta: {} }), 50);
+        })) as never,
+    );
+
+    const res = await postResponses(port, {
+      stream: true,
+      model: "openclaw",
+      input: "show me the image",
+    });
+    expect(res.status).toBe(200);
+
+    const events = parseSseEvents(await res.text());
+    const mediaEvents = events.filter((event) => event.event === "media");
+    expect(mediaEvents).toHaveLength(1);
+    expect(JSON.parse(mediaEvents[0]?.data ?? "{}")).toEqual({
+      type: "media",
+      urls: [mediaUrl],
+    });
+  });
+
   it("treats write-scoped HTTP callers as non-owner and admin-scoped callers as owner", async () => {
     const port = enabledPort;
 

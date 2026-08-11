@@ -32,7 +32,10 @@ import {
   type InputImageSource,
 } from "../media/input-files.js";
 import { defaultRuntime } from "../runtime.js";
-import { resolveAssistantStreamDeltaText } from "./agent-event-assistant-text.js";
+import {
+  resolveAssistantMediaUrls,
+  resolveAssistantStreamDeltaText,
+} from "./agent-event-assistant-text.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
 import { sendJson, setSseHeaders, watchClientDisconnect, writeDone } from "./http-common.js";
@@ -230,9 +233,14 @@ type MagisterApprovalStreamingEvent = {
   state: "pending";
 };
 
+type MagisterMediaStreamingEvent = {
+  type: "media";
+  urls: string[];
+};
+
 function writeSseEvent(
   res: ServerResponse,
-  event: StreamingEvent | MagisterApprovalStreamingEvent,
+  event: StreamingEvent | MagisterApprovalStreamingEvent | MagisterMediaStreamingEvent,
 ) {
   res.write(`event: ${event.type}\n`);
   res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -833,6 +841,7 @@ export async function handleOpenResponsesHttpRequest(
   let stopWatchingDisconnect = () => {};
   let finalUsage: Usage | undefined;
   let finalizeRequested: { status: ResponseResource["status"]; text: string } | null = null;
+  const forwardedMediaUrls = new Set<string>();
 
   const maybeFinalize = () => {
     if (closed) {
@@ -943,6 +952,17 @@ export async function handleOpenResponsesHttpRequest(
     }
 
     if (evt.stream === "assistant") {
+      const mediaUrls = resolveAssistantMediaUrls(evt).filter((url) => {
+        if (forwardedMediaUrls.has(url)) {
+          return false;
+        }
+        forwardedMediaUrls.add(url);
+        return true;
+      });
+      if (mediaUrls.length > 0) {
+        writeSseEvent(res, { type: "media", urls: mediaUrls });
+      }
+
       const text = evt.data?.text;
       const replace = evt.data?.replace === true;
       if (replace && typeof text === "string") {

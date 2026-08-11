@@ -1283,6 +1283,43 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
     expect(data[data.length - 1]).toBe("[DONE]");
   });
 
+  it("forwards assistant media once even when the final event has no text delta (Magister fork)", async () => {
+    const port = enabledPort;
+    const mediaUrl = "https://media.zernio.com/media/generated-image.jpg";
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({ runId, stream: "assistant", data: { delta: "Here it is:" } });
+          emitAgentEvent({
+            runId,
+            stream: "assistant",
+            data: { text: "Here it is:", delta: "", mediaUrls: [mediaUrl, mediaUrl] },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "assistant",
+            data: { text: "Here it is:", delta: "", mediaUrls: [mediaUrl] },
+          });
+          emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "end" } });
+          setTimeout(() => resolve({ payloads: [{ text: "Here it is:" }], meta: {} }), 50);
+        })) as never,
+    );
+
+    const res = await postChatCompletions(port, {
+      stream: true,
+      model: "openclaw",
+      messages: [{ role: "user", content: "show me the image" }],
+    });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    expect(text.match(/event: media/g)).toHaveLength(1);
+    expect(text).toContain(`data: ${JSON.stringify({ urls: [mediaUrl] })}`);
+    expect(parseSseDataLines(text).at(-1)).toBe("[DONE]");
+  });
+
   it("writes an error SSE event before finalizing on terminal lifecycle error (Magister fork)", async () => {
     const port = enabledPort;
     agentCommand.mockClear();
