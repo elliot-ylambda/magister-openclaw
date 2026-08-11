@@ -1872,11 +1872,15 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           allowed: false,
           defaultLevel: "off",
         },
-        // Wire "auto" maps to the internal "budget" trigger: it skips
-        // hardenManualCompactionBoundary (which discards ALL pre-summary
-        // context) and records the checkpoint as "auto-threshold". Absent or
-        // "manual" keeps the historical explicit-checkpoint semantics.
-        trigger: p.trigger === "auto" ? "budget" : "manual",
+        // Only an explicit "manual" hardens the boundary. Hardening runs
+        // hardenManualCompactionBoundary, which discards ALL pre-summary
+        // context — unrecoverable — so it must be opted into, never defaulted
+        // into: a caller that omits the field (an older Gateway mid-rollout, or
+        // a future one that forgets) gets "budget", which keeps history and
+        // records the checkpoint as "auto-threshold". Wrong-but-safe here means
+        // a compaction that retains more than intended; wrong-but-unsafe means
+        // a wiped conversation.
+        trigger: p.trigger === "manual" ? "manual" : "budget",
       });
 
       if (result.ok && result.compacted) {
