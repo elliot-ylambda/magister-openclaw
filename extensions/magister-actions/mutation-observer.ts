@@ -13,6 +13,15 @@ export type LocalMutationContext = {
 
 type HostMutationResourceClass = "host:memory" | "host:user" | "host:heartbeat_note";
 
+// The attestation RPC normally completes well under a second. A scoped
+// machine callback performs bounded live-identity, project-token, and commit
+// checks through PostgREST, however, and those pool waits are sequential.
+// Leave the broker's single 45s request room to finish without replaying an
+// abandoned commit reservation. The Gateway's /v1/files caller remains the
+// outer 135s bound.
+const MUTATION_GATEWAY_TIMEOUT_MS = 5_000;
+const MUTATION_ATTEST_TIMEOUT_MS = 50_000;
+
 function mutationEndpoint(pathname: string): string {
   const raw = (process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081").replace(
     /\/+$/,
@@ -41,7 +50,9 @@ async function postMutation(pathname: string, body: unknown): Promise<Record<str
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(
+      pathname === "attest" ? MUTATION_ATTEST_TIMEOUT_MS : MUTATION_GATEWAY_TIMEOUT_MS,
+    ),
   });
   if (!response.ok) {
     throw new Error(`local mutation gateway rejected ${pathname}: HTTP ${response.status}`);
@@ -117,6 +128,7 @@ export function parseLocalMutationContext(value: unknown): LocalMutationContext 
 
 export class LocalMutationObservation {
   private readonly db: DatabaseSync;
+  private readonly observationId: string;
   private finished = false;
   private promotionLocked = false;
   private commitDeadline = 0;
@@ -127,7 +139,12 @@ export class LocalMutationObservation {
     readonly context: LocalMutationContext,
     readonly resource: string,
     readonly contentHash: string,
+    observationId?: string,
   ) {
+    // The Gateway-issued operation ID is the remote lease identity and must
+    // never be rewritten. Multi-resource operations still need distinct local
+    // SQLite rows, so callers may provide a separate observation key.
+    this.observationId = observationId?.trim() || context.operation_id;
     const directory = path.join(workspace, ".magister", "state");
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const dbPath = path.join(directory, "mutation-observations.sqlite");
@@ -172,7 +189,7 @@ export class LocalMutationObservation {
           SELECT project_id, resource, content_hash FROM mutation_observations
           WHERE operation_id = ?
         `)
-        .get(this.context.operation_id) as
+        .get(this.observationId) as
         | { project_id: string; resource: string; content_hash: string }
         | undefined;
       if (
@@ -213,7 +230,7 @@ export class LocalMutationObservation {
             finished_at = NULL
         `)
         .run(
-          this.context.operation_id,
+          this.observationId,
           this.context.project_id,
           this.context.owner_id ?? null,
           this.resource,
@@ -257,7 +274,7 @@ export class LocalMutationObservation {
           UPDATE mutation_observations SET state = 'promoting', failure_code = NULL
           WHERE operation_id = ? AND project_id = ? AND resource = ? AND content_hash = ?
         `)
-        .run(this.context.operation_id, this.context.project_id, this.resource, this.contentHash);
+        .run(this.observationId, this.context.project_id, this.resource, this.contentHash);
       this.promotionLocked = true;
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -317,7 +334,7 @@ export class LocalMutationObservation {
         UPDATE mutation_observations SET state = ?, failure_code = ?, finished_at = ?
         WHERE operation_id = ?
       `)
-      .run(state, failureCode?.slice(0, 100) ?? null, Date.now(), this.context.operation_id);
+      .run(state, failureCode?.slice(0, 100) ?? null, Date.now(), this.observationId);
     if (this.promotionLocked) {
       this.db.exec("COMMIT;");
       this.promotionLocked = false;

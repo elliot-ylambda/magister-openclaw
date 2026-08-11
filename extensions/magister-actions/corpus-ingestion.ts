@@ -271,12 +271,10 @@ export async function ingestOne(params: {
       const suffix = createHash("sha256").update(resource).digest("hex").slice(0, 16);
       observation = new LocalMutationObservation(
         params.workspace,
-        {
-          ...params.mutationContext,
-          operation_id: `${params.mutationContext.operation_id}:${suffix}`.slice(0, 240),
-        },
+        params.mutationContext,
         resource,
         sha256,
+        `${params.mutationContext.operation_id}:${suffix}`.slice(0, 240),
       );
     }
     const extraction = await extractSource({

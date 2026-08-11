@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import {
-  armOverflowRecovery,
+  armAttemptRetryRecovery,
   consumeSuppressedTerminal,
-  disarmOverflowRecovery,
-} from "./pi-embedded-runner/overflow-recovery-registry.js";
+  consumeWithheldTerminal,
+  disarmAttemptRetryRecovery,
+} from "./pi-embedded-runner/attempt-retry-registry.js";
 import { handleAgentEnd } from "./pi-embedded-subscribe.handlers.lifecycle.js";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 
@@ -615,18 +616,25 @@ describe("handleAgentEnd", () => {
   });
 });
 
+function armRun(budgets: { overflow?: () => boolean; noAnswer?: () => boolean } = {}) {
+  armAttemptRetryRecovery("run-1", {
+    hasOverflowBudget: budgets.overflow ?? (() => true),
+    hasNoVisibleAnswerRetryBudget: budgets.noAnswer ?? (() => true),
+  });
+}
+
 describe("handleAgentEnd overflow-recovery suppression (Magister fork)", () => {
   const OVERFLOW_ERROR =
     "Context overflow: estimated context size exceeds safe threshold during tool loop.";
 
   afterEach(() => {
-    disarmOverflowRecovery("run-1");
+    disarmAttemptRetryRecovery("run-1");
   });
 
   it("suppresses the terminal lifecycle error while the run loop will retry", async () => {
     const { emitAgentEvent } = await import("../infra/agent-events.js");
     vi.mocked(emitAgentEvent).mockClear();
-    armOverflowRecovery("run-1", () => true);
+    armRun();
     const onAgentEvent = vi.fn();
     const ctx = createContext(
       {
@@ -651,7 +659,7 @@ describe("handleAgentEnd overflow-recovery suppression (Magister fork)", () => {
   });
 
   it("emits the terminal error normally once overflow budget is exhausted", async () => {
-    armOverflowRecovery("run-1", () => false);
+    armRun({ overflow: () => false });
     const onAgentEvent = vi.fn();
     const ctx = createContext(
       {
@@ -676,7 +684,7 @@ describe("handleAgentEnd overflow-recovery suppression (Magister fork)", () => {
   });
 
   it("emits non-overflow terminal errors even while armed", async () => {
-    armOverflowRecovery("run-1", () => true);
+    armRun();
     const onAgentEvent = vi.fn();
     const ctx = createContext(
       {
@@ -695,6 +703,96 @@ describe("handleAgentEnd overflow-recovery suppression (Magister fork)", () => {
       expect.objectContaining({
         stream: "lifecycle",
         data: expect.objectContaining({ phase: "error" }),
+      }),
+    );
+  });
+});
+
+describe("handleAgentEnd retryable-empty-attempt withholding (Magister fork)", () => {
+  // The run loop's `while (true)` reuses one runId across attempts, so an
+  // attempt that produced no visible answer is not terminal for the run while
+  // a retry can still fire. Emitting `end` here closed the HTTP stream and
+  // orphaned the retry's answer (2026-08-07).
+  function createEmptyAttemptContext(
+    assistantTexts: string[],
+    onAgentEvent: (event: unknown) => void,
+  ) {
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "stop",
+        content: [{ type: "text", text: assistantTexts.join("") }],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.assistantTexts = assistantTexts;
+    ctx.state.livenessState = "working";
+    return ctx;
+  }
+
+  afterEach(() => {
+    disarmAttemptRetryRecovery("run-1");
+  });
+
+  it("withholds the terminal end when an empty attempt can still be retried", async () => {
+    const { emitAgentEvent } = await import("../infra/agent-events.js");
+    vi.mocked(emitAgentEvent).mockClear();
+    armRun();
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createEmptyAttemptContext([""], onAgentEvent));
+
+    // Nothing terminal reached subscribers — the stream stays open for the retry.
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(vi.mocked(emitAgentEvent)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ stream: "lifecycle" }),
+    );
+    // … and the run loop's finally has the exact payload the handler would
+    // have emitted, so a run that ends up not retrying loses nothing.
+    expect(consumeWithheldTerminal("run-1")).toEqual({ livenessState: "working" });
+  });
+
+  it("emits the terminal end normally when the attempt answered", async () => {
+    armRun();
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(
+      createEmptyAttemptContext(["Google Images is open with a search for lions."], onAgentEvent),
+    );
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "lifecycle",
+        data: expect.objectContaining({ phase: "end" }),
+      }),
+    );
+    expect(consumeWithheldTerminal("run-1")).toBeNull();
+  });
+
+  it("emits the terminal end normally once every retry is spent", async () => {
+    armRun({ noAnswer: () => false });
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createEmptyAttemptContext([""], onAgentEvent));
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "lifecycle",
+        data: expect.objectContaining({ phase: "end" }),
+      }),
+    );
+    expect(consumeWithheldTerminal("run-1")).toBeNull();
+  });
+
+  it("emits the terminal end normally when the run was never armed", async () => {
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createEmptyAttemptContext([""], onAgentEvent));
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "lifecycle",
+        data: expect.objectContaining({ phase: "end" }),
       }),
     );
   });

@@ -7,7 +7,6 @@ import {
   type OpenClawPluginToolContext,
 } from "openclaw/plugin-sdk/core";
 import { Type } from "typebox";
-import { mirrorAudit } from "./audit-mirror.js";
 import { withContextLock } from "./context-lock.js";
 import { resolveConversationCheckpointConfig } from "./conversation-config.js";
 import { ConversationCheckpointManager } from "./conversation-manager.js";
@@ -27,7 +26,6 @@ type MemoryPluginConfig = {
   enabled?: boolean;
   memoryCharLimit?: number;
   userCharLimit?: number;
-  auditEndpoint?: string;
   conversationCheckpoints?: unknown;
 };
 
@@ -60,18 +58,13 @@ function resolveWorkspaceDir(api: OpenClawPluginApi, ctx: OpenClawPluginToolCont
 function resolveConfig(api: OpenClawPluginApi): {
   memoryCharLimit: number;
   userCharLimit: number;
-  auditEndpoint: string;
   enabled: boolean;
 } {
   const cfg = (api.pluginConfig ?? {}) as MemoryPluginConfig;
-  const gateway = (
-    process.env.GATEWAY_INTERNAL_URL ?? "http://magister-gateway.internal:8081"
-  ).replace(/\/+$/, "");
   return {
     enabled: cfg.enabled !== false,
     memoryCharLimit: cfg.memoryCharLimit ?? DEFAULT_MEMORY_CHAR_LIMIT,
     userCharLimit: cfg.userCharLimit ?? DEFAULT_USER_CHAR_LIMIT,
-    auditEndpoint: cfg.auditEndpoint ?? `${gateway}/api/memory/audit`,
   };
 }
 
@@ -122,22 +115,6 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
           });
           await store.loadFromDisk();
 
-          const gatewayToken = process.env.GATEWAY_TOKEN ?? "";
-          const auditEnabled = gatewayToken.length > 0;
-          const fireAudit = (
-            kind: "add" | "replace" | "remove" | "blocked",
-            content: string,
-            blockedReason?: string,
-          ): void => {
-            if (!auditEnabled) {
-              return;
-            }
-            void mirrorAudit(
-              { endpoint: cfg.auditEndpoint, gatewayToken },
-              { action: kind, target, content, blockedReason },
-            );
-          };
-
           if (action === "add") {
             if (!params.content) {
               return jsonResult({
@@ -147,11 +124,6 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
               });
             }
             const res = await store.add(target, params.content);
-            if (res.success) {
-              fireAudit("add", params.content);
-            } else {
-              fireAudit("blocked", params.content, res.message);
-            }
             return jsonResult(res);
           }
 
@@ -164,11 +136,6 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
               });
             }
             const res = await store.replace(target, params.old_text, params.content);
-            if (res.success) {
-              fireAudit("replace", params.content);
-            } else {
-              fireAudit("blocked", params.content, res.message);
-            }
             return jsonResult(res);
           }
 
@@ -181,9 +148,6 @@ function createMemoryTool(api: OpenClawPluginApi, ctx: OpenClawPluginToolContext
               });
             }
             const res = await store.remove(target, params.old_text);
-            if (res.success) {
-              fireAudit("remove", params.old_text);
-            }
             return jsonResult(res);
           }
 
@@ -250,7 +214,6 @@ export default definePluginEntry({
 // Re-exports for unit tests.
 export { createMemoryTool };
 export { MemoryStore } from "./memory-store.js";
-export { mirrorAudit } from "./audit-mirror.js";
 export { scanMemoryContent } from "./threat-scan.js";
 export { ConversationCheckpointManager } from "./conversation-manager.js";
 export { resolveConversationCheckpointConfig } from "./conversation-config.js";

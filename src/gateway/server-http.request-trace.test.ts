@@ -53,6 +53,7 @@ describe("gateway HTTP request trace scope", () => {
       controlUiBasePath: "/__control__",
       openAiChatCompletionsEnabled: false,
       openResponsesEnabled: false,
+      handleHooksRequest: async () => false,
       resolvedAuth,
       getRuntimeConfig: () => {
         throw new Error("private config content");
