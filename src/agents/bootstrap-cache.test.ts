@@ -61,7 +61,10 @@ describe("getOrLoadBootstrapFiles", () => {
     expect(mockLoad()).toHaveBeenCalledTimes(2);
   });
 
-  it("replaces cached result when workspace bootstrap contents change", async () => {
+  it("keeps the session-pinned snapshot when only file contents change", async () => {
+    // Deliberate: content edits mid-session (memory-tool writes to MEMORY.md)
+    // must NOT reshape the prompt's stable prefix — that invalidates the
+    // provider prompt cache end to end. Content refreshes on session rollover.
     const updatedFiles = [makeFile("AGENTS.md", "# Agent v2"), makeFile("SOUL.md", "# Soul")];
     mockLoad().mockResolvedValueOnce(files).mockResolvedValueOnce(updatedFiles);
 
@@ -69,7 +72,38 @@ describe("getOrLoadBootstrapFiles", () => {
     const result = await getOrLoadBootstrapFiles({ workspaceDir: "/ws", sessionKey: "session-1" });
 
     expect(first).toBe(files);
-    expect(result).toBe(updatedFiles);
+    expect(result).toBe(first);
+    expect(result).not.toBe(updatedFiles);
+    expect(mockLoad()).toHaveBeenCalledTimes(2);
+  });
+
+  it("replaces the snapshot when the file LIST changes", async () => {
+    // A file appearing/disappearing (BOOTSTRAP.md deleted when onboarding
+    // completes) is a structural change the prompt must reflect immediately.
+    const shrunkFiles = [makeFile("AGENTS.md", "# Agent")];
+    mockLoad().mockResolvedValueOnce(files).mockResolvedValueOnce(shrunkFiles);
+
+    const first = await getOrLoadBootstrapFiles({ workspaceDir: "/ws", sessionKey: "session-1" });
+    const result = await getOrLoadBootstrapFiles({ workspaceDir: "/ws", sessionKey: "session-1" });
+
+    expect(first).toBe(files);
+    expect(result).toBe(shrunkFiles);
+    expect(mockLoad()).toHaveBeenCalledTimes(2);
+  });
+
+  it("replaces the snapshot when a file flips to missing", async () => {
+    const missingFile: WorkspaceBootstrapFile = {
+      ...makeFile("SOUL.md", ""),
+      missing: true,
+    };
+    const withMissing = [makeFile("AGENTS.md", "# Agent"), missingFile];
+    mockLoad().mockResolvedValueOnce(files).mockResolvedValueOnce(withMissing);
+
+    const first = await getOrLoadBootstrapFiles({ workspaceDir: "/ws", sessionKey: "session-1" });
+    const result = await getOrLoadBootstrapFiles({ workspaceDir: "/ws", sessionKey: "session-1" });
+
+    expect(first).toBe(files);
+    expect(result).toBe(withMissing);
     expect(mockLoad()).toHaveBeenCalledTimes(2);
   });
 

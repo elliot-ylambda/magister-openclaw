@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempWorkspace, writeWorkspaceFile } from "../test-helpers/workspace.js";
-import { clearAllBootstrapSnapshots, getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
+import {
+  clearAllBootstrapSnapshots,
+  clearBootstrapSnapshot,
+  getOrLoadBootstrapFiles,
+} from "./bootstrap-cache.js";
 import { loadWorkspaceBootstrapFiles, DEFAULT_AGENTS_FILENAME } from "./workspace.js";
 
 describe("workspace bootstrap file caching", () => {
@@ -85,7 +89,12 @@ describe("workspace bootstrap file caching", () => {
     expectAgentsContent(agentsFile2, content2);
   });
 
-  it("refreshes session bootstrap snapshots after workspace file changes", async () => {
+  it("pins session bootstrap content until the snapshot is cleared", async () => {
+    // Mid-session content edits must NOT reach the prompt: bootstrap content
+    // is embedded in the stable prefix of the system prompt, so a per-turn
+    // refresh invalidates the provider prompt cache on every memory-tool
+    // write. Content is pinned per session key and picked up after the
+    // snapshot is cleared (session rollover).
     const content1 = "# Initial content";
     const content2 = "# Updated content";
     const filePath = path.join(workspaceDir, DEFAULT_AGENTS_FILENAME);
@@ -107,8 +116,14 @@ describe("workspace bootstrap file caching", () => {
     const bumpedTime = new Date(Date.now() + 1_000);
     await fs.utimes(filePath, bumpedTime, bumpedTime);
 
+    // Same session: pinned snapshot, old content.
     const agentsFile2 = await loadSessionAgentsFile(workspaceDir, "agent:main:main");
-    expectAgentsContent(agentsFile2, content2);
+    expectAgentsContent(agentsFile2, content1);
+
+    // After rollover clears the snapshot, the new content lands.
+    clearBootstrapSnapshot("agent:main:main");
+    const agentsFile3 = await loadSessionAgentsFile(workspaceDir, "agent:main:main");
+    expectAgentsContent(agentsFile3, content2);
   });
 
   it("invalidates cache when inode changes with same mtime", async () => {
