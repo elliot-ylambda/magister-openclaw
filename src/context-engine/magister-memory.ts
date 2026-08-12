@@ -22,12 +22,48 @@ const DEFAULT_USER_PATH = "/data/.openclaw/workspace/USER.md";
 const DEFAULT_PROJECT_PATH = "/data/.openclaw/workspace/PROJECT.md";
 const DEFAULT_BRAND_PATH = "/data/.openclaw/workspace/BRAND.md";
 const MAX_TRACKED_SESSIONS = 200;
+// Two budget tiers. Brand-shaped work gets the whole profile; every other turn
+// still gets a floor, because the agent cannot ask for context it was never
+// told exists, and a one-turn keyword guess is wrong far more often than it is
+// right — "write me a blog post", "make an X post", "draft an Instagram
+// caption" and "write an article" all matched nothing under the old gate and
+// therefore produced off-brand work with no signal that anything was missing.
 const MAX_BRAND_CONTEXT_CHARS = 4_500;
 const MAX_USER_BRAND_CHARS = 2_500;
+const MAX_BRAND_CORE_CHARS = 1_200;
+const MAX_USER_BRAND_CORE_CHARS = 500;
 const BRAND_GENERATED_START = "<!-- MAGISTER:GENERATED BRAND START -->";
 const BRAND_GENERATED_END = "<!-- MAGISTER:GENERATED BRAND END -->";
-const BRAND_TASK_PATTERN =
-  /\b(ad|audience|brand|campaign|content|copy|creative|design|email|homepage|landing|logo|message|positioning|social|tone|visual|voice)\b/i;
+// Deliberately broad: the cost of a false positive is a few hundred cached-miss
+// characters, the cost of a false negative is a deliverable in the wrong voice
+// and the wrong colors. Verbs and artifact nouns are both listed because users
+// name the artifact ("a blog post") far more often than the discipline
+// ("content"). Kept as one alternation so the gate stays a single pass.
+const BRAND_TASK_PATTERN = new RegExp(
+  "\\b(" +
+    [
+      // disciplines and brand vocabulary
+      "ad|ads|audience|brand|campaign|content|copy|creative|design|editorial",
+      "identity|logo|message|messaging|palette|positioning|style|theme|tone",
+      "typography|visual|voice",
+      // artifacts the user actually names
+      "advert|article|banner|blog|blurb|bio|byline|caption|card|carousel",
+      "case ?study|cta|deck|email|essay|flyer|graphic|headline|hero|homepage",
+      "illustration|image|infographic|landing|launch|mockup|newsletter|op-?ed",
+      "outline|page|photo|picture|pitch|post|poster|presentation",
+      "press ?release|promo|reel|script|short|slide|slogan|snippet|story",
+      "subject ?line|tagline|teaser|thread|thumbnail|title|tweet|video",
+      "voiceover|whitepaper|wordmark",
+      // channels that imply a published artifact
+      "facebook|instagram|linkedin|pinterest|reddit|snapchat|social|threads",
+      "tiktok|twitter|x\\.com|youtube",
+      // production verbs
+      "announce|compose|craft|draft|generate|illustrate|publish",
+      "rewrite|schedule|write",
+    ].join("|") +
+    ")\\b",
+  "i",
+);
 
 type Options = {
   memoryPath?: string;
@@ -196,9 +232,6 @@ export class MagisterMemoryContextEngine implements ContextEngine {
   }
 
   private async renderBrandContext(prompt: string | undefined): Promise<string> {
-    if (!prompt || !BRAND_TASK_PATTERN.test(prompt)) {
-      return "";
-    }
     const raw = await readTextOrEmpty(this.brandPath);
     if (!raw) {
       return "";
@@ -219,9 +252,13 @@ export class MagisterMemoryContextEngine implements ContextEngine {
       )
       .trim();
 
-    const boundedUser = userAuthored.slice(0, MAX_USER_BRAND_CHARS);
-    const remaining = Math.max(0, MAX_BRAND_CONTEXT_CHARS - boundedUser.length);
-    const boundedGenerated = generated.slice(0, remaining);
+    const brandTask = Boolean(prompt) && BRAND_TASK_PATTERN.test(prompt as string);
+    const userBudget = brandTask ? MAX_USER_BRAND_CHARS : MAX_USER_BRAND_CORE_CHARS;
+    const totalBudget = brandTask ? MAX_BRAND_CONTEXT_CHARS : MAX_BRAND_CORE_CHARS;
+
+    const boundedUser = boundUserBrand(userAuthored, userBudget);
+    const remaining = Math.max(0, totalBudget - boundedUser.length);
+    const boundedGenerated = boundGeneratedBrandSections(generated, remaining);
     return [
       boundedUser
         ? renderMagisterContextBlock({
@@ -261,6 +298,72 @@ async function readTextOrEmpty(path: string): Promise<string> {
     }
     throw err;
   }
+}
+
+/** Trim to a whole line rather than mid-sentence, and say so. */
+function boundUserBrand(text: string, budget: number): string {
+  if (text.length <= budget) {
+    return text;
+  }
+  if (budget <= 0) {
+    return "";
+  }
+  const cut = text.slice(0, budget);
+  const lastBreak = cut.lastIndexOf("\n");
+  const kept = (lastBreak > budget / 2 ? cut.slice(0, lastBreak) : cut).trimEnd();
+  return `${kept}\n\n(Truncated. Read \`BRAND.md\` for the rest of the confirmed guide.)`;
+}
+
+/**
+ * Drop whole trailing `## ` sections instead of slicing mid-section.
+ *
+ * A blind `slice()` used to cut the generated block at an arbitrary character,
+ * which silently amputated whichever section happened to render last and left
+ * the agent with no way to know something was missing — it read confident,
+ * complete brand context and simply had no colors in it. Dropping whole
+ * sections and naming them turns that into a legible gap the agent can close by
+ * reading `BRAND.md`, which AGENTS.md already permits.
+ */
+function boundGeneratedBrandSections(generated: string, budget: number): string {
+  if (!generated || budget <= 0) {
+    return "";
+  }
+  if (generated.length <= budget) {
+    return generated;
+  }
+
+  const headingAt = generated.indexOf("\n## ");
+  const preamble = headingAt === -1 ? generated : generated.slice(0, headingAt);
+  if (headingAt === -1) {
+    return boundUserBrand(generated, budget);
+  }
+
+  const sections: { title: string; text: string }[] = [];
+  const rest = generated.slice(headingAt + 1);
+  for (const chunk of rest.split(/\n(?=## )/)) {
+    const title = (chunk.match(/^## (.+)$/m)?.[1] ?? "").trim();
+    sections.push({ title, text: chunk.replace(/\s+$/, "") });
+  }
+
+  const notice = (names: string[]) =>
+    `\n\n(Omitted for length: ${names.join(", ")}. Read \`BRAND.md\` for these.)`;
+
+  // Keep the longest leading run of whole sections that fits *including* the
+  // notice naming what was dropped. Prefix order is meaningful: the gateway
+  // renders Essence, Voice, then Visual identity before the long prose
+  // sections precisely so identity survives the smallest budget.
+  for (let keptCount = sections.length; keptCount > 0; keptCount -= 1) {
+    const kept = sections.slice(0, keptCount);
+    const dropped = sections.slice(keptCount);
+    const body = `${preamble}\n\n${kept.map((section) => section.text).join("\n\n")}`.trimEnd();
+    const suffix = dropped.length
+      ? notice(dropped.map((section) => section.title || "an unnamed section"))
+      : "";
+    if (body.length + suffix.length <= budget) {
+      return `${body}${suffix}`;
+    }
+  }
+  return boundUserBrand(generated, budget);
 }
 
 /**

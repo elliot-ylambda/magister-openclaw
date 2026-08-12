@@ -133,7 +133,7 @@ describe("MagisterMemoryContextEngine", () => {
     expect(result.systemPromptAddition).toContain("Workspace-scoped memory");
   });
 
-  it("injects bounded sourced brand claims only for relevant work", async () => {
+  it("injects bounded sourced brand claims, with the full block for brand work", async () => {
     await writeFile(
       brandPath,
       [
@@ -155,13 +155,6 @@ describe("MagisterMemoryContextEngine", () => {
       inner: new LegacyContextEngine(),
     });
 
-    const irrelevant = await engine.assemble({
-      sessionId: "s1",
-      messages: [],
-      prompt: "What is the current server uptime?",
-    });
-    expect(irrelevant.systemPromptAddition ?? "").not.toContain("Confirmed voice");
-
     const relevant = await engine.assemble({
       sessionId: "s1",
       messages: [],
@@ -179,5 +172,180 @@ describe("MagisterMemoryContextEngine", () => {
       relevant.systemPromptAddition!.indexOf("Audit inference"),
     );
     expect(relevant.systemPromptAddition!.length).toBeLessThan(6_000);
+  });
+
+  // The old gate matched none of these, so every one of them produced a
+  // deliverable with no brand context at all. They are the formats users
+  // actually name, so they are pinned here.
+  const BRAND_TASK_PROMPTS = [
+    "Write me a blog post on how solar tax credits changed",
+    "Make an X post announcing the launch",
+    "Draft an Instagram caption for this photo",
+    "Write an article about AI in energy",
+    "Generate an image for the hero section",
+    "Make a LinkedIn post",
+    "Write a newsletter",
+    "Create a carousel for Instagram",
+    "Give me 5 headline ideas",
+    "Write a case study",
+    "Make a poster for the event",
+    "What should we post today?",
+    "Write a product announcement",
+    "Draft a press release",
+    "Write a tweet about our new feature",
+  ];
+
+  it.each(BRAND_TASK_PROMPTS)("treats %j as brand work", async (prompt) => {
+    // Sized to fit the full 4,500-char tier but not the 1,200-char core tier.
+    const filler = "Positioning detail. ".repeat(100);
+    await writeFile(
+      brandPath,
+      [
+        "<!-- MAGISTER:GENERATED BRAND START -->",
+        "### Generated from the latest marketing audit",
+        "",
+        "## Voice",
+        "",
+        "Tone: precise, warm",
+        "",
+        "## Visual identity",
+        "",
+        "Colors: #040404, #e50a13",
+        "",
+        "## Ideal customer",
+        "",
+        filler,
+        "<!-- MAGISTER:GENERATED BRAND END -->",
+      ].join("\n"),
+    );
+    const engine = new MagisterMemoryContextEngine({
+      memoryPath,
+      userPath,
+      projectPath,
+      brandPath,
+      inner: new LegacyContextEngine(),
+    });
+    const res = await engine.assemble({ sessionId: "s1", messages: [], prompt });
+    // The full tier admits the long trailing section; the core tier would not.
+    expect(res.systemPromptAddition).toContain("Positioning detail.");
+  });
+
+  it("still injects a voice and visual floor when the prompt is not brand work", async () => {
+    await writeFile(
+      brandPath,
+      [
+        "<!-- MAGISTER:GENERATED BRAND START -->",
+        "### Generated from the latest marketing audit",
+        "",
+        "## Voice",
+        "",
+        "Tone: precise, warm",
+        "",
+        "## Visual identity",
+        "",
+        "Colors: #040404, #e50a13",
+        "",
+        "## Ideal customer",
+        "",
+        "Detail. ".repeat(400),
+        "<!-- MAGISTER:GENERATED BRAND END -->",
+      ].join("\n"),
+    );
+    const engine = new MagisterMemoryContextEngine({
+      memoryPath,
+      userPath,
+      projectPath,
+      brandPath,
+      inner: new LegacyContextEngine(),
+    });
+    const res = await engine.assemble({
+      sessionId: "s1",
+      messages: [],
+      prompt: "What is the current server uptime?",
+    });
+    // Identity is always available — the agent can no longer be silently blind.
+    expect(res.systemPromptAddition).toContain("Tone: precise, warm");
+    expect(res.systemPromptAddition).toContain("Colors: #040404, #e50a13");
+    // …but the long tail is held back at the core budget, and says so.
+    expect(res.systemPromptAddition).not.toContain("Detail. Detail.");
+    expect(res.systemPromptAddition).toContain("Omitted for length: Ideal customer");
+  });
+
+  it("drops whole trailing sections rather than slicing one in half", async () => {
+    await writeFile(
+      brandPath,
+      [
+        "<!-- MAGISTER:GENERATED BRAND START -->",
+        "### Generated from the latest marketing audit",
+        "",
+        "## Essence",
+        "",
+        "Dependable records for energy teams.",
+        "",
+        "## Voice",
+        "",
+        "Tone: precise, warm",
+        "",
+        "## Visual identity",
+        "",
+        "Colors: #040404, #e50a13",
+        "Fonts: Inter",
+        "Logo: https://example.invalid/logo.png",
+        "",
+        "## Ideal customer",
+        "",
+        "Segments: ".concat("very long segment prose. ".repeat(300)),
+        "",
+        "## Messaging pillars",
+        "",
+        "- Evidence over vibes",
+        "<!-- MAGISTER:GENERATED BRAND END -->",
+      ].join("\n"),
+    );
+    const engine = new MagisterMemoryContextEngine({
+      memoryPath,
+      userPath,
+      projectPath,
+      brandPath,
+      inner: new LegacyContextEngine(),
+    });
+    const res = await engine.assemble({
+      sessionId: "s1",
+      messages: [],
+      prompt: "Design a launch graphic",
+    });
+    const addition = res.systemPromptAddition!;
+    // Visual identity is the whole point: it must survive.
+    expect(addition).toContain("Colors: #040404, #e50a13");
+    expect(addition).toContain("Logo: https://example.invalid/logo.png");
+    // The oversized section is gone entirely, not truncated mid-sentence.
+    expect(addition).not.toContain("very long segment prose.");
+    expect(addition).toContain("Omitted for length: Ideal customer, Messaging pillars");
+    // Every heading that survives has its body; none is cut in half.
+    for (const heading of ["## Essence", "## Voice", "## Visual identity"]) {
+      expect(addition).toContain(heading);
+    }
+  });
+
+  it("bounds a user-authored brand guide on a line break and says it truncated", async () => {
+    const lines = Array.from({ length: 400 }, (_, i) => `Rule ${i}: keep it plain.`);
+    await writeFile(brandPath, ["# Brand context", "", ...lines].join("\n"));
+    const engine = new MagisterMemoryContextEngine({
+      memoryPath,
+      userPath,
+      projectPath,
+      brandPath,
+      inner: new LegacyContextEngine(),
+    });
+    const res = await engine.assemble({
+      sessionId: "s1",
+      messages: [],
+      prompt: "Write a blog post",
+    });
+    const addition = res.systemPromptAddition!;
+    expect(addition).toContain("Rule 0: keep it plain.");
+    expect(addition).toContain("Truncated. Read `BRAND.md` for the rest");
+    // No half-line at the boundary.
+    expect(addition).not.toMatch(/Rule \d+: keep it pl\n/);
   });
 });
