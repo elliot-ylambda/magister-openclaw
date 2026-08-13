@@ -675,41 +675,33 @@
       "tool_name": "magister_list_firehose_matches"
     },
     {
-      "action": "record_heartbeat_escalation",
+      "action": "check_back",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Record one deduplicated internal heartbeat blocker or reconnect nudge.",
+      "description": "Wake yourself in 1-30 minutes to re-check something you are waiting on. One-shot and private; for anything recurring, create a workflow.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "occurrence_key",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
-          "evidence": {
-            "additionalProperties": true,
-            "maxProperties": 20,
-            "type": "object"
+          "delay_minutes": {
+            "maximum": 30,
+            "minimum": 1,
+            "type": "integer"
           },
-          "headline": {
-            "maxLength": 200,
+          "note": {
+            "maxLength": 1000,
             "minLength": 1,
-            "pattern": "^[^\\r\\n]+$",
             "type": "string"
-          },
-          "reconnect_services": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "type": "array"
           }
         },
-        "required": ["headline"],
+        "required": ["delay_minutes", "note"],
         "type": "object"
       },
-      "retry_policy": "backoff",
+      "retry_policy": "none",
       "side_effect": "internal_write",
       "spend_limited": false,
-      "tool_name": "magister_record_heartbeat_escalation"
+      "tool_name": "magister_check_back"
     },
     {
       "action": "recompile_marketing_plan",
@@ -3448,6 +3440,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "dd9ca7cb8fd65e6275a6838985fb8e1472d657d61b64178721cbdc183708c62d",
+  "registry_revision": "96233a4d8246fb8c663d563c71e53b4637960e5748751db5dae72d0f171a36a7",
   "schema_version": 1
 }

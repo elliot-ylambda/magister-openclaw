@@ -25,7 +25,7 @@
       "magister_run_workflow",
       "magister_update_plan_item_status",
       "magister_list_firehose_matches",
-      "magister_record_heartbeat_escalation",
+      "magister_check_back",
       "magister_recompile_marketing_plan",
       "magister_get_compile_run",
       "magister_get_audit_health",
