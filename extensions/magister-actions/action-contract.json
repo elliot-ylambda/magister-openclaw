@@ -685,7 +685,7 @@
         "additionalProperties": false,
         "properties": {
           "delay_minutes": {
-            "maximum": 30,
+            "maximum": 10080,
             "minimum": 1,
             "type": "integer"
           },
@@ -3440,6 +3440,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "96233a4d8246fb8c663d563c71e53b4637960e5748751db5dae72d0f171a36a7",
+  "registry_revision": "bf71c5c9eb2a484d2ae6808ddf130039003561f140b9f1f086632d7cc6b364f5",
   "schema_version": 1
 }
