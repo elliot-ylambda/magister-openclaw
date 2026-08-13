@@ -1,6 +1,6 @@
 ---
 name: acp-router
-description: Route plain-language requests for Pi, Claude Code, Cursor, Copilot, OpenClaw ACP, OpenCode, Gemini CLI, Qwen, Kiro, Kimi, iFlow, Factory Droid, Kilocode, or explicit ACP harness work into either OpenClaw ACP runtime sessions or direct acpx-driven sessions ("telephone game" flow). For coding-agent thread requests, read this skill first, then use only `sessions_spawn` for thread creation. Codex chat binding defaults to the native Codex app-server plugin unless ACP is explicit or background spawn needs ACP.
+description: Route coding-agent requests (Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, ACP harnesses) into OpenClaw ACP or acpx sessions.
 user-invocable: false
 ---
 

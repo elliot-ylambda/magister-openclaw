@@ -148,6 +148,106 @@ describe("createCacheTrace", () => {
     expect(event.systemDigest).toBeTypeOf("string");
   });
 
+  it("records tool wire projection and a stable tools digest at stream context", () => {
+    const lines: string[] = [];
+    const trace = createCacheTrace({
+      cfg: {
+        diagnostics: {
+          cacheTrace: {
+            enabled: true,
+          },
+        },
+      },
+      env: {},
+      writer: {
+        filePath: "memory",
+        write: (line) => lines.push(line),
+        flush: async () => undefined,
+      },
+    });
+
+    const makeTools = () => [
+      {
+        name: "browser_click",
+        description: "Click an element",
+        parameters: { type: "object", properties: { ref: { type: "string" } } },
+        execute: () => undefined,
+        label: "Browser click",
+      },
+      {
+        name: "exec",
+        description: "Run a command",
+        parameters: { type: "object", properties: { cmd: { type: "string" } } },
+        execute: () => undefined,
+      },
+    ];
+
+    const wrapped = trace?.wrapStreamFn((() => ({})) as never);
+    void wrapped?.(
+      { id: "claude-fable-5", provider: "anthropic", api: "anthropic-messages" } as never,
+      { systemPrompt: "sys", messages: [], tools: makeTools() } as never,
+      {},
+    );
+    void wrapped?.(
+      { id: "claude-fable-5", provider: "anthropic", api: "anthropic-messages" } as never,
+      { systemPrompt: "sys", messages: [], tools: makeTools() } as never,
+      {},
+    );
+
+    const first = JSON.parse(lines[0]?.trim() ?? "{}") as Record<string, unknown>;
+    const second = JSON.parse(lines[1]?.trim() ?? "{}") as Record<string, unknown>;
+    expect(first.toolCount).toBe(2);
+    expect(first.toolNames).toEqual(["browser_click", "exec"]);
+    expect(first.toolsDigest).toBeTypeOf("string");
+    // Identical wire payloads must produce identical digests even though the
+    // runtime-only fields (execute, label) differ by object identity.
+    expect(second.toolsDigest).toBe(first.toolsDigest);
+    const tools = first.tools as Array<Record<string, unknown>>;
+    expect(tools).toHaveLength(2);
+    expect(tools[0]).toEqual({
+      name: "browser_click",
+      description: "Click an element",
+      parameters: { type: "object", properties: { ref: { type: "string" } } },
+    });
+  });
+
+  it("omits full tool payloads when includeTools is disabled but keeps the digest", () => {
+    const lines: string[] = [];
+    const trace = createCacheTrace({
+      cfg: {
+        diagnostics: {
+          cacheTrace: {
+            enabled: true,
+            includeTools: false,
+          },
+        },
+      },
+      env: {},
+      writer: {
+        filePath: "memory",
+        write: (line) => lines.push(line),
+        flush: async () => undefined,
+      },
+    });
+
+    const wrapped = trace?.wrapStreamFn((() => ({})) as never);
+    void wrapped?.(
+      { id: "claude-fable-5", provider: "anthropic", api: "anthropic-messages" } as never,
+      {
+        systemPrompt: "sys",
+        messages: [],
+        tools: [{ name: "exec", description: "Run", parameters: {}, execute: () => undefined }],
+      } as never,
+      {},
+    );
+
+    const event = JSON.parse(lines[0]?.trim() ?? "{}") as Record<string, unknown>;
+    expect(event.tools).toBeUndefined();
+    expect(event.toolCount).toBe(1);
+    expect(event.toolNames).toEqual(["exec"]);
+    expect(event.toolsDigest).toBeTypeOf("string");
+  });
+
   it("respects env overrides for enablement", () => {
     const lines: string[] = [];
     const trace = createCacheTrace({
