@@ -43,6 +43,10 @@ type CacheTraceEvent = {
   messageFingerprints?: string[];
   messagesDigest?: string;
   systemDigest?: string;
+  tools?: unknown;
+  toolCount?: number;
+  toolNames?: string[];
+  toolsDigest?: string;
   note?: string;
   error?: string;
 };
@@ -73,6 +77,7 @@ type CacheTraceConfig = {
   includeMessages: boolean;
   includePrompt: boolean;
   includeSystem: boolean;
+  includeTools: boolean;
 };
 
 type CacheTraceWriter = QueuedFileWriter;
@@ -93,6 +98,7 @@ function resolveCacheTraceConfig(params: CacheTraceInit): CacheTraceConfig {
     parseBooleanValue(env.OPENCLAW_CACHE_TRACE_MESSAGES) ?? config?.includeMessages;
   const includePrompt = parseBooleanValue(env.OPENCLAW_CACHE_TRACE_PROMPT) ?? config?.includePrompt;
   const includeSystem = parseBooleanValue(env.OPENCLAW_CACHE_TRACE_SYSTEM) ?? config?.includeSystem;
+  const includeTools = parseBooleanValue(env.OPENCLAW_CACHE_TRACE_TOOLS) ?? config?.includeTools;
 
   return {
     enabled,
@@ -100,6 +106,7 @@ function resolveCacheTraceConfig(params: CacheTraceInit): CacheTraceConfig {
     includeMessages: includeMessages ?? true,
     includePrompt: includePrompt ?? true,
     includeSystem: includeSystem ?? true,
+    includeTools: includeTools ?? true,
   };
 }
 
@@ -163,6 +170,27 @@ function digest(value: unknown): string {
   return crypto.createHash("sha256").update(serialized).digest("hex");
 }
 
+type ToolWireProjection = {
+  name?: string;
+  description?: string;
+  parameters?: unknown;
+};
+
+// Project tools down to the fields that reach the provider wire (name,
+// description, parameters schema). Runtime-only fields like execute/label are
+// excluded so the digest changes exactly when the serialized tool payload the
+// provider caches against changes.
+function projectToolsForTrace(tools: unknown[]): ToolWireProjection[] {
+  return tools.map((tool) => {
+    const record = (tool ?? {}) as Record<string, unknown>;
+    return {
+      name: typeof record.name === "string" ? record.name : undefined,
+      description: typeof record.description === "string" ? record.description : undefined,
+      parameters: record.parameters,
+    };
+  });
+}
+
 function summarizeMessages(messages: AgentMessage[]): {
   messageCount: number;
   messageRoles: Array<string | undefined>;
@@ -211,6 +239,17 @@ export function createCacheTrace(params: CacheTraceInit): CacheTrace | null {
       event.model = sanitizeDiagnosticPayload(payload.model) as Record<string, unknown>;
     }
 
+    const tools = payload.tools;
+    if (Array.isArray(tools)) {
+      const projection = projectToolsForTrace(tools);
+      event.toolCount = projection.length;
+      event.toolNames = projection.map((tool) => tool.name ?? "?");
+      event.toolsDigest = digest(projection);
+      if (cfg.includeTools) {
+        event.tools = sanitizeDiagnosticPayload(projection);
+      }
+    }
+
     const messages = payload.messages;
     if (Array.isArray(messages)) {
       const summary = summarizeMessages(messages);
@@ -243,6 +282,7 @@ export function createCacheTrace(params: CacheTraceInit): CacheTrace | null {
         messages?: AgentMessage[];
         system?: unknown;
         systemPrompt?: unknown;
+        tools?: unknown[];
       };
       recordStage("stream:context", {
         model: {
@@ -252,6 +292,7 @@ export function createCacheTrace(params: CacheTraceInit): CacheTrace | null {
         },
         system: traceContext.systemPrompt ?? traceContext.system,
         messages: traceContext.messages ?? [],
+        tools: Array.isArray(traceContext.tools) ? traceContext.tools : undefined,
         options: (options ?? {}) as Record<string, unknown>,
       });
       return streamFn(model, context, options);
