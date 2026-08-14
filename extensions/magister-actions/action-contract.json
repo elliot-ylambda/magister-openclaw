@@ -517,7 +517,7 @@
       "action": "schedule_workflow",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Request a recurring schedule for one workflow. This only mints one human-approval link; the schedule is installed after the user approves the exact cadence.",
+      "description": "Schedule one workflow on a cron cadence. Installs immediately. Set max_runs=1 with starts_at for a single future run that retires itself afterwards.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -678,14 +678,14 @@
       "action": "check_back",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Wake yourself in 1-30 minutes to re-check something you are waiting on. One-shot and private; for anything recurring, create a workflow.",
+      "description": "Wake yourself later today (1 minute to 24 hours) to re-check something you are waiting on, with a note you write. Resumes this same chat, one-shot and private; for anything recurring, create a workflow.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "occurrence_key",
       "input_schema": {
         "additionalProperties": false,
         "properties": {
           "delay_minutes": {
-            "maximum": 30,
+            "maximum": 10080,
             "minimum": 1,
             "type": "integer"
           },
@@ -3440,6 +3440,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "b2d8de3432f1919283131045effa87dc9278928f076d09210d2c99839c2092a4",
+  "registry_revision": "75a71b29dc57705e002957066e01ab9a838622c139769abe280a3a9213eb1c85",
   "schema_version": 1
 }
