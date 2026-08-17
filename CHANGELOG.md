@@ -66,6 +66,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Browser/tabs: accept ordinary human-readable tab labels. The `open`/`label` actions rejected any label containing a space, accent, or punctuation outside `_.:-`, so the natural name for a tab — "Meta Events Manager", "Google Ads — Kampagnen" — failed with a hard error and the tab did not open; labels are now bounded by length and rejected only for control characters, with whitespace runs collapsed so one intended name is one label.
 - Magister/web chat: preserve assistant reply media metadata across the OpenAI-compatible HTTP streaming endpoints so image-only and previously generated media replies reach the browser.
 - Magister/web chat: emit the OpenAI-compatible assistant role and run id before agent execution settles, so the Gateway receives immediate liveness and can cancel work when the browser disconnects.
 - Magister approvals: recognize the Gateway's canonical `approval_required` result while retaining rolling compatibility with the legacy code, so trusted pending approvals reach web chat instead of being silently dropped.
