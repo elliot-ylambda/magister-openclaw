@@ -68,12 +68,29 @@ type CdpTarget = {
   type?: string;
 };
 
-const TAB_LABEL_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
+// A label is the human-readable name the caller gives a tab, and the only
+// thing done with it is exact string comparison in `resolveTargetIdFromTabs`
+// — it is never split, interpolated into a path or URL, or passed to a shell.
+// The earlier `[A-Za-z0-9_.:-]` allowlist therefore rejected the natural name
+// for every tab a model actually opens: "Meta Events Manager", "Google Ads —
+// Campaigns", "Réglages". Callers only learned that from a hard error, and the
+// tab did not open. So the contract is length plus "no control characters",
+// which is what keeps a label from corrupting the line-oriented tab listing it
+// is rendered into. Internal whitespace runs collapse so that two labels a
+// caller means as the same name compare equal.
+const TAB_LABEL_MAX_CHARS = 64;
+// Whitespace-family control characters are normalized to spaces by the collapse
+// below before this runs, so what is left to reject is the genuinely unprintable
+// range plus DEL.
+// eslint-disable-next-line no-control-regex
+const TAB_LABEL_FORBIDDEN = /[\x00-\x1f\x7f]/;
 
 function normalizeTabLabel(label: string): string {
-  const trimmed = label.trim();
-  if (!TAB_LABEL_PATTERN.test(trimmed)) {
-    throw new Error("tab label must be 1-64 chars and use only letters, numbers, _, ., :, or -");
+  const trimmed = label.trim().replace(/\s+/g, " ");
+  if (!trimmed || trimmed.length > TAB_LABEL_MAX_CHARS || TAB_LABEL_FORBIDDEN.test(trimmed)) {
+    throw new Error(
+      `tab label must be 1-${TAB_LABEL_MAX_CHARS} characters and contain no control characters`,
+    );
   }
   return trimmed;
 }

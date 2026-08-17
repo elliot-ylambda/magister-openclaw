@@ -94,6 +94,59 @@ describe("browser remote profile tab ops via Playwright", () => {
     );
   });
 
+  it("accepts the natural, human-readable names callers actually use as labels", async () => {
+    const listPagesViaPlaywright = vi.fn(async () => [
+      page("A", "https://business.facebook.com/events_manager2/list/pixel"),
+    ]);
+
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+
+    const { remote } = deps.createRemoteRouteHarness();
+    await remote.listTabs();
+
+    // The name a model reaches for first. The old allowlist rejected it for the
+    // space alone, so the tab never opened and the caller saw a hard error.
+    const labeled = await remote.labelTab("t1", "Meta Events Manager");
+    expect(labeled).toMatchObject({ targetId: "A", label: "Meta Events Manager" });
+
+    // ...and it still resolves, because resolution is exact string equality.
+    await remote.listTabs();
+    const relabeled = await remote.labelTab("Meta Events Manager", "Google Ads — Kampagnen");
+    expect(relabeled).toMatchObject({ targetId: "A", label: "Google Ads — Kampagnen" });
+  });
+
+  it("collapses whitespace runs so one intended name is one label", async () => {
+    const listPagesViaPlaywright = vi.fn(async () => [page("A")]);
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+
+    const { remote } = deps.createRemoteRouteHarness();
+    await remote.listTabs();
+
+    const labeled = await remote.labelTab("t1", "  Meta   Events\tManager  ");
+    expect(labeled.label).toBe("Meta Events Manager");
+  });
+
+  it("still rejects empty, over-long, and control-character labels", async () => {
+    const listPagesViaPlaywright = vi.fn(async () => [page("A")]);
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+
+    const { remote } = deps.createRemoteRouteHarness();
+    await remote.listTabs();
+
+    await expect(remote.labelTab("t1", "   ")).rejects.toThrow(/tab label must be/);
+    await expect(remote.labelTab("t1", "x".repeat(65))).rejects.toThrow(/tab label must be/);
+    // A label is rendered into a line-oriented tab listing, so a raw control
+    // character would corrupt the listing the caller reads back.
+    await expect(remote.labelTab("t1", "Meta\u0000Events")).rejects.toThrow(/tab label must be/);
+    await expect(remote.labelTab("t1", "Meta\u0007Events")).rejects.toThrow(/tab label must be/);
+  });
+
   it("transfers stable aliases across a high-confidence target replacement", async () => {
     let currentPages = [page("A", "https://app.example/form")];
     const listPagesViaPlaywright = vi.fn(async () => currentPages);
