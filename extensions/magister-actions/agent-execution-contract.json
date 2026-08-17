@@ -2431,6 +2431,42 @@
       "transport_modes": ["native_json"]
     },
     {
+      "capability_id": "builderio",
+      "connection_slug": "builderio",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        },
+        {
+          "action": "integration_change",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "external_write",
+          "tool_name": "magister_integration_change"
+        },
+        {
+          "action": "integration_delete",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "delete",
+          "tool_name": "magister_integration_delete"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:builderio"],
+      "minimum_native_action_registry_revision": "a5e33b7e5f0ada62c43109c4fb5b084602a2bf9ff0f9a6cd7fd549765d99d859",
+      "proxy_services": ["builderio"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-builderio",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
       "capability_id": "context_dev",
       "connection_slug": null,
       "delegation_safe_tools": [],
@@ -3697,6 +3733,6 @@
     }
   ],
   "native_action_registry_revision": "a5e33b7e5f0ada62c43109c4fb5b084602a2bf9ff0f9a6cd7fd549765d99d859",
-  "registry_revision": "2d7068344b13142f70d221f3ec2a407fa9e9bccfee397ca9543365612bbe4cf7",
+  "registry_revision": "ee8ac288598395f13701d8d00cc3381df47da59e2fb72adbfca93d172b472270",
   "schema_version": 1
 }
