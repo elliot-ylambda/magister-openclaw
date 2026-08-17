@@ -2431,6 +2431,42 @@
       "transport_modes": ["native_json"]
     },
     {
+      "capability_id": "builderio",
+      "connection_slug": "builderio",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        },
+        {
+          "action": "integration_change",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "external_write",
+          "tool_name": "magister_integration_change"
+        },
+        {
+          "action": "integration_delete",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "delete",
+          "tool_name": "magister_integration_delete"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:builderio"],
+      "minimum_native_action_registry_revision": "75a71b29dc57705e002957066e01ab9a838622c139769abe280a3a9213eb1c85",
+      "proxy_services": ["builderio"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-builderio",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
       "capability_id": "context_dev",
       "connection_slug": null,
       "delegation_safe_tools": [],
@@ -3697,6 +3733,6 @@
     }
   ],
   "native_action_registry_revision": "75a71b29dc57705e002957066e01ab9a838622c139769abe280a3a9213eb1c85",
-  "registry_revision": "b3ccb22fdec72d30dc0e7ec65bf03b86c650a71d8db63060e0105db82bbdd57e",
+  "registry_revision": "d1dd04d0d321f7825a92e87ea0ed107bd1a6582b927fe9ac5690a8f6f3c3627f",
   "schema_version": 1
 }
