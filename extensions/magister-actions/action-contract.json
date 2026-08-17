@@ -2155,10 +2155,10 @@
       "tool_name": "magister_get_fal_generation"
     },
     {
-      "action": "automate_browser",
+      "action": "signed_out_browser_task",
       "approval_policy": "exact_payload",
       "async_status_adapter": "synchronous",
-      "description": "FALLBACK browser, signed out of every account. It shares no session, cookie, or login with the user, so it can only reach public pages \u2014 anything behind their sign-in (ad manager, CMS admin, analytics, dashboard) stops at the login wall. Prefer the `browser` tool, which drives the user's own signed-in Chrome and is what they watch; use this only when that is unavailable and the page is public. Never write a task that assumes the user is already signed in. Runs one bounded task behind exact approval; no arbitrary provider options; never blind-retried.",
+      "description": "FALLBACK browser. As the name says, it is signed out of every account and shares no session, cookie, or login with the user, so it reaches public pages only \u2014 anything behind their sign-in (ad manager, CMS admin, analytics, dashboard) stops at the login wall. Prefer the `browser` tool, which drives the user's own signed-in Chrome and is what they watch; use this only when that is unavailable and the page is public. Never write a task that assumes the user is already signed in. Runs one bounded task behind exact approval; no arbitrary provider options; never blind-retried.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -2182,7 +2182,7 @@
       "retry_policy": "none",
       "side_effect": "external_write",
       "spend_limited": true,
-      "tool_name": "magister_automate_browser"
+      "tool_name": "magister_signed_out_browser_task"
     },
     {
       "action": "integration_read",
@@ -3440,6 +3440,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "75a71b29dc57705e002957066e01ab9a838622c139769abe280a3a9213eb1c85",
+  "registry_revision": "a5e33b7e5f0ada62c43109c4fb5b084602a2bf9ff0f9a6cd7fd549765d99d859",
   "schema_version": 1
 }
