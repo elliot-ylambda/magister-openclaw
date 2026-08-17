@@ -63,7 +63,7 @@
       "magister_generate_ideogram_image",
       "magister_submit_fal_generation",
       "magister_get_fal_generation",
-      "magister_automate_browser",
+      "magister_signed_out_browser_task",
       "magister_integration_read",
       "magister_integration_change",
       "magister_integration_spend",
