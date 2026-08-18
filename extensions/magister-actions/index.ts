@@ -1,5 +1,4 @@
 import { createHash, createHmac } from "node:crypto";
-import fs from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { isAbsolute, relative, resolve } from "node:path";
@@ -22,12 +21,6 @@ import {
   searchCorpus,
 } from "./corpus-index.js";
 import { handleCorpusIngestion } from "./corpus.js";
-import {
-  acquireHostMutationContext,
-  LocalMutationObservation,
-  parseLocalMutationContext,
-  releaseHostMutationContext,
-} from "./mutation-observer.js";
 
 const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/actions";
 const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
@@ -52,15 +45,12 @@ const SOCIAL_MEDIA_CONTENT_TYPES = new Map([
   [".webm", "video/webm"],
   [".webp", "image/webp"],
 ]);
-const HEARTBEAT_SESSION_RE =
-  /(?:^|:)heartbeat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[1-9][0-9]*$/i;
 const WORKFLOW_SESSION_RE =
   /^workflow_run:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SLACK_SESSION_RE =
   /^(?:agent:[^:]+:)?slack:(?:(?:direct|group|channel):[a-z0-9_-]+(?::thread:[0-9]+\.[0-9]+)?|[a-z0-9_-]+:[a-z0-9_-]+)$/i;
 const WEBCHAT_SESSION_RE =
   /^agent:[a-z0-9_-]{1,80}:webchat:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const HEARTBEAT_NOTE_MAX_BYTES = 64 * 1024;
 
 const ERROR_CODES = new Set([
   "validation_error",
@@ -311,7 +301,6 @@ function trustedRuntimeSessionKey(context: OpenClawPluginToolContext): string | 
   }
   if (
     WORKFLOW_SESSION_RE.test(sessionKey) ||
-    HEARTBEAT_SESSION_RE.test(sessionKey) ||
     SLACK_SESSION_RE.test(sessionKey) ||
     WEBCHAT_SESSION_RE.test(sessionKey)
   ) {
@@ -338,106 +327,7 @@ function actionAvailableInContext(
   if (action.action === "submit_workflow_completion") {
     return WORKFLOW_SESSION_RE.test(sessionKey);
   }
-  if (action.action === "record_heartbeat_escalation") {
-    return HEARTBEAT_SESSION_RE.test(sessionKey);
-  }
   return true;
-}
-
-async function mirrorHeartbeatNote(envelope: ActionEnvelope): Promise<void> {
-  const notePath = envelope.receipt.note_path;
-  const noteEntry = envelope.receipt.note_entry;
-  const occurrenceId = envelope.receipt.occurrence_id;
-  const mutationContext = parseLocalMutationContext(envelope.receipt.mutation_context);
-  if (
-    notePath !== "notes/heartbeat.md" ||
-    typeof noteEntry !== "string" ||
-    typeof occurrenceId !== "string" ||
-    noteEntry.length < 1 ||
-    noteEntry.length > 1000 ||
-    !/^heartbeat-v[0-9]+:[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(occurrenceId) ||
-    (process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT === "1" && mutationContext?.mode !== "enforce")
-  ) {
-    throw new Error("invalid heartbeat note receipt");
-  }
-  const stateDir = path.resolve(process.env.OPENCLAW_STATE_DIR ?? "/data/.openclaw");
-  const workspace = path.join(stateDir, "workspace");
-  const notesDirectory = path.join(workspace, "notes");
-  const destination = path.join(notesDirectory, "heartbeat.md");
-  const payload = `${noteEntry.trim()}\n`;
-  const operationId = `host-heartbeat-${createHash("sha256")
-    .update(occurrenceId)
-    .digest("hex")
-    .slice(0, 32)}`;
-  const freshContext = await acquireHostMutationContext(operationId, "host:heartbeat_note");
-  const localContext = freshContext ?? mutationContext;
-  const observation = localContext
-    ? new LocalMutationObservation(
-        workspace,
-        localContext,
-        "notes/heartbeat.md",
-        createHash("sha256").update(payload).digest("hex"),
-      )
-    : undefined;
-  let commitAttested = false;
-  try {
-    fs.mkdirSync(notesDirectory, { recursive: true, mode: 0o700 });
-    if (fs.lstatSync(notesDirectory).isSymbolicLink()) {
-      throw new Error("heartbeat notes directory is a symlink");
-    }
-    if (fs.existsSync(destination)) {
-      const stat = fs.lstatSync(destination);
-      if (stat.isSymbolicLink() || !stat.isFile() || stat.size > HEARTBEAT_NOTE_MAX_BYTES) {
-        throw new Error("heartbeat note target is unsafe");
-      }
-      const current = fs.readFileSync(destination, "utf8");
-      if (current.includes(`<!-- heartbeat:${occurrenceId} -->`)) {
-        observation?.finish("promoted");
-        return;
-      }
-    }
-    await observation?.attestCommit();
-    commitAttested = observation !== undefined && localContext?.mode === "enforce";
-    observation?.lockPromotion();
-    observation?.assertCommitCurrent();
-    const descriptor = fs.openSync(
-      destination,
-      fs.constants.O_WRONLY |
-        fs.constants.O_CREAT |
-        fs.constants.O_APPEND |
-        fs.constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      fs.writeSync(descriptor, payload, undefined, "utf8");
-      fs.fsyncSync(descriptor);
-    } finally {
-      fs.closeSync(descriptor);
-    }
-    const directoryDescriptor = fs.openSync(
-      notesDirectory,
-      fs.constants.O_RDONLY | fs.constants.O_DIRECTORY,
-    );
-    try {
-      fs.fsyncSync(directoryDescriptor);
-    } finally {
-      fs.closeSync(directoryDescriptor);
-    }
-    if (commitAttested) {
-      await observation?.completeCommit();
-      commitAttested = false;
-    }
-    observation?.finish("promoted");
-  } catch (error) {
-    if (commitAttested) {
-      await observation?.completeCommit().catch(() => {});
-      commitAttested = false;
-    }
-    observation?.finish("failed", error instanceof Error ? error.name : "unknown");
-    throw error;
-  } finally {
-    await releaseHostMutationContext(freshContext);
-  }
 }
 
 function failureEnvelope(
@@ -1128,21 +1018,6 @@ export function createMagisterActionTool(
             );
           } catch {
             // Cache state is rebuildable and never changes the authoritative response.
-          }
-        }
-        if (envelope.ok && action.action === "record_heartbeat_escalation") {
-          try {
-            await mirrorHeartbeatNote(envelope);
-            envelope.receipt.local_note_mirrored = true;
-          } catch {
-            return jsonResult(
-              failureEnvelope(action, callId, {
-                code: "upstream_failed",
-                message: "The heartbeat escalation was recorded but its local note mirror failed.",
-                retryable: true,
-                userAction: "Retry the same occurrence-keyed escalation once.",
-              }),
-            );
           }
         }
         return jsonResult(envelope);

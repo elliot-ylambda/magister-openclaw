@@ -49,6 +49,8 @@
       "magister_list_ai_visibility_sets",
       "magister_get_ai_visibility_set",
       "magister_run_ai_visibility_set",
+      "magister_suggest_ai_visibility_prompts",
+      "magister_create_ai_visibility_set",
       "magister_keyword_research",
       "magister_discover_influencers",
       "magister_get_influencer_discovery",
