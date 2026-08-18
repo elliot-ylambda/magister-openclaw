@@ -433,9 +433,41 @@ export function isTransientFileWatchError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * A rejection carrying a populated HTTP status is a *completed* exchange with
+ * a remote service: the server answered, the request failed. That is never
+ * grounds to kill the host process. On a Magister tenant machine the
+ * 2026-08-18 canary benchmark proved a single mid-turn 409 from the LLM proxy
+ * (an invalid model-eval override) took down the whole VM: unhandled
+ * rejection → process exit 1 → Fly cold reboot, three times in a row. The
+ * failed call belongs to the turn that made it, not the process. Fatal and
+ * configuration classification run *before* the transient check in
+ * installUnhandledRejectionHandler, so config-shaped credential errors still
+ * exit; this only catches API failures nothing else claimed.
+ */
+export function isRemoteApiResponseError(err: unknown): boolean {
+  if (!err) {
+    return false;
+  }
+  for (const candidate of collectNestedUnhandledErrorCandidates(err)) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+    const source = candidate as { status?: unknown; statusCode?: unknown };
+    const raw = typeof source.status === "number" ? source.status : source.statusCode;
+    if (typeof raw === "number" && Number.isInteger(raw) && raw >= 400 && raw < 600) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function isTransientUnhandledRejectionError(err: unknown): boolean {
   return (
-    isTransientNetworkError(err) || isTransientSqliteError(err) || isTransientFileWatchError(err)
+    isTransientNetworkError(err) ||
+    isTransientSqliteError(err) ||
+    isTransientFileWatchError(err) ||
+    isRemoteApiResponseError(err)
   );
 }
 
