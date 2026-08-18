@@ -5,6 +5,7 @@ import {
   isTransientFileWatchError,
   isTransientNetworkError,
   isTransientSqliteError,
+  isRemoteApiResponseError,
   isTransientUnhandledRejectionError,
 } from "./unhandled-rejections.js";
 
@@ -441,5 +442,46 @@ describe("isTransientNetworkError with HTTP statuses", () => {
   it("returns false for client errors, which retrying cannot fix", () => {
     const error = Object.assign(new Error('403 "forbidden"'), { status: 403 });
     expect(isTransientNetworkError(error)).toBe(false);
+  });
+});
+
+describe("isRemoteApiResponseError", () => {
+  it("keeps the process alive for the exact shape that rebooted a tenant machine", () => {
+    // 2026-08-18: a mid-turn 409 from the Magister LLM proxy surfaced through
+    // the pi-ai openai client as an unhandled rejection and exited the
+    // gateway process; the failed call belongs to the turn, not the process.
+    const error = Object.assign(new Error("409 status code (no body)"), {
+      status: 409,
+      error: { detail: "invalid model eval override" },
+    });
+    expect(isRemoteApiResponseError(error)).toBe(true);
+    expect(isTransientUnhandledRejectionError(error)).toBe(true);
+  });
+
+  it("covers every completed 4xx/5xx exchange, statusCode spelling included", () => {
+    for (const status of [400, 401, 404, 429, 500, 599]) {
+      const byStatus = Object.assign(new Error(`${status} api error`), { status });
+      expect(isRemoteApiResponseError(byStatus), `status: ${status}`).toBe(true);
+      const byStatusCode = Object.assign(new Error(`${status} api error`), {
+        statusCode: status,
+      });
+      expect(isRemoteApiResponseError(byStatusCode), `statusCode: ${status}`).toBe(true);
+    }
+  });
+
+  it("finds the status through a nested cause chain", () => {
+    const cause = Object.assign(new Error("429 rate limited"), { status: 429 });
+    const wrapped = Object.assign(new Error("llm call failed"), { cause });
+    expect(isRemoteApiResponseError(wrapped)).toBe(true);
+    expect(isTransientUnhandledRejectionError(wrapped)).toBe(true);
+  });
+
+  it("ignores non-HTTP shapes: success statuses, string statuses, plain errors", () => {
+    expect(isRemoteApiResponseError(Object.assign(new Error("ok"), { status: 200 }))).toBe(false);
+    expect(isRemoteApiResponseError(Object.assign(new Error("409"), { status: "409" }))).toBe(
+      false,
+    );
+    expect(isRemoteApiResponseError(new Error("just an error"))).toBe(false);
+    expect(isRemoteApiResponseError(null)).toBe(false);
   });
 });
