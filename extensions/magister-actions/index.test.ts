@@ -40,12 +40,6 @@ const completionAction = nativeActionContract.actions.find(
 if (!completionAction) {
   throw new Error("submit_workflow_completion contract missing");
 }
-const heartbeatAction = nativeActionContract.actions.find(
-  (row) => row.action === "record_heartbeat_escalation",
-);
-if (!heartbeatAction) {
-  throw new Error("record_heartbeat_escalation contract missing");
-}
 const integrationsAction = nativeActionContract.actions.find(
   (row) => row.action === "list_integrations",
 );
@@ -270,90 +264,6 @@ describe("typed gateway execution", () => {
 
     await tool.execute("call-malformed-slack", {});
     expect(request?.init?.headers).not.toHaveProperty("x-magister-session-key");
-  });
-
-  it("forwards only a structurally valid heartbeat runtime session", async () => {
-    process.env.GATEWAY_TOKEN = "secret-machine-token";
-    let request: { init?: RequestInit } | undefined;
-    const sessionKey = "agent:heartbeat:heartbeat:00000000-0000-4000-8000-000000000002:7";
-    const tool = createMagisterActionTool(
-      api(),
-      action,
-      async (_input, init) => {
-        request = { init };
-        return new Response(JSON.stringify(envelope()), { status: 200 });
-      },
-      { sessionKey },
-    );
-
-    await tool.execute("call-heartbeat", {});
-    expect(request?.init?.headers).toMatchObject({ "x-magister-session-key": sessionKey });
-  });
-
-  it("mirrors a validated occurrence-keyed heartbeat note exactly once", async () => {
-    process.env.GATEWAY_TOKEN = "secret-machine-token";
-    const stateDir = mkdtempSync(join(tmpdir(), "magister-heartbeat-"));
-    temporaryDirectories.push(stateDir);
-    process.env.OPENCLAW_STATE_DIR = stateDir;
-    process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT = "1";
-    process.env.GATEWAY_INTERNAL_URL = "http://127.0.0.1:18796";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request) => {
-        const url = requestUrl(input);
-        if (url.endsWith("/acquire")) {
-          return new Response(
-            JSON.stringify({
-              project_id: "00000000-0000-4000-8000-000000000001",
-              operation_id: "host-heartbeat-test",
-              owner_id: "gateway-host-owner",
-              project_fence: 8,
-              mode: "enforce",
-            }),
-            { status: 200 },
-          );
-        }
-        if (url.endsWith("/attest")) {
-          return new Response(
-            JSON.stringify({ commit_expires_at: new Date(Date.now() + 60_000).toISOString() }),
-            { status: 200 },
-          );
-        }
-        return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
-      }),
-    );
-    const occurrenceId = "heartbeat-v1:2026-07-14";
-    const response = envelope({
-      side_effect: "internal_write",
-      receipt: {
-        status: "recorded",
-        finding_id: "00000000-0000-4000-8000-000000000003",
-        occurrence_id: occurrenceId,
-        note_path: "notes/heartbeat.md",
-        note_entry: `<!-- heartbeat:${occurrenceId} -->\n- 2026-07-14: Reconnect analytics`,
-        mutation_context: {
-          project_id: "00000000-0000-4000-8000-000000000001",
-          operation_id: "heartbeat-note-2026-07-14",
-          owner_id: "gateway-owner",
-          project_fence: 7,
-          mode: "enforce",
-        },
-      },
-    });
-    const tool = createMagisterActionTool(
-      api(),
-      heartbeatAction,
-      async () => new Response(JSON.stringify(response), { status: 200 }),
-      {
-        sessionKey: "agent:heartbeat:heartbeat:00000000-0000-4000-8000-000000000002:7",
-      },
-    );
-
-    expect(resultJson(await tool.execute("call-note-1", {})).ok).toBe(true);
-    expect(resultJson(await tool.execute("call-note-2", {})).ok).toBe(true);
-    const note = readFileSync(join(stateDir, "workspace", "notes", "heartbeat.md"), "utf8");
-    expect(note.match(/<!-- heartbeat:/g)).toHaveLength(1);
-    expect(note).toContain("Reconnect analytics");
   });
 
   it("fails closed without a machine token", async () => {
@@ -684,16 +594,6 @@ describe("typed gateway execution", () => {
     expect(
       createContextualMagisterActionTool(api(), completionAction, fetch, {
         sessionKey: "workflow_run:00000000-0000-4000-8000-000000000001",
-      }),
-    ).not.toBeNull();
-    expect(
-      createContextualMagisterActionTool(api(), heartbeatAction, fetch, {
-        sessionKey: "agent:main:webchat:session-1",
-      }),
-    ).toBeNull();
-    expect(
-      createContextualMagisterActionTool(api(), heartbeatAction, fetch, {
-        sessionKey: "agent:heartbeat:heartbeat:00000000-0000-4000-8000-000000000002:7",
       }),
     ).not.toBeNull();
   });

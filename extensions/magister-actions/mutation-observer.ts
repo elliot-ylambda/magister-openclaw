@@ -11,8 +11,6 @@ export type LocalMutationContext = {
   mode: "observe" | "enforce";
 };
 
-type HostMutationResourceClass = "host:memory" | "host:user" | "host:heartbeat_note";
-
 // The attestation RPC normally completes well under a second. A scoped
 // machine callback performs bounded live-identity, project-token, and commit
 // checks through PostgREST, however, and those pool waits are sequential.
@@ -62,34 +60,6 @@ async function postMutation(pathname: string, body: unknown): Promise<Record<str
     throw new Error("local mutation gateway returned an invalid response");
   }
   return value as Record<string, unknown>;
-}
-
-export async function acquireHostMutationContext(
-  operationId: string,
-  resourceClass: HostMutationResourceClass,
-): Promise<LocalMutationContext | undefined> {
-  if (process.env.MAGISTER_LOCAL_MUTATION_ENFORCEMENT !== "1") {
-    return undefined;
-  }
-  const context = parseLocalMutationContext(
-    await postMutation("acquire", {
-      operation_id: operationId.slice(0, 500),
-      resource_class: resourceClass,
-    }),
-  );
-  if (!context || context.mode !== "enforce") {
-    throw new Error("host mutation lease response is invalid");
-  }
-  return context;
-}
-
-export async function releaseHostMutationContext(
-  context: LocalMutationContext | undefined,
-): Promise<void> {
-  if (!context) {
-    return;
-  }
-  await postMutation("release", { context });
 }
 
 export function parseLocalMutationContext(value: unknown): LocalMutationContext | undefined {
