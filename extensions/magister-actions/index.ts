@@ -795,6 +795,167 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<st
   return new TextDecoder().decode(joined);
 }
 
+// ── hold-the-turn approvals ──────────────────────────────────────────────────
+// When a gated write's pending envelope carries receipt.permission_hold, the
+// gateway minted a -hold-v1 release: this runtime keeps the ORIGINAL tool call
+// open and polls get_action_approval until the decision, the deadline, or a
+// release request — so an approve lands in the same turn instead of ending it
+// and paying a continuation + context rebuild. Transport failures during the
+// hold retry within it (load-bearing: a machine that lost one poll's HTTP
+// response must re-receive the same terminal result — the gateway's claim is
+// re-entrant for exactly this reason). The gateway's SSE liveness probes keep
+// a silent hold alive, and the server-set deadline stays under that watchdog.
+const HOLD_MIN_POLL_SECONDS = 2;
+const HOLD_MAX_POLL_SECONDS = 60;
+const HOLD_DEFAULT_POLL_SECONDS = 5;
+const HOLD_POLL_TIMEOUT_MS = 20_000;
+const HOLD_MAX_TOTAL_MS = 25 * 60 * 1000;
+
+function holdSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function holdForApprovalDecision(options: {
+  envelope: ActionEnvelope;
+  endpoint: string;
+  gatewayToken: string;
+  runtimeSessionKey?: string;
+  runtimeSessionId?: string;
+  fetchImpl: FetchLike;
+  maxResponseBytes: number;
+  signal?: AbortSignal;
+  now?: () => number;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}): Promise<ActionEnvelope | null> {
+  const { envelope } = options;
+  if (envelope.status.terminal || envelope.receipt["permission_hold"] !== true) {
+    return null;
+  }
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? holdSleep;
+  const deadlineRaw =
+    typeof envelope.receipt["hold_deadline"] === "string"
+      ? Date.parse(envelope.receipt["hold_deadline"])
+      : Number.NaN;
+  const deadline = Math.min(
+    Number.isFinite(deadlineRaw) ? deadlineRaw : now() + HOLD_MAX_TOTAL_MS,
+    now() + HOLD_MAX_TOTAL_MS,
+  );
+  const pollSecondsRaw = envelope.receipt["hold_poll_seconds"];
+  const pollSeconds = Math.min(
+    HOLD_MAX_POLL_SECONDS,
+    Math.max(
+      HOLD_MIN_POLL_SECONDS,
+      typeof pollSecondsRaw === "number" && Number.isFinite(pollSecondsRaw)
+        ? pollSecondsRaw
+        : HOLD_DEFAULT_POLL_SECONDS,
+    ),
+  );
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${options.gatewayToken}`,
+    "content-type": "application/json",
+    ...(options.runtimeSessionKey ? { "x-magister-session-key": options.runtimeSessionKey } : {}),
+    ...(options.runtimeSessionKey && options.runtimeSessionId
+      ? { "x-magister-session-id": options.runtimeSessionId }
+      : {}),
+  };
+
+  while (now() < deadline && !options.signal?.aborted) {
+    await sleep(pollSeconds * 1000, options.signal);
+    if (options.signal?.aborted || now() >= deadline) {
+      break;
+    }
+    let polled: ActionEnvelope | null = null;
+    try {
+      const controller = new AbortController();
+      const pollTimer = setTimeout(() => controller.abort(), HOLD_POLL_TIMEOUT_MS);
+      try {
+        const response = await options.fetchImpl(`${options.endpoint}/get_action_approval`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            arguments: { operation_id: envelope.operation_id },
+          }),
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const body = await readBoundedBody(response, options.maxResponseBytes);
+          try {
+            polled = parseActionEnvelope(JSON.parse(body));
+          } catch {
+            polled = null;
+          }
+        }
+      } finally {
+        clearTimeout(pollTimer);
+      }
+    } catch {
+      // Transport blip: retry within the hold rather than surrendering it.
+      polled = null;
+    }
+    if (!polled) {
+      continue;
+    }
+    if (polled.status.terminal) {
+      // Acknowledge BEFORE returning: the result becomes model-visible the
+      // moment this tool call resolves, and the ack is what tells the +90s
+      // continuation safety net to cancel instead of restating it. Ownership
+      // is enforced server-side, so a late ack after a steal is a no-op.
+      try {
+        const ackController = new AbortController();
+        const ackTimer = setTimeout(() => ackController.abort(), 10_000);
+        try {
+          await options.fetchImpl(`${options.endpoint}/approval_resolution_ack`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ operation_id: envelope.operation_id }),
+            signal: ackController.signal,
+          });
+        } finally {
+          clearTimeout(ackTimer);
+        }
+      } catch {
+        // Best-effort: a lost ack means the safety net restates a result the
+        // model already saw — a benign duplicate, never a loss.
+      }
+      // The polled envelope carries the decision and the executed result in
+      // its receipt; keep the ORIGINAL call's identity so the model reads it
+      // as this action's outcome.
+      return {
+        ...polled,
+        operation_id: envelope.operation_id,
+        side_effect: envelope.side_effect,
+        idempotency_key: envelope.idempotency_key,
+      };
+    }
+    const approval = polled.receipt["approval"];
+    if (
+      isRecord(approval) &&
+      (approval["release_requested"] === true || approval["delivery"] === "continuation")
+    ) {
+      // Stand down: the user sent a new message (release), or the delivery
+      // now belongs to the continuation. The original pending envelope goes
+      // to the model, the turn ends, and the follow-up turn delivers.
+      return null;
+    }
+  }
+  return null;
+}
+
 export function createMagisterActionTool(
   api: OpenClawPluginApi,
   action: ActionContract,
@@ -806,10 +967,10 @@ export function createMagisterActionTool(
     label: action.tool_name,
     description:
       action.approval_policy === "exact_payload"
-        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn. When receipt.approval_presentation is "inline_web", a trusted server-owned card is already in the conversation: do not print receipt.approval_url, emit another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.approval_presentation is "slack_card_scheduled", the trusted server-owned card is already being delivered to the originating Slack thread: give one normal final reply, never call message(action=send) or a Slack/proxy tool just to acknowledge it, and end this turn. When receipt.approval_presentation is "link_only", show receipt.approval_url once and do not render a synthetic Approve button. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
+        ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn — when the runtime holds this call open, the decision returns as this call's result; treat it as the action's outcome, and never re-request a denied action or pursue its outcome through another tool. When receipt.approval_presentation is "inline_web", a trusted server-owned card is already in the conversation: do not print receipt.approval_url, emit another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.approval_presentation is "slack_card_scheduled", the trusted server-owned card is already being delivered to the originating Slack thread: give one normal final reply, never call message(action=send) or a Slack/proxy tool just to acknowledge it, and end this turn. When receipt.approval_presentation is "link_only", show receipt.approval_url once and do not render a synthetic Approve button. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
         : action.description,
     parameters: action.input_schema as unknown as TSchema,
-    async execute(callId: string, rawParams: Record<string, unknown>) {
+    async execute(callId: string, rawParams: Record<string, unknown>, signal?: AbortSignal) {
       const transportStartedAt = Date.now();
       const brokerEnabled = process.env.MAGISTER_BROKER_BASE_URL === "http://127.0.0.1:18796";
       const gatewayToken =
@@ -974,6 +1135,21 @@ export function createMagisterActionTool(
               userAction: "Do not infer success; report the typed-tool contract failure.",
             }),
           );
+        }
+        if (action.approval_policy === "exact_payload") {
+          const held = await holdForApprovalDecision({
+            envelope,
+            endpoint: config.endpoint,
+            gatewayToken,
+            runtimeSessionKey,
+            runtimeSessionId,
+            fetchImpl,
+            maxResponseBytes: config.maxResponseBytes,
+            signal,
+          });
+          if (held) {
+            return jsonResult(held);
+          }
         }
         if (envelope.ok && envelope.status.terminal && policy && scope && inputHash) {
           try {
