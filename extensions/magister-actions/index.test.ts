@@ -1046,6 +1046,8 @@ describe("hold-the-turn approvals", () => {
         },
         receipt: {
           approval_id: "11111111-1111-4111-8111-111111111111",
+          approval_state: "pending",
+          approval_presentation: "inline_web",
           permission_continuation: "automatic",
           permission_hold: true,
           hold_deadline: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
@@ -1095,6 +1097,51 @@ describe("hold-the-turn approvals", () => {
       sleep: async () => {},
     };
   }
+
+  it("publishes an inline approval update before entering the hold", async () => {
+    process.env.GATEWAY_TOKEN = "secret-machine-token";
+    const pending = pendingHoldEnvelope();
+    if (!pending) {
+      throw new Error("pending hold envelope failed to parse");
+    }
+    const tool = createMagisterActionTool(
+      api(),
+      writeAction,
+      async () => new Response(JSON.stringify(pending), { status: 200 }),
+    );
+    const controller = new AbortController();
+    controller.abort();
+    const updates: unknown[] = [];
+
+    const result = await tool.execute(
+      "call-held-approval",
+      {
+        idempotency_key: "held-approval-test",
+        to: ["member@example.com"],
+        subject: "Approval test",
+        body: "Test body",
+      },
+      controller.signal,
+      (update) => updates.push(update),
+    );
+
+    expect(updates).toHaveLength(1);
+    const updateContent = (updates[0] as { content?: Array<{ text?: string }> }).content?.[0];
+    const updatePayload = JSON.parse(updateContent?.text ?? "null") as Record<string, unknown>;
+    expect(updatePayload).toMatchObject({
+      operation_id: "op_hold_1",
+      receipt: {
+        approval_id: "11111111-1111-4111-8111-111111111111",
+        approval_state: "pending",
+        approval_presentation: "inline_web",
+        permission_hold: true,
+      },
+    });
+    expect(resultJson(result)).toMatchObject({
+      operation_id: "op_hold_1",
+      status: { terminal: false },
+    });
+  });
 
   it("polls until terminal, acknowledges, and keeps the original identity", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];

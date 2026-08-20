@@ -970,7 +970,12 @@ export function createMagisterActionTool(
         ? `${action.description} If the result says user permission is pending, briefly tell the user permission is needed and end this turn — when the runtime holds this call open, the decision returns as this call's result; treat it as the action's outcome, and never re-request a denied action or pursue its outcome through another tool. When receipt.approval_presentation is "inline_web", a trusted server-owned card is already in the conversation: do not print receipt.approval_url, emit another permission UI, ask for a synthetic confirmation message, or poll in this turn. When receipt.approval_presentation is "slack_card_scheduled", the trusted server-owned card is already being delivered to the originating Slack thread: give one normal final reply, never call message(action=send) or a Slack/proxy tool just to acknowledge it, and end this turn. When receipt.approval_presentation is "link_only", show receipt.approval_url once and do not render a synthetic Approve button. When receipt.permission_continuation is "automatic", Magister will resume this same session after the decision; when it is "manual", tell the user to return after deciding.`
         : action.description,
     parameters: action.input_schema as unknown as TSchema,
-    async execute(callId: string, rawParams: Record<string, unknown>, signal?: AbortSignal) {
+    async execute(
+      callId: string,
+      rawParams: Record<string, unknown>,
+      signal?: AbortSignal,
+      onUpdate?: (update: ReturnType<typeof jsonResult>) => void,
+    ) {
       const transportStartedAt = Date.now();
       const brokerEnabled = process.env.MAGISTER_BROKER_BASE_URL === "http://127.0.0.1:18796";
       const gatewayToken =
@@ -1137,6 +1142,21 @@ export function createMagisterActionTool(
           );
         }
         if (action.approval_policy === "exact_payload") {
+          // A held tool does not produce its ordinary result event until the
+          // human decides, but web chat needs the trusted approval card while
+          // the tool is still waiting. Publish the already-validated pending
+          // envelope as a progress update before entering the hold; the HTTP
+          // adapter reduces it to opaque approval/operation ids and the
+          // Gateway re-verifies those ids against durable state.
+          if (
+            envelope.status.state === "running" &&
+            envelope.status.terminal === false &&
+            envelope.receipt["permission_hold"] === true &&
+            envelope.receipt["approval_state"] === "pending" &&
+            envelope.receipt["approval_presentation"] === "inline_web"
+          ) {
+            onUpdate?.(jsonResult(envelope));
+          }
           const held = await holdForApprovalDecision({
             envelope,
             endpoint: config.endpoint,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { extractMagisterApprovalEvent } from "./magister-approval-event.js";
+import {
+  extractMagisterApprovalEvent,
+  extractMagisterApprovalEventFromToolEvent,
+} from "./magister-approval-event.js";
 
 const approvalId = "11111111-1111-4111-8111-111111111111";
 const operationId = `op_${"a".repeat(32)}`;
@@ -26,6 +29,23 @@ describe("extractMagisterApprovalEvent", () => {
         name: "magister_send_agent_email",
         isError: false,
         result: JSON.stringify(pendingEnvelope()),
+      }),
+    ).toEqual({
+      approval_id: approvalId,
+      operation_id: operationId,
+      state: "pending",
+    });
+  });
+
+  it("emits a held approval from a tool progress update", () => {
+    expect(
+      extractMagisterApprovalEventFromToolEvent({
+        phase: "update",
+        name: "magister_send_agent_email",
+        isError: false,
+        partialResult: {
+          content: [{ type: "text", text: JSON.stringify(pendingEnvelope()) }],
+        },
       }),
     ).toEqual({
       approval_id: approvalId,

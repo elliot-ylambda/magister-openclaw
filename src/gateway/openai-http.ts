@@ -47,7 +47,7 @@ import {
   resolveOpenAiCompatibleHttpSenderIsOwner,
 } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
-import { extractMagisterApprovalEvent } from "./magister-approval-event.js";
+import { extractMagisterApprovalEventFromToolEvent } from "./magister-approval-event.js";
 
 type OpenAiHttpOptions = {
   auth: ResolvedGatewayAuth;
@@ -762,6 +762,13 @@ export async function handleOpenAiHttpRequest(
     if (evt.stream === "tool") {
       const data = evt.data as Record<string, unknown> | undefined;
       if (data) {
+        const approval = extractMagisterApprovalEventFromToolEvent(data);
+        if (data.phase === "update" && approval) {
+          // This update exists only to surface the pending card before a held
+          // tool resolves. Keep the ordinary tool block in its running state.
+          writeCustomSseEvent(res, "approval", approval);
+          return;
+        }
         writeCustomSseEvent(res, "tool", {
           phase: data.phase,
           name: data.name,
@@ -769,12 +776,6 @@ export async function handleOpenAiHttpRequest(
           ...(data.isError !== undefined && { isError: data.isError }),
           ...(data.args !== undefined && { args: data.args }),
           ...(Boolean(data.isError) && data.result !== undefined && { result: data.result }),
-        });
-        const approval = extractMagisterApprovalEvent({
-          phase: data.phase,
-          name: data.name,
-          isError: data.isError,
-          result: data.result,
         });
         if (approval) {
           writeCustomSseEvent(res, "approval", approval);

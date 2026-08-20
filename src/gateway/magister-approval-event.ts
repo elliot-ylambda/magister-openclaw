@@ -33,7 +33,9 @@ function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
 /**
  * Extract the only successful-tool detail allowed onto the web-chat wire.
  * Ordinary successful bodies stay private; a closed Magister approval
- * envelope contributes three opaque identifiers and nothing else.
+ * envelope contributes three opaque identifiers and nothing else. Held
+ * approvals arrive as a progress update before their eventual terminal tool
+ * result so the card can render while the original call is still waiting.
  */
 export function extractMagisterApprovalEvent(params: {
   phase: unknown;
@@ -42,7 +44,7 @@ export function extractMagisterApprovalEvent(params: {
   result: unknown;
 }): ApprovalEvent | undefined {
   if (
-    params.phase !== "result" ||
+    (params.phase !== "result" && params.phase !== "update") ||
     params.isError === true ||
     typeof params.name !== "string" ||
     !/^magister_[a-z0-9_]+$/.test(params.name)
@@ -77,4 +79,15 @@ export function extractMagisterApprovalEvent(params: {
     operation_id: operationId,
     state: "pending",
   };
+}
+
+export function extractMagisterApprovalEventFromToolEvent(
+  data: Record<string, unknown>,
+): ApprovalEvent | undefined {
+  return extractMagisterApprovalEvent({
+    phase: data.phase,
+    name: data.name,
+    isError: data.isError,
+    result: data.phase === "update" ? data.partialResult : data.result,
+  });
 }
