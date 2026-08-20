@@ -50,7 +50,7 @@ import {
   resolveOpenAiCompatibleHttpSenderIsOwner,
 } from "./http-utils.js";
 import { normalizeInputHostnameAllowlist } from "./input-allowlist.js";
-import { extractMagisterApprovalEvent } from "./magister-approval-event.js";
+import { extractMagisterApprovalEventFromToolEvent } from "./magister-approval-event.js";
 import {
   CreateResponseBodySchema,
   type CreateResponseBody,
@@ -989,12 +989,7 @@ export async function handleOpenResponsesHttpRequest(
     if (evt.stream === "tool") {
       const data = evt.data as Record<string, unknown> | undefined;
       if (data) {
-        const approval = extractMagisterApprovalEvent({
-          phase: data.phase,
-          name: data.name,
-          isError: data.isError,
-          result: data.result,
-        });
+        const approval = extractMagisterApprovalEventFromToolEvent(data);
         if (approval) {
           writeSseEvent(res, { type: "approval", ...approval });
         }
