@@ -14,6 +14,7 @@ import {
   actionTimeoutMs,
   createContextualMagisterActionTool,
   createMagisterActionTool,
+  holdForApprovalDecision,
   magisterStandaloneToolNames,
   nativeActionContract,
   parseActionEnvelope,
@@ -143,6 +144,10 @@ describe("Magister action manifest contract", () => {
     expect(tool.description).toContain("never call message(action=send)");
     expect(tool.description).toContain('receipt.approval_presentation is "link_only"');
     expect(tool.description).toContain("show receipt.approval_url once");
+    expect(tool.description).toContain("when the runtime holds this call open");
+    expect(tool.description).toContain(
+      "never re-request a denied action or pursue its outcome through another tool",
+    );
   });
 });
 
@@ -1023,5 +1028,237 @@ describe("envelope validator", () => {
         }),
       ),
     ).not.toBeNull();
+  });
+});
+
+describe("hold-the-turn approvals", () => {
+  const pendingHoldEnvelope = () =>
+    parseActionEnvelope(
+      envelope({
+        ok: false,
+        operation_id: "op_hold_1",
+        side_effect: "external_write",
+        status: {
+          state: "running",
+          terminal: false,
+          poll_after_seconds: 5,
+          stale_seconds: 0,
+        },
+        receipt: {
+          approval_id: "11111111-1111-4111-8111-111111111111",
+          permission_continuation: "automatic",
+          permission_hold: true,
+          hold_deadline: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
+          hold_poll_seconds: 5,
+        },
+        error: {
+          code: "approval_required",
+          message: "User permission is required",
+          retryable: false,
+          retry_after_seconds: null,
+          user_action: null,
+        },
+      }),
+    );
+
+  const terminalPollEnvelope = (state = "succeeded") =>
+    envelope({
+      operation_id: "op_poll_identity",
+      side_effect: "none",
+      status: {
+        state: state === "succeeded" ? "succeeded" : "failed",
+        terminal: true,
+        poll_after_seconds: 0,
+        stale_seconds: 0,
+      },
+      receipt: {
+        approval: {
+          operation_id: "op_hold_1",
+          state,
+          terminal: true,
+          receipt: { state, action: "send_email" },
+        },
+      },
+    });
+
+  function holdOptions(fetchImpl: (input: unknown, init?: RequestInit) => Promise<Response>) {
+    const held = pendingHoldEnvelope();
+    if (!held) {
+      throw new Error("pending hold envelope failed to parse");
+    }
+    return {
+      envelope: held,
+      endpoint: "http://magister-gateway.internal:8081/api/agent/actions",
+      gatewayToken: "secret",
+      fetchImpl: fetchImpl as never,
+      maxResponseBytes: 512 * 1024,
+      sleep: async () => {},
+    };
+  }
+
+  it("polls until terminal, acknowledges, and keeps the original identity", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const fetchImpl = async (input: unknown, init?: RequestInit) => {
+      const url = requestUrl(input as string);
+      calls.push({ url, body: JSON.parse(String(init?.body ?? "null")) });
+      if (url.endsWith("/approval_resolution_ack")) {
+        return new Response(JSON.stringify({ delivered: true }), { status: 200 });
+      }
+      const body =
+        calls.filter((c) => c.url.endsWith("/get_action_approval")).length < 2
+          ? envelope({
+              status: {
+                state: "running",
+                terminal: false,
+                poll_after_seconds: 5,
+                stale_seconds: 0,
+              },
+              receipt: { approval: { state: "pending", terminal: false } },
+            })
+          : terminalPollEnvelope("denied");
+      return new Response(JSON.stringify(body), { status: 200 });
+    };
+
+    const result = await holdForApprovalDecision(holdOptions(fetchImpl));
+
+    expect(result).not.toBeNull();
+    expect(result?.status.terminal).toBe(true);
+    // Original call identity survives: the model reads this as the gated
+    // action's own outcome, not as a get_action_approval result.
+    expect(result?.operation_id).toBe("op_hold_1");
+    expect(result?.side_effect).toBe("external_write");
+    const approval = result?.receipt["approval"] as Record<string, unknown>;
+    expect(approval["state"]).toBe("denied");
+    const ack = calls.find((c) => c.url.endsWith("/approval_resolution_ack"));
+    expect(ack).toBeDefined();
+    expect(ack?.body).toEqual({ operation_id: "op_hold_1" });
+    const polls = calls.filter((c) => c.url.endsWith("/get_action_approval"));
+    expect(polls.length).toBe(2);
+    expect(polls[0]?.body).toEqual({ arguments: { operation_id: "op_hold_1" } });
+  });
+
+  it("retries transport failures within the hold instead of surrendering it", async () => {
+    let attempts = 0;
+    const fetchImpl = async (input: unknown, init?: RequestInit) => {
+      const url = requestUrl(input as string);
+      if (url.endsWith("/approval_resolution_ack")) {
+        return new Response("{}", { status: 200 });
+      }
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("socket hang up");
+      }
+      return new Response(JSON.stringify(terminalPollEnvelope()), { status: 200 });
+    };
+
+    const result = await holdForApprovalDecision(holdOptions(fetchImpl));
+
+    expect(result?.status.terminal).toBe(true);
+    expect(attempts).toBe(2);
+  });
+
+  it("stands down when the user queues a message (release_requested)", async () => {
+    const fetchImpl = async (input: unknown) => {
+      const url = requestUrl(input as string);
+      if (url.endsWith("/approval_resolution_ack")) {
+        throw new Error("must not ack a released hold");
+      }
+      return new Response(
+        JSON.stringify(
+          envelope({
+            status: {
+              state: "running",
+              terminal: false,
+              poll_after_seconds: 5,
+              stale_seconds: 0,
+            },
+            receipt: {
+              approval: { state: "pending", terminal: false, release_requested: true },
+            },
+          }),
+        ),
+        { status: 200 },
+      );
+    };
+
+    expect(await holdForApprovalDecision(holdOptions(fetchImpl))).toBeNull();
+  });
+
+  it("stands down when delivery belongs to the continuation", async () => {
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify(
+          envelope({
+            status: {
+              state: "running",
+              terminal: false,
+              poll_after_seconds: 30,
+              stale_seconds: 0,
+            },
+            receipt: {
+              approval: { state: "pending", terminal: false, delivery: "continuation" },
+            },
+          }),
+        ),
+        { status: 200 },
+      );
+
+    expect(await holdForApprovalDecision(holdOptions(fetchImpl))).toBeNull();
+  });
+
+  it("never holds an envelope without the hold marker", async () => {
+    const fetchImpl = async () => {
+      throw new Error("must not poll a non-hold pending envelope");
+    };
+    const held = pendingHoldEnvelope();
+    if (!held) {
+      throw new Error("pending hold envelope failed to parse");
+    }
+    held.receipt = { approval_id: "x", permission_continuation: "automatic" };
+
+    const result = await holdForApprovalDecision({
+      ...holdOptions(fetchImpl as never),
+      envelope: held,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("respects the server deadline", async () => {
+    let clock = Date.now();
+    const fetchImpl = async () => {
+      throw new Error("deadline in the past must not poll");
+    };
+    const held = pendingHoldEnvelope();
+    if (!held) {
+      throw new Error("pending hold envelope failed to parse");
+    }
+    held.receipt = {
+      ...held.receipt,
+      hold_deadline: new Date(clock - 1000).toISOString(),
+    };
+
+    const result = await holdForApprovalDecision({
+      ...holdOptions(fetchImpl as never),
+      envelope: held,
+      now: () => clock,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("an aborted run ends the hold immediately", async () => {
+    const fetchImpl = async () => {
+      throw new Error("aborted hold must not poll");
+    };
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await holdForApprovalDecision({
+      ...holdOptions(fetchImpl as never),
+      signal: controller.signal,
+    });
+
+    expect(result).toBeNull();
   });
 });
