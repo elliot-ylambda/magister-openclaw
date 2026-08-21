@@ -512,9 +512,11 @@ describe("createFollowupRunner runtime config", () => {
     const call = runEmbeddedPiAgentMock.mock.calls.at(-1)?.[0] as
       | {
           config?: unknown;
+          isFinalFallbackCandidate?: boolean;
         }
       | undefined;
     expect(call?.config).toBe(runtimeConfig);
+    expect(call?.isFinalFallbackCandidate).toBe(true);
   });
 
   it("resolves queued embedded followups before preflight helpers read config", async () => {

@@ -709,7 +709,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     text: string,
     options?: { assistantMessageIndex?: number; final?: boolean },
   ) => {
-    if (state.suppressBlockChunks || params.silentExpected) {
+    if (state.suppressBlockChunks || params.silentExpected || params.suppressAssistantDelivery) {
       return;
     }
     // Strip <think> and <final> blocks across chunk boundaries to avoid leaking reasoning.
@@ -828,7 +828,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
   };
 
   const emitReasoningStream = (text: string) => {
-    if (params.silentExpected) {
+    if (params.silentExpected || params.suppressAssistantDelivery) {
       return;
     }
     // Magister fork: always emit thinking event to global event bus (HTTP SSE

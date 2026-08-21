@@ -81,6 +81,8 @@ export function isFallbackSummaryError(err: unknown): err is FallbackSummaryErro
 
 export type ModelFallbackRunOptions = {
   allowTransientCooldownProbe?: boolean;
+  /** True only for the final candidate in this fallback run. */
+  isFinalFallbackCandidate?: boolean;
 };
 
 type ModelFallbackRunFn<T> = (
@@ -788,6 +790,8 @@ export async function runWithModelFallback<T>(params: {
   agentDir?: string;
   /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
   fallbacksOverride?: string[];
+  /** Include candidate position in run options for callers that need final-attempt behavior. */
+  includeCandidatePosition?: boolean;
   run: ModelFallbackRunFn<T>;
   onError?: ModelFallbackErrorHandler;
   onFallbackStep?: ModelFallbackStepHandler;
@@ -958,11 +962,20 @@ export async function runWithModelFallback<T>(params: {
       }
     }
 
+    const candidateRunOptions =
+      runOptions || params.includeCandidatePosition === true
+        ? {
+            ...runOptions,
+            ...(params.includeCandidatePosition === true
+              ? { isFinalFallbackCandidate: i === candidates.length - 1 }
+              : {}),
+          }
+        : undefined;
     const attemptRun = await runFallbackAttempt({
       run: params.run,
       ...candidate,
       attempts,
-      options: runOptions,
+      options: candidateRunOptions,
       classifyResult: params.classifyResult,
       attempt: i + 1,
       total: candidates.length,

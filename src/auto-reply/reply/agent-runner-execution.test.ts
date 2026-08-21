@@ -177,7 +177,12 @@ async function getApplyFallbackCandidateSelectionToEntry() {
 }
 
 type FallbackRunnerParams = {
-  run: (provider: string, model: string) => Promise<unknown>;
+  includeCandidatePosition?: boolean;
+  run: (
+    provider: string,
+    model: string,
+    options?: { isFinalFallbackCandidate?: boolean },
+  ) => Promise<unknown>;
   classifyResult?: (params: {
     result: { payloads?: Array<{ text?: string; isError?: boolean; isReasoning?: boolean }> };
     provider: string;
@@ -188,6 +193,7 @@ type FallbackRunnerParams = {
 };
 
 type EmbeddedAgentParams = {
+  isFinalFallbackCandidate?: boolean;
   onBlockReply?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
   onToolResult?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
   onItemEvent?: (payload: {
@@ -563,6 +569,34 @@ describe("runAgentTurnWithFallback", () => {
     expect(state.runEmbeddedPiAgentMock.mock.calls[0]?.[0]).not.toHaveProperty(
       "agentHarnessId",
       "claude-cli",
+    );
+  });
+
+  it("marks the embedded chat run when the model fallback candidate is final", async () => {
+    state.runWithModelFallbackMock.mockImplementationOnce(async (params: FallbackRunnerParams) => {
+      expect(params.includeCandidatePosition).toBe(true);
+      return {
+        result: await params.run("openai", "gpt-5.4", {
+          isFinalFallbackCandidate: true,
+        }),
+        provider: "openai",
+        model: "gpt-5.4",
+        attempts: [],
+      };
+    });
+    state.runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "final" }],
+      meta: {},
+    });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback(
+      createMinimalRunAgentTurnParams({ followupRun: createFollowupRun() }),
+    );
+
+    expect(result.kind).toBe("success");
+    expect(state.runEmbeddedPiAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({ isFinalFallbackCandidate: true }),
     );
   });
 

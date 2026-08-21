@@ -186,6 +186,8 @@ const MID_TURN_PRECHECK_CONTINUATION_PROMPT =
   "Continue from the current transcript after the latest tool result. Do not repeat the original user request, and do not rerun completed tools unless the transcript shows they are still needed.";
 const COMPACTION_CONTINUATION_RETRY_INSTRUCTION =
   "The previous attempt compacted the conversation context before producing a final user-visible answer. Continue from the compacted transcript and produce the final answer now. Do not restart from scratch, do not repeat completed work, and do not rerun tools unless the transcript clearly lacks required evidence.";
+const RETRY_LIMIT_FINALIZATION_PROMPT =
+  "The run reached its final internal retry ceiling. Do not use tools. Using only the existing transcript, give a short truthful partial-result summary with four parts: completed work, verified evidence, remaining work, and uncertainty. Explicitly say the task did not fully complete; never claim success and never propose that a tool was run if the transcript does not prove it.";
 type EmbeddedRunAttemptForRunner = Awaited<ReturnType<typeof runEmbeddedAttemptWithBackend>>;
 
 function resolveEmbeddedRunLaneTimeoutMs(timeoutMs: number): number | undefined {
@@ -802,6 +804,13 @@ export async function runEmbeddedPiAgent(
         cfg: params.config,
         agentId: sessionAgentId,
       });
+      const retryLimitFinalizationEnabled =
+        resolvedLoopDetectionConfig?.runtimeResilience?.enabled === true &&
+        params.disableTools !== true &&
+        params.silentExpected !== true &&
+        params.trigger !== "memory";
+      let retryLimitFinalizationPending = false;
+      let retryLimitFallbackResult: EmbeddedPiRunResult | undefined;
       const postCompactionGuard = createPostCompactionLoopGuard(
         resolvedLoopDetectionConfig?.postCompactionGuard,
         { enabled: resolvedLoopDetectionConfig?.enabled !== false },
@@ -1107,10 +1116,10 @@ export async function runEmbeddedPiAgent(
             );
             const retryLimitDecision = resolveRunFailoverDecision({
               stage: "retry_limit",
-              fallbackConfigured,
+              fallbackConfigured: fallbackConfigured && params.isFinalFallbackCandidate !== true,
               failoverReason: lastRetryFailoverReason,
             });
-            return handleRetryLimitExhaustion({
+            const fallbackResult = handleRetryLimitExhaustion({
               message,
               decision: retryLimitDecision,
               provider,
@@ -1129,7 +1138,25 @@ export async function runEmbeddedPiAgent(
               replayInvalid: accumulatedReplayState.replayInvalid ? true : undefined,
               livenessState: "blocked",
             });
+            if (
+              retryLimitFinalizationEnabled &&
+              params.isFinalFallbackCandidate === true &&
+              !retryLimitFallbackResult
+            ) {
+              retryLimitFallbackResult = fallbackResult;
+              retryLimitFinalizationPending = true;
+              nextAttemptPromptOverride = RETRY_LIMIT_FINALIZATION_PROMPT;
+              suppressNextUserMessagePersistence = true;
+              log.warn(
+                `[run-retry-limit-finalization] sessionKey=${params.sessionKey ?? params.sessionId} ` +
+                  `provider=${provider}/${modelId} tools=disabled`,
+              );
+            } else {
+              return retryLimitFallbackResult ?? fallbackResult;
+            }
           }
+          const isRetryLimitFinalizationAttempt = retryLimitFinalizationPending;
+          retryLimitFinalizationPending = false;
           runLoopIterations += 1;
           // Magister fork: a retry attempt is starting — any suppressed or
           // withheld terminal from the previous attempt is owned by this retry
@@ -1144,15 +1171,17 @@ export async function runEmbeddedPiAgent(
             nextAttemptPromptOverride ??
             (provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt);
           nextAttemptPromptOverride = null;
-          const promptAdditions = [
-            ackExecutionFastPathInstruction,
-            planningOnlyRetryInstruction,
-            reasoningOnlyRetryInstruction,
-            emptyResponseRetryInstruction,
-            compactionContinuationRetryInstruction,
-          ].filter(
-            (value): value is string => typeof value === "string" && value.trim().length > 0,
-          );
+          const promptAdditions = isRetryLimitFinalizationAttempt
+            ? []
+            : [
+                ackExecutionFastPathInstruction,
+                planningOnlyRetryInstruction,
+                reasoningOnlyRetryInstruction,
+                emptyResponseRetryInstruction,
+                compactionContinuationRetryInstruction,
+              ].filter(
+                (value): value is string => typeof value === "string" && value.trim().length > 0,
+              );
           const prompt =
             promptAdditions.length > 0
               ? `${basePrompt}\n\n${promptAdditions.join("\n\n")}`
@@ -1198,134 +1227,156 @@ export async function runEmbeddedPiAgent(
           } else {
             parentAbortSignal?.addEventListener("abort", relayParentAbort, { once: true });
           }
-          const rawAttempt = await runEmbeddedAttemptWithBackend({
-            sessionId: activeSessionId,
-            sessionKey: resolvedSessionKey,
-            sandboxSessionKey: params.sandboxSessionKey,
-            trigger: params.trigger,
-            memoryFlushWritePath: params.memoryFlushWritePath,
-            messageChannel: params.messageChannel,
-            messageProvider: params.messageProvider,
-            agentAccountId: params.agentAccountId,
-            messageTo: params.messageTo,
-            messageThreadId: params.messageThreadId,
-            groupId: params.groupId,
-            groupChannel: params.groupChannel,
-            groupSpace: params.groupSpace,
-            memberRoleIds: params.memberRoleIds,
-            spawnedBy: params.spawnedBy,
-            isCanonicalWorkspace,
-            senderId: params.senderId,
-            senderName: params.senderName,
-            senderUsername: params.senderUsername,
-            senderE164: params.senderE164,
-            senderIsOwner: params.senderIsOwner,
-            currentChannelId: params.currentChannelId,
-            currentThreadTs: params.currentThreadTs,
-            currentMessageId: params.currentMessageId,
-            replyToMode: params.replyToMode,
-            hasRepliedRef: params.hasRepliedRef,
-            sessionFile: activeSessionFile,
-            workspaceDir: resolvedWorkspace,
-            agentDir,
-            config: params.config,
-            allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
-            contextEngine,
-            contextTokenBudget: ctxInfo.tokens,
-            skillsSnapshot: params.skillsSnapshot,
-            prompt,
-            transcriptPrompt: params.transcriptPrompt,
-            currentTurnContext: params.currentTurnContext,
-            images: params.images,
-            imageOrder: params.imageOrder,
-            clientTools: params.clientTools,
-            disableTools: params.disableTools,
-            provider,
-            modelId,
-            // Use the harness selected before model/auth setup for the actual
-            // attempt too. Otherwise plugin-owned transports can skip PI auth
-            // bootstrap but drift back to PI when the attempt is created.
-            agentHarnessId: agentHarness.id,
-            runtimePlan,
-            model: applyAuthHeaderOverride(
-              applyLocalNoAuthHeaderOverride(effectiveModel, apiKeyInfo),
-              // When runtime auth exchange produced a different credential
-              // (runtimeAuthState is set), the exchanged token lives in
-              // authStorage and the SDK will pick it up automatically.
-              // Skip header injection to avoid leaking the pre-exchange key.
-              runtimeAuthState ? null : apiKeyInfo,
-              params.config,
-            ),
-            resolvedApiKey: resolvedStreamApiKey,
-            authProfileId: lastProfileId,
-            authProfileIdSource: lockedProfileId ? "user" : "auto",
-            initialReplayState: accumulatedReplayState,
-            authStorage,
-            authProfileStore: authStore,
-            modelRegistry,
-            agentId: workspaceResolution.agentId,
-            legacyBeforeAgentStartResult,
-            thinkLevel,
-            onToolOutcome: observePostCompactionToolOutcome,
-            fastMode: params.fastMode,
-            verboseLevel: params.verboseLevel,
-            reasoningLevel: params.reasoningLevel,
-            toolResultFormat: resolvedToolResultFormat,
-            toolProgressDetail: params.toolProgressDetail,
-            execOverrides: params.execOverrides,
-            bashElevated: params.bashElevated,
-            timeoutMs: params.timeoutMs,
-            runId: params.runId,
-            abortSignal: attemptAbortController.signal,
-            replyOperation: params.replyOperation,
-            shouldEmitToolResult: params.shouldEmitToolResult,
-            shouldEmitToolOutput: params.shouldEmitToolOutput,
-            onPartialReply: params.onPartialReply,
-            onAssistantMessageStart: params.onAssistantMessageStart,
-            onBlockReply: params.onBlockReply,
-            onBlockReplyFlush: params.onBlockReplyFlush,
-            blockReplyBreak: params.blockReplyBreak,
-            blockReplyChunking: params.blockReplyChunking,
-            onReasoningStream: params.onReasoningStream,
-            onReasoningEnd: params.onReasoningEnd,
-            onToolResult: params.onToolResult,
-            onAgentEvent: params.onAgentEvent,
-            extraSystemPrompt: params.extraSystemPrompt,
-            sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
-            inputProvenance: params.inputProvenance,
-            streamParams: params.streamParams,
-            modelRun: params.modelRun,
-            promptMode: params.promptMode,
-            ownerNumbers: params.ownerNumbers,
-            enforceFinalTag: params.enforceFinalTag,
-            silentExpected: params.silentExpected,
-            bootstrapContextMode: params.bootstrapContextMode,
-            bootstrapContextRunKind: params.bootstrapContextRunKind,
-            jobId: params.jobId,
-            toolsAllow: params.toolsAllow,
-            ownerOnlyToolAllowlist: params.ownerOnlyToolAllowlist,
-            disableMessageTool: params.disableMessageTool,
-            forceMessageTool: params.forceMessageTool,
-            enableHeartbeatTool: params.enableHeartbeatTool,
-            forceHeartbeatTool: params.forceHeartbeatTool,
-            requireExplicitMessageTarget: params.requireExplicitMessageTarget,
-            internalEvents: params.internalEvents,
-            bootstrapPromptWarningSignaturesSeen,
-            bootstrapPromptWarningSignature:
-              bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1],
-            suppressNextUserMessagePersistence,
-            onUserMessagePersisted,
-          })
-            .catch((err: unknown): never => {
-              throw postCompactionAbortError ?? err;
-            })
-            .finally(() => {
+          let rawAttempt: EmbeddedRunAttemptForRunner;
+          try {
+            rawAttempt = await runEmbeddedAttemptWithBackend({
+              sessionId: activeSessionId,
+              sessionKey: resolvedSessionKey,
+              sandboxSessionKey: params.sandboxSessionKey,
+              trigger: params.trigger,
+              memoryFlushWritePath: params.memoryFlushWritePath,
+              messageChannel: params.messageChannel,
+              messageProvider: params.messageProvider,
+              agentAccountId: params.agentAccountId,
+              messageTo: params.messageTo,
+              messageThreadId: params.messageThreadId,
+              groupId: params.groupId,
+              groupChannel: params.groupChannel,
+              groupSpace: params.groupSpace,
+              memberRoleIds: params.memberRoleIds,
+              spawnedBy: params.spawnedBy,
+              isCanonicalWorkspace,
+              senderId: params.senderId,
+              senderName: params.senderName,
+              senderUsername: params.senderUsername,
+              senderE164: params.senderE164,
+              senderIsOwner: params.senderIsOwner,
+              currentChannelId: params.currentChannelId,
+              currentThreadTs: params.currentThreadTs,
+              currentMessageId: params.currentMessageId,
+              replyToMode: params.replyToMode,
+              hasRepliedRef: params.hasRepliedRef,
+              sessionFile: activeSessionFile,
+              workspaceDir: resolvedWorkspace,
+              agentDir,
+              config: params.config,
+              allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
+              contextEngine,
+              contextTokenBudget: ctxInfo.tokens,
+              skillsSnapshot: params.skillsSnapshot,
+              prompt,
+              transcriptPrompt: params.transcriptPrompt,
+              currentTurnContext: params.currentTurnContext,
+              images: params.images,
+              imageOrder: params.imageOrder,
+              clientTools: params.clientTools,
+              disableTools: params.disableTools || isRetryLimitFinalizationAttempt,
+              suppressAssistantDelivery: isRetryLimitFinalizationAttempt,
+              provider,
+              modelId,
+              // Use the harness selected before model/auth setup for the actual
+              // attempt too. Otherwise plugin-owned transports can skip PI auth
+              // bootstrap but drift back to PI when the attempt is created.
+              agentHarnessId: agentHarness.id,
+              runtimePlan,
+              model: applyAuthHeaderOverride(
+                applyLocalNoAuthHeaderOverride(effectiveModel, apiKeyInfo),
+                // When runtime auth exchange produced a different credential
+                // (runtimeAuthState is set), the exchanged token lives in
+                // authStorage and the SDK will pick it up automatically.
+                // Skip header injection to avoid leaking the pre-exchange key.
+                runtimeAuthState ? null : apiKeyInfo,
+                params.config,
+              ),
+              resolvedApiKey: resolvedStreamApiKey,
+              authProfileId: lastProfileId,
+              authProfileIdSource: lockedProfileId ? "user" : "auto",
+              initialReplayState: accumulatedReplayState,
+              authStorage,
+              authProfileStore: authStore,
+              modelRegistry,
+              agentId: workspaceResolution.agentId,
+              legacyBeforeAgentStartResult,
+              thinkLevel,
+              onToolOutcome: observePostCompactionToolOutcome,
+              fastMode: params.fastMode,
+              verboseLevel: params.verboseLevel,
+              reasoningLevel: params.reasoningLevel,
+              toolResultFormat: resolvedToolResultFormat,
+              toolProgressDetail: params.toolProgressDetail,
+              execOverrides: params.execOverrides,
+              bashElevated: params.bashElevated,
+              timeoutMs: params.timeoutMs,
+              runId: params.runId,
+              abortSignal: attemptAbortController.signal,
+              replyOperation: params.replyOperation,
+              shouldEmitToolResult: params.shouldEmitToolResult,
+              shouldEmitToolOutput: params.shouldEmitToolOutput,
+              onPartialReply: isRetryLimitFinalizationAttempt ? undefined : params.onPartialReply,
+              onAssistantMessageStart: isRetryLimitFinalizationAttempt
+                ? undefined
+                : params.onAssistantMessageStart,
+              onBlockReply: isRetryLimitFinalizationAttempt ? undefined : params.onBlockReply,
+              onBlockReplyFlush: isRetryLimitFinalizationAttempt
+                ? undefined
+                : params.onBlockReplyFlush,
+              blockReplyBreak: params.blockReplyBreak,
+              blockReplyChunking: params.blockReplyChunking,
+              onReasoningStream: isRetryLimitFinalizationAttempt
+                ? undefined
+                : params.onReasoningStream,
+              onReasoningEnd: isRetryLimitFinalizationAttempt ? undefined : params.onReasoningEnd,
+              onToolResult: isRetryLimitFinalizationAttempt ? undefined : params.onToolResult,
+              onAgentEvent: isRetryLimitFinalizationAttempt
+                ? async (event) => {
+                    if (event.stream !== "assistant" && event.stream !== "reasoning") {
+                      await params.onAgentEvent?.(event);
+                    }
+                  }
+                : params.onAgentEvent,
+              extraSystemPrompt: params.extraSystemPrompt,
+              sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+              inputProvenance: params.inputProvenance,
+              streamParams: params.streamParams,
+              modelRun: params.modelRun,
+              promptMode: params.promptMode,
+              ownerNumbers: params.ownerNumbers,
+              enforceFinalTag: params.enforceFinalTag,
+              silentExpected: params.silentExpected,
+              bootstrapContextMode: params.bootstrapContextMode,
+              bootstrapContextRunKind: params.bootstrapContextRunKind,
+              jobId: params.jobId,
+              toolsAllow: params.toolsAllow,
+              ownerOnlyToolAllowlist: params.ownerOnlyToolAllowlist,
+              disableMessageTool: params.disableMessageTool,
+              forceMessageTool: params.forceMessageTool,
+              enableHeartbeatTool: params.enableHeartbeatTool,
+              forceHeartbeatTool: params.forceHeartbeatTool,
+              requireExplicitMessageTarget: params.requireExplicitMessageTarget,
+              internalEvents: params.internalEvents,
+              bootstrapPromptWarningSignaturesSeen,
+              bootstrapPromptWarningSignature:
+                bootstrapPromptWarningSignaturesSeen[
+                  bootstrapPromptWarningSignaturesSeen.length - 1
+                ],
+              suppressNextUserMessagePersistence,
+              onUserMessagePersisted,
+            }).finally(() => {
               parentAbortSignal?.removeEventListener?.("abort", relayParentAbort);
               if (postCompactionAbortController === attemptAbortController) {
                 postCompactionAbortController = undefined;
               }
             });
+          } catch (err) {
+            if (isRetryLimitFinalizationAttempt && retryLimitFallbackResult) {
+              return retryLimitFallbackResult;
+            }
+            throw postCompactionAbortError ?? err;
+          }
           if (postCompactionAbortError) {
+            if (isRetryLimitFinalizationAttempt && retryLimitFallbackResult) {
+              return retryLimitFallbackResult;
+            }
             throw postCompactionAbortError;
           }
           const attempt = normalizeEmbeddedRunAttemptResult(rawAttempt);
@@ -1368,6 +1419,47 @@ export async function runEmbeddedPiAgent(
           // reflects current context usage, not accumulated tool-loop usage.
           lastRunPromptUsage = lastAssistantUsage ?? attemptUsage;
           lastTurnTotal = lastAssistantUsage?.total ?? attemptUsage?.total;
+          if (isRetryLimitFinalizationAttempt) {
+            const deterministicFallback = retryLimitFallbackResult;
+            if (!deterministicFallback) {
+              throw new Error("retry-limit finalization missing deterministic fallback");
+            }
+            const summary = attempt.assistantTexts.join("\n\n").trim();
+            if (
+              summary &&
+              !aborted &&
+              !promptError &&
+              !timedOut &&
+              !attempt.clientToolCalls &&
+              (attempt.toolMetas?.length ?? 0) === 0
+            ) {
+              return {
+                ...deterministicFallback,
+                payloads: [
+                  {
+                    text:
+                      "I couldn't complete the task before the retry limit. " +
+                      `Here is the verified partial result:\n\n${summary}`,
+                    isError: true,
+                  },
+                ],
+                meta: {
+                  ...deterministicFallback.meta,
+                  durationMs: Date.now() - started,
+                  agentMeta: buildErrorAgentMeta({
+                    sessionId: activeSessionId,
+                    provider,
+                    model: model.id,
+                    contextTokens: ctxInfo.tokens,
+                    usageAccumulator,
+                    lastRunPromptUsage,
+                    lastTurnTotal,
+                  }),
+                },
+              };
+            }
+            return deterministicFallback;
+          }
           // Idle-timeout cost-runaway breaker (#76293). Logic lives in the
           // pure helper below so it stays unit-testable; the run loop just
           // feeds it the latest attempt outcome and bails through the

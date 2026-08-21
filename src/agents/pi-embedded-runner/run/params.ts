@@ -195,6 +195,8 @@ export type RunEmbeddedPiAgentParams = {
    * where transient service pressure is often model-scoped.
    */
   allowTransientCooldownProbe?: boolean;
+  /** Whether this is the final candidate in the outer model-fallback run. */
+  isFinalFallbackCandidate?: boolean;
   suppressNextUserMessagePersistence?: boolean;
   onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
   /**
