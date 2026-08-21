@@ -2414,6 +2414,7 @@ export async function runEmbeddedAttempt(
           },
           enforceFinalTag: params.enforceFinalTag,
           silentExpected: params.silentExpected,
+          suppressAssistantDelivery: params.suppressAssistantDelivery,
           config: params.config,
           sessionKey: sandboxSessionKey,
           sessionId: params.sessionId,

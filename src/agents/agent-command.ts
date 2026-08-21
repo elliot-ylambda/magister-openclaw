@@ -980,6 +980,7 @@ async function agentCommandInternal(
           runId,
           agentDir,
           fallbacksOverride: effectiveFallbacksOverride,
+          includeCandidatePosition: true,
           onFallbackStep: (step) => {
             fallbackTrajectoryRecorder?.recordEvent("model.fallback_step", step);
           },
@@ -1027,6 +1028,7 @@ async function agentCommandInternal(
               sessionStore,
               storePath,
               allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
+              isFinalFallbackCandidate: runOptions?.isFinalFallbackCandidate,
               sessionHasHistory:
                 !isNewSession || (await attemptExecutionRuntime.sessionFileHasContent(sessionFile)),
               suppressPromptPersistenceOnRetry: isFallbackRetry && currentTurnUserMessagePersisted,

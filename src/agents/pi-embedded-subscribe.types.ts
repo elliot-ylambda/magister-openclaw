@@ -49,6 +49,8 @@ export type SubscribeEmbeddedPiSessionParams = {
   onBeforeLifecycleTerminal?: () => void | Promise<void>;
   enforceFinalTag?: boolean;
   silentExpected?: boolean;
+  /** Collect assistant text without emitting user-visible stream or block-reply events. */
+  suppressAssistantDelivery?: boolean;
   config?: OpenClawConfig;
   sessionKey?: string;
   /** Ephemeral session UUID — regenerated on /new and /reset. */

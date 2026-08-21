@@ -512,6 +512,29 @@ const ToolLoopPostCompactionGuardSchema = z
   .strict()
   .optional();
 
+const ToolRuntimeResilienceSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    failureWarningThreshold: z.number().int().positive().optional(),
+    failureBlockThreshold: z.number().int().positive().optional(),
+    denialBlockThreshold: z.number().int().positive().optional(),
+    browserLaunchLimit: z.number().int().positive().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const warningThreshold = value.failureWarningThreshold ?? 2;
+    const blockThreshold = value.failureBlockThreshold ?? 5;
+    if (warningThreshold >= blockThreshold) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["failureBlockThreshold"],
+        message:
+          "tools.loopDetection.runtimeResilience.failureWarningThreshold must be lower than failureBlockThreshold.",
+      });
+    }
+  })
+  .optional();
+
 const ToolLoopDetectionSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -522,6 +545,7 @@ const ToolLoopDetectionSchema = z
     globalCircuitBreakerThreshold: z.number().int().positive().optional(),
     detectors: ToolLoopDetectionDetectorSchema,
     postCompactionGuard: ToolLoopPostCompactionGuardSchema,
+    runtimeResilience: ToolRuntimeResilienceSchema,
   })
   .strict()
   .superRefine((value, ctx) => {

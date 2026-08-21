@@ -5,13 +5,14 @@ import type { JsonObject, ToolDescriptor } from "../tools/types.js";
 import type { PluginLoadOptions } from "./loader.js";
 import type { OpenClawPluginToolContext } from "./types.js";
 
-const PLUGIN_TOOL_DESCRIPTOR_CACHE_VERSION = 1;
+const PLUGIN_TOOL_DESCRIPTOR_CACHE_VERSION = 2;
 const PLUGIN_TOOL_DESCRIPTOR_CACHE_LIMIT = 256;
 
 export type CachedPluginToolDescriptor = {
   descriptor: ToolDescriptor;
   displaySummary?: string;
   ownerOnly?: boolean;
+  sideEffect?: AnyAgentTool["sideEffect"];
   optional: boolean;
 };
 
@@ -152,6 +153,7 @@ export function capturePluginToolDescriptor(params: {
   return {
     ...(params.tool.displaySummary ? { displaySummary: params.tool.displaySummary } : {}),
     ...(params.tool.ownerOnly === true ? { ownerOnly: true } : {}),
+    ...(params.tool.sideEffect ? { sideEffect: params.tool.sideEffect } : {}),
     optional: params.optional,
     descriptor: {
       name: params.tool.name,

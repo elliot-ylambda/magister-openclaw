@@ -326,6 +326,38 @@ const INSUFFICIENT_QUOTA_PAYLOAD =
   '{"type":"error","error":{"type":"insufficient_quota","message":"Your account has insufficient quota balance to run this request."}}';
 
 describe("runWithModelFallback", () => {
+  it("tells three-argument runners when they are on the final fallback candidate", async () => {
+    const seen: Array<{ provider: string; final?: boolean }> = [];
+    const result = await runWithModelFallback({
+      cfg: makeCfg({
+        agents: {
+          defaults: {
+            model: {
+              primary: "openai/primary",
+              fallbacks: ["anthropic/fallback"],
+            },
+          },
+        },
+      }),
+      provider: "openai",
+      model: "primary",
+      includeCandidatePosition: true,
+      run: async (provider, _model, options) => {
+        seen.push({ provider, final: options?.isFinalFallbackCandidate });
+        if (provider === "openai") {
+          throw new Error("primary failed");
+        }
+        return "ok";
+      },
+    });
+
+    expect(result.result).toBe("ok");
+    expect(seen).toEqual([
+      { provider: "openai", final: false },
+      { provider: "anthropic", final: true },
+    ]);
+  });
+
   it("skips auth store bootstrap when no auth profile sources exist", async () => {
     authSourceCheckMock.hasAnyAuthProfileStoreSource.mockReturnValue(false);
     const run = vi.fn().mockResolvedValueOnce("ok");

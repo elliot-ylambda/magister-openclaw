@@ -218,6 +218,147 @@ describe("before_tool_call loop detection behavior", () => {
     }
   });
 
+  it("appends recovery guidance to the second terminal failure and blocks the fifth attempt", async () => {
+    const execute = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "request failed" }],
+      details: { status: "failed", code: "upstream_failed" },
+    });
+    const tool = wrapToolWithBeforeToolCallHook(
+      { name: "failing_write", execute } as unknown as AnyAgentTool,
+      {
+        agentId: "main",
+        sessionKey: "main",
+        runId: "run-resilience",
+        loopDetection: {
+          enabled: false,
+          runtimeResilience: {
+            enabled: true,
+            failureWarningThreshold: 2,
+            failureBlockThreshold: 5,
+          },
+        },
+      },
+    );
+    const params = { target: "same-resource" };
+
+    const first = await tool.execute("failure-1", params, undefined, undefined);
+    const second = await tool.execute("failure-2", params, undefined, undefined);
+    await tool.execute("failure-3", params, undefined, undefined);
+    await tool.execute("failure-4", params, undefined, undefined);
+    const fifth = await tool.execute("failure-5", params, undefined, undefined);
+
+    expect(first.content).toHaveLength(1);
+    expect(second.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringContaining("RECOVERY REQUIRED") }),
+      ]),
+    );
+    expectToolLoopBlockedResult(fifth, "Blocked the 5th equivalent attempt");
+    expect(execute).toHaveBeenCalledTimes(4);
+  });
+
+  it("preserves a thrown tool error's type and metadata when adding recovery guidance", async () => {
+    class ProviderToolError extends Error {
+      readonly status = 503;
+
+      constructor() {
+        super("provider unavailable");
+        this.name = "ProviderToolError";
+      }
+    }
+    const execute = vi.fn().mockImplementation(async () => {
+      throw new ProviderToolError();
+    });
+    const tool = wrapToolWithBeforeToolCallHook(
+      { name: "failing_read", execute } as unknown as AnyAgentTool,
+      {
+        agentId: "main",
+        sessionKey: "main",
+        runId: "run-thrown-resilience",
+        loopDetection: {
+          runtimeResilience: {
+            enabled: true,
+            failureWarningThreshold: 2,
+            failureBlockThreshold: 5,
+          },
+        },
+      },
+    );
+
+    await expect(tool.execute("failure-1", {}, undefined, undefined)).rejects.toThrow(
+      "provider unavailable",
+    );
+    let secondError: unknown;
+    try {
+      await tool.execute("failure-2", {}, undefined, undefined);
+    } catch (error) {
+      secondError = error;
+    }
+
+    expect(secondError).toBeInstanceOf(ProviderToolError);
+    expect(secondError).toMatchObject({ status: 503 });
+    expect((secondError as Error).message).toContain("RECOVERY REQUIRED");
+  });
+
+  it("blocks later side effects after three distinct structured denials but keeps reads available", async () => {
+    const deniedExecute = vi.fn().mockImplementation(async (toolCallId: string) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ok: true,
+            operation_id: `op-${toolCallId}`,
+            status: { state: "failed", terminal: true },
+            side_effect: "external_write",
+            receipt: {
+              approval: { state: "denied", operation_id: `op-${toolCallId}` },
+            },
+            error: null,
+          }),
+        },
+      ],
+    }));
+    const context = {
+      agentId: "main",
+      sessionKey: "main",
+      runId: "run-denials",
+      loopDetection: {
+        enabled: false,
+        runtimeResilience: { enabled: true, denialBlockThreshold: 3 },
+      },
+    };
+    const writeTool = wrapToolWithBeforeToolCallHook(
+      { name: "magister_write", execute: deniedExecute } as unknown as AnyAgentTool,
+      { ...context, toolSideEffect: "external_write" },
+    );
+    const readExecute = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "read ok" }],
+      details: { status: "completed" },
+    });
+    const readTool = wrapToolWithBeforeToolCallHook(
+      { name: "magister_read", execute: readExecute } as unknown as AnyAgentTool,
+      { ...context, toolSideEffect: "none" },
+    );
+
+    await writeTool.execute("denial-1", { target: "one" }, undefined, undefined);
+    await writeTool.execute("denial-2", { target: "two" }, undefined, undefined);
+    const third = await writeTool.execute("denial-3", { target: "three" }, undefined, undefined);
+    const blocked = await writeTool.execute("denial-4", { target: "four" }, undefined, undefined);
+    const read = await readTool.execute("read-1", {}, undefined, undefined);
+
+    expect(third.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining("USER-DECISION CIRCUIT BREAKER"),
+        }),
+      ]),
+    );
+    expectToolLoopBlockedResult(blocked, "Side-effect circuit breaker is active");
+    expect(deniedExecute).toHaveBeenCalledTimes(3);
+    expect(read).toMatchObject({ content: [{ text: "read ok" }] });
+    expect(readExecute).toHaveBeenCalledOnce();
+  });
+
   it("does not block known poll loops when output progresses", async () => {
     const execute = vi.fn().mockImplementation(async (toolCallId: string) => {
       return {

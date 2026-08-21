@@ -599,7 +599,11 @@ export function handleMessageUpdate(
     ctx.state.lastStreamedAssistant = next;
     ctx.state.lastStreamedAssistantCleaned = cleanedText;
 
-    if (ctx.params.silentExpected || suppressDeterministicApprovalOutput) {
+    if (
+      ctx.params.silentExpected ||
+      ctx.params.suppressAssistantDelivery ||
+      suppressDeterministicApprovalOutput
+    ) {
       shouldEmit = false;
     }
 
@@ -629,6 +633,7 @@ export function handleMessageUpdate(
 
   if (
     !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
     !suppressDeterministicApprovalOutput &&
     ctx.params.onBlockReply &&
     ctx.blockChunking &&
@@ -639,6 +644,7 @@ export function handleMessageUpdate(
 
   if (
     !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
     !suppressDeterministicApprovalOutput &&
     evtType === "text_end" &&
     ctx.state.blockReplyBreak === "text_end"
@@ -728,6 +734,7 @@ export function handleMessageEnd(
 
   if (
     !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
     !suppressDeterministicApprovalOutput &&
     (cleanedText || hasMedia) &&
     (!ctx.state.emittedAssistantUpdate ||
@@ -769,6 +776,7 @@ export function handleMessageEnd(
   const onBlockReply = ctx.params.onBlockReply;
   const shouldEmitReasoning = Boolean(
     !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
     !suppressDeterministicApprovalOutput &&
     ctx.state.includeReasoning &&
     formattedReasoning &&
@@ -822,6 +830,7 @@ export function handleMessageEnd(
 
   if (
     !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
     !suppressDeterministicApprovalOutput &&
     text &&
     onBlockReply &&
@@ -883,16 +892,22 @@ export function handleMessageEnd(
     maybeEmitReasoning();
   }
   // Magister fork: drop streamReasoning gate so HTTP SSE clients see end-of-turn thinking.
-  if (!ctx.params.silentExpected && rawThinking) {
+  if (!ctx.params.silentExpected && !ctx.params.suppressAssistantDelivery && rawThinking) {
     ctx.emitReasoningStream(rawThinking);
   }
 
-  if (!ctx.params.silentExpected && ctx.state.blockReplyBreak === "text_end" && onBlockReply) {
+  if (
+    !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
+    ctx.state.blockReplyBreak === "text_end" &&
+    onBlockReply
+  ) {
     emitSplitResultAsBlockReply(ctx.consumeReplyDirectives("", { final: true }));
   }
 
   if (
     !ctx.params.silentExpected &&
+    !ctx.params.suppressAssistantDelivery &&
     ctx.state.blockReplyBreak === "message_end" &&
     ctx.params.onBlockReplyFlush
   ) {

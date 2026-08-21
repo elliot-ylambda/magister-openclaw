@@ -8342,6 +8342,35 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                           },
                           additionalProperties: false,
                         },
+                        runtimeResilience: {
+                          type: "object",
+                          properties: {
+                            enabled: {
+                              type: "boolean",
+                            },
+                            failureWarningThreshold: {
+                              type: "integer",
+                              exclusiveMinimum: 0,
+                              maximum: 9007199254740991,
+                            },
+                            failureBlockThreshold: {
+                              type: "integer",
+                              exclusiveMinimum: 0,
+                              maximum: 9007199254740991,
+                            },
+                            denialBlockThreshold: {
+                              type: "integer",
+                              exclusiveMinimum: 0,
+                              maximum: 9007199254740991,
+                            },
+                            browserLaunchLimit: {
+                              type: "integer",
+                              exclusiveMinimum: 0,
+                              maximum: 9007199254740991,
+                            },
+                          },
+                          additionalProperties: false,
+                        },
                       },
                       additionalProperties: false,
                     },
@@ -18280,6 +18309,50 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                 },
                 additionalProperties: false,
               },
+              runtimeResilience: {
+                type: "object",
+                properties: {
+                  enabled: {
+                    type: "boolean",
+                    title: "Runtime Resilience Guards",
+                    description:
+                      "Enable outcome-aware terminal-failure, denial, and browser-launch circuit breakers independently of legacy loop detectors (default: false).",
+                  },
+                  failureWarningThreshold: {
+                    type: "integer",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                    title: "Terminal Failure Guidance Threshold",
+                    description:
+                      "Equivalent terminal failures before recovery guidance is appended to the tool result (default: 2).",
+                  },
+                  failureBlockThreshold: {
+                    type: "integer",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                    title: "Terminal Failure Block Threshold",
+                    description:
+                      "Equivalent attempt number that is blocked before execution (default: 5).",
+                  },
+                  denialBlockThreshold: {
+                    type: "integer",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                    title: "Denial Circuit Breaker Threshold",
+                    description:
+                      "Distinct denied side-effect operations before later side-effect calls are blocked for the run (default: 3).",
+                  },
+                  browserLaunchLimit: {
+                    type: "integer",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                    title: "Browser Launch Limit",
+                    description:
+                      "Browser start/open calls allowed per run before later launches are blocked (default: 10).",
+                  },
+                },
+                additionalProperties: false,
+              },
             },
             additionalProperties: false,
           },
@@ -25800,6 +25873,31 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       label: "Post-compaction Loop Guard Window Size",
       help: "Number of post-compaction attempts during which the guard stays armed (default: 3). Lower values are stricter; higher values give the agent more attempts before abort.",
       tags: ["tools"],
+    },
+    "tools.loopDetection.runtimeResilience.enabled": {
+      label: "Runtime Resilience Guards",
+      help: "Enable outcome-aware terminal-failure, denial, and browser-launch circuit breakers independently of legacy loop detectors (default: false).",
+      tags: ["tools"],
+    },
+    "tools.loopDetection.runtimeResilience.failureWarningThreshold": {
+      label: "Terminal Failure Guidance Threshold",
+      help: "Equivalent terminal failures before recovery guidance is appended to the tool result (default: 2).",
+      tags: ["tools"],
+    },
+    "tools.loopDetection.runtimeResilience.failureBlockThreshold": {
+      label: "Terminal Failure Block Threshold",
+      help: "Equivalent attempt number that is blocked before execution (default: 5).",
+      tags: ["tools"],
+    },
+    "tools.loopDetection.runtimeResilience.denialBlockThreshold": {
+      label: "Denial Circuit Breaker Threshold",
+      help: "Distinct denied side-effect operations before later side-effect calls are blocked for the run (default: 3).",
+      tags: ["tools"],
+    },
+    "tools.loopDetection.runtimeResilience.browserLaunchLimit": {
+      label: "Browser Launch Limit",
+      help: "Browser start/open calls allowed per run before later launches are blocked (default: 10).",
+      tags: ["performance", "tools"],
     },
     "tools.loopDetection.detectors.genericRepeat": {
       label: "Tool-loop Generic Repeat Detection",

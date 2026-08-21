@@ -16,6 +16,7 @@ vi.mock("../config/runtime-snapshot.js", () => ({
 
 import {
   buildPluginToolDescriptorCacheKey,
+  capturePluginToolDescriptor,
   createPluginToolDescriptorConfigCacheKeyMemo,
   resetPluginToolDescriptorCache,
 } from "./tool-descriptor-cache.js";
@@ -135,5 +136,22 @@ describe("plugin tool descriptor cache keys", () => {
     });
 
     expect(firstKey).toBe(secondKey);
+  });
+
+  it("preserves trusted side-effect metadata in cached descriptors", () => {
+    const descriptor = capturePluginToolDescriptor({
+      pluginId: "demo",
+      optional: false,
+      tool: {
+        name: "demo_write",
+        label: "Demo write",
+        description: "Writes a demo value",
+        parameters: {} as never,
+        sideEffect: "external_write",
+        execute: vi.fn(),
+      },
+    });
+
+    expect(descriptor.sideEffect).toBe("external_write");
   });
 });

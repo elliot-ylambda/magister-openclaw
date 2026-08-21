@@ -1331,6 +1331,7 @@ export async function runAgentTurnWithFallback(params: {
         runId,
         sessionId: params.followupRun.run.sessionId,
         lane: runLane,
+        includeCandidatePosition: true,
         classifyResult: async ({ result, provider, model }) => {
           const classification = outcomePlan.classifyRunResult({
             result,
@@ -1544,6 +1545,7 @@ export async function runAgentTurnWithFallback(params: {
               const result = await runEmbeddedPiAgent({
                 ...embeddedContext,
                 allowGatewaySubagentBinding: true,
+                isFinalFallbackCandidate: runOptions?.isFinalFallbackCandidate,
                 trigger: params.isHeartbeat ? "heartbeat" : "user",
                 groupId: resolveGroupSessionKey(params.sessionCtx)?.id,
                 groupChannel:

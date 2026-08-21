@@ -132,6 +132,7 @@ export function createCronPromptExecutor(params: {
       lane: resolveCronAgentLane(params.lane),
       agentDir: params.agentDir,
       fallbacksOverride: cronFallbacksOverride,
+      includeCandidatePosition: true,
       run: async (providerOverride, modelOverride, runOptions) => {
         if (params.abortSignal?.aborted) {
           throw new Error(params.abortReason());
@@ -238,6 +239,7 @@ export function createCronPromptExecutor(params: {
           disableMessageTool: params.toolPolicy.disableMessageTool,
           forceMessageTool: params.toolPolicy.forceMessageTool,
           allowTransientCooldownProbe: runOptions?.allowTransientCooldownProbe,
+          isFinalFallbackCandidate: runOptions?.isFinalFallbackCandidate,
           abortSignal: params.abortSignal,
           onExecutionStarted: params.onExecutionStarted,
           bootstrapPromptWarningSignaturesSeen,

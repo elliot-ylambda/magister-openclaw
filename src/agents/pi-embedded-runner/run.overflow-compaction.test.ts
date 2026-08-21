@@ -860,6 +860,119 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     expect(result.payloads?.[0]?.isError).toBe(true);
   });
 
+  it("makes one final tool-free partial-summary attempt at the retry limit", async () => {
+    mockedRunEmbeddedAttempt.mockClear();
+    mockedCompactDirect.mockClear();
+    mockedPickFallbackThinkingLevel.mockReset();
+    mockedPickFallbackThinkingLevel.mockReturnValue("low");
+    mockedRunEmbeddedAttempt.mockImplementation(async () => {
+      if (mockedRunEmbeddedAttempt.mock.calls.length <= 32) {
+        return makeAttemptResult({
+          promptError: new Error("unsupported reasoning mode"),
+        });
+      }
+      return makeAttemptResult({
+        promptError: null,
+        assistantTexts: [
+          "Completed: prepared the draft. Verified: no provider send occurred. Remaining: send after recovery. Uncertain: provider availability.",
+        ],
+      });
+    });
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      isFinalFallbackCandidate: true,
+      config: {
+        tools: {
+          loopDetection: {
+            runtimeResilience: { enabled: true },
+          },
+        },
+      },
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(33);
+    expect(mockedRunEmbeddedAttempt).toHaveBeenNthCalledWith(
+      33,
+      expect.objectContaining({
+        disableTools: true,
+        suppressAssistantDelivery: true,
+        suppressNextUserMessagePersistence: true,
+        prompt: expect.stringContaining("final internal retry ceiling"),
+      }),
+    );
+    expect(result.meta.error?.kind).toBe("retry_limit");
+    expect(result.meta.livenessState).toBe("blocked");
+    expect(result.payloads?.[0]).toMatchObject({
+      isError: true,
+      text: expect.stringContaining("Here is the verified partial result"),
+    });
+    expect(result.payloads?.[0]?.text).toContain("prepared the draft");
+  });
+
+  it("keeps the deterministic retry-limit fallback when finalization is empty", async () => {
+    mockedRunEmbeddedAttempt.mockClear();
+    mockedCompactDirect.mockClear();
+    mockedPickFallbackThinkingLevel.mockReset();
+    mockedPickFallbackThinkingLevel.mockReturnValue("low");
+    mockedRunEmbeddedAttempt.mockImplementation(async () =>
+      mockedRunEmbeddedAttempt.mock.calls.length <= 32
+        ? makeAttemptResult({ promptError: new Error("unsupported reasoning mode") })
+        : makeAttemptResult({ promptError: null, assistantTexts: [] }),
+    );
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      isFinalFallbackCandidate: true,
+      config: {
+        tools: {
+          loopDetection: {
+            runtimeResilience: { enabled: true },
+          },
+        },
+      },
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(33);
+    expect(result.payloads?.[0]).toEqual({
+      text: "Request failed after repeated internal retries. Please try again, or use /new to start a fresh session.",
+      isError: true,
+    });
+    expect(result.meta.error?.kind).toBe("retry_limit");
+  });
+
+  it("keeps the deterministic retry-limit fallback when finalization throws", async () => {
+    mockedRunEmbeddedAttempt.mockClear();
+    mockedCompactDirect.mockClear();
+    mockedPickFallbackThinkingLevel.mockReset();
+    mockedPickFallbackThinkingLevel.mockReturnValue("low");
+    mockedRunEmbeddedAttempt.mockImplementation(async () => {
+      if (mockedRunEmbeddedAttempt.mock.calls.length <= 32) {
+        return makeAttemptResult({ promptError: new Error("unsupported reasoning mode") });
+      }
+      throw new Error("finalizer unavailable");
+    });
+
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      isFinalFallbackCandidate: true,
+      config: {
+        tools: {
+          loopDetection: {
+            runtimeResilience: { enabled: true },
+          },
+        },
+      },
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(33);
+    expect(result.payloads?.[0]).toEqual({
+      text: "Request failed after repeated internal retries. Please try again, or use /new to start a fresh session.",
+      isError: true,
+    });
+    expect(result.meta.error?.kind).toBe("retry_limit");
+  });
+
   it("preserves replay invalidation when retries exhaust after side effects", async () => {
     mockedRunEmbeddedAttempt.mockClear();
     mockedCompactDirect.mockClear();

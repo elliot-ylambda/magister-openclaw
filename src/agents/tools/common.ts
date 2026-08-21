@@ -16,6 +16,8 @@ export type AgentToolWithMeta<TParameters extends TSchema, TResult> = AgentTool<
 > & {
   ownerOnly?: boolean;
   displaySummary?: string;
+  /** Trusted runtime metadata; never derived from model-provided arguments. */
+  sideEffect?: "none" | "draft" | "internal_write" | "external_write" | "spend" | "delete";
 };
 
 type ErasedAgentToolExecute = {
@@ -32,6 +34,8 @@ export type AnyAgentTool = Omit<AgentTool<TSchema, unknown>, "execute"> &
   ErasedAgentToolExecute & {
     ownerOnly?: boolean;
     displaySummary?: string;
+    /** Trusted runtime metadata; never derived from model-provided arguments. */
+    sideEffect?: "none" | "draft" | "internal_write" | "external_write" | "spend" | "delete";
   };
 
 export function asToolParamsRecord(params: unknown): Record<string, unknown> {

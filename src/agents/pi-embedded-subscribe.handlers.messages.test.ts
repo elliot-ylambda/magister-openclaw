@@ -28,6 +28,7 @@ function createMessageUpdateContext(
     resetAssistantMessageState?: ReturnType<typeof vi.fn>;
     debug?: ReturnType<typeof vi.fn>;
     shouldEmitPartialReplies?: boolean;
+    suppressAssistantDelivery?: boolean;
     consumePartialReplyDirectives?: ReturnType<typeof vi.fn>;
     state?: Record<string, unknown>;
   } = {},
@@ -38,6 +39,7 @@ function createMessageUpdateContext(
       session: { id: "session-1" },
       ...(params.onAgentEvent ? { onAgentEvent: params.onAgentEvent } : {}),
       ...(params.onPartialReply ? { onPartialReply: params.onPartialReply } : {}),
+      ...(params.suppressAssistantDelivery ? { suppressAssistantDelivery: true } : {}),
     },
     state: {
       deterministicApprovalPromptPending: false,
@@ -83,6 +85,7 @@ function createMessageEndContext(
     consumeReplyDirectives?: ReturnType<typeof vi.fn>;
     warn?: ReturnType<typeof vi.fn>;
     builtinToolNames?: ReadonlySet<string>;
+    suppressAssistantDelivery?: boolean;
     state?: Record<string, unknown>;
   } = {},
 ) {
@@ -92,6 +95,7 @@ function createMessageEndContext(
       session: { id: "session-1" },
       ...(params.onAgentEvent ? { onAgentEvent: params.onAgentEvent } : {}),
       ...(params.onBlockReply ? { onBlockReply: params.onBlockReply } : { onBlockReply: vi.fn() }),
+      ...(params.suppressAssistantDelivery ? { suppressAssistantDelivery: true } : {}),
     },
     state: {
       assistantTexts: [],
@@ -262,6 +266,30 @@ describe("pending assistant reply directives", () => {
 });
 
 describe("handleMessageUpdate", () => {
+  it("collects finalizer text state without streaming assistant updates", () => {
+    const onAgentEvent = vi.fn();
+    const onPartialReply = vi.fn();
+    const ctx = createMessageUpdateContext({
+      onAgentEvent,
+      onPartialReply,
+      suppressAssistantDelivery: true,
+    });
+
+    handleMessageUpdate(
+      ctx,
+      createTextUpdateEvent({
+        type: "text_delta",
+        text: "Verified partial result",
+        signaturePhase: "final_answer",
+        partialPhase: "final_answer",
+      }),
+    );
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(onPartialReply).not.toHaveBeenCalled();
+    expect(ctx.state.lastStreamedAssistantCleaned).toBe("Verified partial result");
+  });
+
   it("treats phased textSignature item changes as assistant-message boundaries", () => {
     const flushBlockReplyBuffer = vi.fn();
     const resetAssistantMessageState = vi.fn();
@@ -612,6 +640,36 @@ describe("handleMessageUpdate", () => {
 });
 
 describe("handleMessageEnd", () => {
+  it("retains finalizer text without emitting a normal assistant reply", async () => {
+    const onAgentEvent = vi.fn();
+    const onBlockReply = vi.fn();
+    const emitBlockReply = vi.fn();
+    const finalizeAssistantTexts = vi.fn();
+    const ctx = createMessageEndContext({
+      onAgentEvent,
+      onBlockReply,
+      emitBlockReply,
+      finalizeAssistantTexts,
+      suppressAssistantDelivery: true,
+    });
+
+    await handleMessageEnd(ctx, {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Verified partial result" }],
+        usage: { input: 1, output: 3, total: 4 },
+      },
+    } as never);
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(onBlockReply).not.toHaveBeenCalled();
+    expect(emitBlockReply).not.toHaveBeenCalled();
+    expect(finalizeAssistantTexts).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Verified partial result" }),
+    );
+  });
+
   it("warns when assistant text only pretends to call a registered tool", () => {
     const warn = vi.fn();
     const ctx = createMessageEndContext({
