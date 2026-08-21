@@ -216,6 +216,12 @@ export const FIELD_LABELS: Record<string, string> = {
   "tools.loopDetection.criticalThreshold": "Tool-loop Critical Threshold",
   "tools.loopDetection.globalCircuitBreakerThreshold": "Tool-loop Global Circuit Breaker Threshold",
   "tools.loopDetection.postCompactionGuard.windowSize": "Post-compaction Loop Guard Window Size",
+  "tools.loopDetection.runtimeResilience.enabled": "Runtime Resilience Guards",
+  "tools.loopDetection.runtimeResilience.failureWarningThreshold":
+    "Terminal Failure Guidance Threshold",
+  "tools.loopDetection.runtimeResilience.failureBlockThreshold": "Terminal Failure Block Threshold",
+  "tools.loopDetection.runtimeResilience.denialBlockThreshold": "Denial Circuit Breaker Threshold",
+  "tools.loopDetection.runtimeResilience.browserLaunchLimit": "Browser Launch Limit",
   "tools.loopDetection.detectors.genericRepeat": "Tool-loop Generic Repeat Detection",
   "tools.loopDetection.detectors.knownPollNoProgress": "Tool-loop Poll No-Progress Detection",
   "tools.loopDetection.detectors.pingPong": "Tool-loop Ping-Pong Detection",

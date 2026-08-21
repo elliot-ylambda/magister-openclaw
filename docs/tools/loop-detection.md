@@ -76,6 +76,47 @@ Per-agent override (optional):
 For `exec`, no-progress checks compare stable command outcomes and ignore volatile runtime metadata such as duration, PID, session ID, and working directory.
 When a run id is available, recent tool-call history is evaluated only within that run so scheduled heartbeat cycles and fresh runs do not inherit stale loop counts from earlier runs.
 
+## Outcome-aware runtime resilience
+
+`runtimeResilience` is an independent, default-off guard. It can be enabled
+without enabling the broader legacy call-pattern detectors:
+
+```json5
+{
+  tools: {
+    loopDetection: {
+      runtimeResilience: {
+        enabled: true,
+        failureWarningThreshold: 2,
+        failureBlockThreshold: 5,
+        denialBlockThreshold: 3,
+        browserLaunchLimit: 10,
+      },
+    },
+  },
+}
+```
+
+- Equivalent terminal failures use structured, stable failure classes and
+  ignore volatile operation, approval, request, and idempotency identifiers.
+  The warning is appended to the tool result so the model sees it. The block
+  threshold prevents the next equivalent attempt before execution.
+- Pending approvals, retryable results, ordinary polling, and successful
+  recovery do not advance the terminal-failure breaker.
+- Distinct user-denied side-effect operations are deduplicated by operation id.
+  Once the threshold is reached, later trusted side-effect calls are blocked
+  for that run while read-only tools remain available.
+- Browser launch accounting includes only `start` and `open`; screenshots,
+  snapshots, clicks, and useful work in existing tabs do not spend the launch
+  allowance.
+- When resilience is enabled, retained call history is automatically large
+  enough for its configured thresholds even if `historySize` is lower.
+- When the final model candidate exhausts the runner's retry ceiling, the same
+  switch permits exactly one tools-disabled finalization attempt over the
+  existing transcript. It returns an error-marked partial summary, never a
+  success. Empty or failed finalization keeps the deterministic retry-limit
+  error.
+
 ## Recommended setup
 
 - For smaller models, start with `enabled: true`, defaults unchanged. Flagship models rarely need loop detection and can leave it disabled.

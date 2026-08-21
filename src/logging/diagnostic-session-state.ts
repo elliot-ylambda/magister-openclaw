@@ -20,6 +20,12 @@ export type ToolCallRecord = {
   runId?: string;
   resultHash?: string;
   unknownToolName?: string;
+  resilienceStrategyHash?: string;
+  terminalFailureHash?: string;
+  outcomeKind?: "success" | "failure" | "denial" | "pending" | "retryable" | "neutral";
+  deniedOperationId?: string;
+  sideEffecting?: boolean;
+  browserLaunch?: boolean;
   timestamp: number;
 };
 

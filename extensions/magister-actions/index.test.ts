@@ -148,6 +148,7 @@ describe("Magister action manifest contract", () => {
     expect(tool.description).toContain(
       "never re-request a denied action or pursue its outcome through another tool",
     );
+    expect(tool.sideEffect).toBe("external_write");
   });
 });
 

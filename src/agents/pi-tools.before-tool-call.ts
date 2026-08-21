@@ -47,6 +47,7 @@ export type HookContext = {
   runId?: string;
   trace?: DiagnosticTraceContext;
   loopDetection?: ToolLoopDetectionConfig;
+  toolSideEffect?: AnyAgentTool["sideEffect"];
   onToolOutcome?: ToolOutcomeObserver;
 };
 
@@ -380,13 +381,18 @@ async function recordLoopOutcome(args: {
   toolCallId?: string;
   result?: unknown;
   error?: unknown;
-}): Promise<void> {
+}): Promise<{ guidance?: string }> {
   if (!args.ctx?.sessionKey && !args.ctx?.sessionId) {
-    return;
+    return {};
   }
   let recordedOutcome: ToolOutcomeObservation | undefined;
+  let resilienceDecision: { guidance?: string } = {};
   try {
-    const { getDiagnosticSessionState, recordToolCallOutcome } = await loadBeforeToolCallRuntime();
+    const {
+      getDiagnosticSessionState,
+      recordToolCallOutcome,
+      resolveRuntimeResilienceOutcomeDecision,
+    } = await loadBeforeToolCallRuntime();
     const sessionState = getDiagnosticSessionState({
       sessionKey: args.ctx.sessionKey,
       sessionId: args.ctx.sessionId,
@@ -399,7 +405,16 @@ async function recordLoopOutcome(args: {
       error: args.error,
       config: args.ctx.loopDetection,
       ...(args.ctx.runId && { runId: args.ctx.runId }),
+      ...(args.ctx.toolSideEffect && { trustedSideEffect: args.ctx.toolSideEffect }),
     });
+    if (record) {
+      resilienceDecision = resolveRuntimeResilienceOutcomeDecision(
+        sessionState,
+        record,
+        args.ctx.loopDetection,
+        args.ctx.runId ? { runId: args.ctx.runId } : undefined,
+      );
+    }
     if (record?.resultHash && args.ctx.onToolOutcome) {
       recordedOutcome = {
         toolName: record.toolName,
@@ -413,6 +428,31 @@ async function recordLoopOutcome(args: {
   if (recordedOutcome) {
     args.ctx.onToolOutcome?.(recordedOutcome);
   }
+  return resilienceDecision;
+}
+
+function appendRuntimeGuidance(result: unknown, guidance?: string): unknown {
+  if (!guidance || !isPlainObject(result) || !Array.isArray(result.content)) {
+    return result;
+  }
+  return {
+    ...result,
+    content: [...result.content, { type: "text", text: guidance }],
+  };
+}
+
+function appendRuntimeGuidanceToError(error: unknown, guidance: string): Error {
+  if (error instanceof Error) {
+    try {
+      error.message = `${error.message}\n\n${guidance}`;
+      return error;
+    } catch {
+      // Frozen errors are rare; preserve the original as the fallback cause.
+    }
+  }
+  return new Error(`${error instanceof Error ? error.message : String(error)}\n\n${guidance}`, {
+    cause: error,
+  });
 }
 
 export async function runBeforeToolCallHook(args: {
@@ -427,21 +467,32 @@ export async function runBeforeToolCallHook(args: {
   const params = args.params;
 
   if (args.ctx?.sessionKey) {
-    const { getDiagnosticSessionState, logToolLoopAction, detectToolCallLoop, recordToolCall } =
-      await loadBeforeToolCallRuntime();
+    const {
+      getDiagnosticSessionState,
+      logToolLoopAction,
+      detectRuntimeResilienceBlock,
+      detectToolCallLoop,
+      recordToolCall,
+    } = await loadBeforeToolCallRuntime();
     const sessionState = getDiagnosticSessionState({
       sessionKey: args.ctx.sessionKey,
       sessionId: args.ctx.sessionId,
     });
 
-    const loopScope = args.ctx.runId ? { runId: args.ctx.runId } : undefined;
-    const loopResult = detectToolCallLoop(
+    const loopScope = {
+      ...(args.ctx.runId ? { runId: args.ctx.runId } : {}),
+      ...(args.ctx.toolSideEffect ? { sideEffect: args.ctx.toolSideEffect } : {}),
+    };
+    const resilienceResult = detectRuntimeResilienceBlock(
       sessionState,
       toolName,
       params,
       args.ctx.loopDetection,
       loopScope,
     );
+    const loopResult = resilienceResult.stuck
+      ? resilienceResult
+      : detectToolCallLoop(sessionState, toolName, params, args.ctx.loopDetection, loopScope);
 
     if (loopResult.stuck) {
       if (loopResult.level === "critical") {
@@ -703,7 +754,7 @@ export function wrapToolWithBeforeToolCallHook(
       try {
         const result = await execute(toolCallId, outcome.params, signal, onUpdate);
         const durationMs = Date.now() - startedAt;
-        await recordLoopOutcome({
+        const resilienceDecision = await recordLoopOutcome({
           ctx,
           toolName: normalizedToolName,
           toolParams: outcome.params,
@@ -715,7 +766,9 @@ export function wrapToolWithBeforeToolCallHook(
           ...eventBase,
           durationMs,
         });
-        return result;
+        return appendRuntimeGuidance(result, resilienceDecision.guidance) as Awaited<
+          ReturnType<NonNullable<AnyAgentTool["execute"]>>
+        >;
       } catch (err) {
         const cause = unwrapErrorCause(err);
         const errorCode = diagnosticHttpStatusCode(cause);
@@ -726,13 +779,16 @@ export function wrapToolWithBeforeToolCallHook(
           errorCategory: diagnosticErrorCategory(cause),
           ...(errorCode ? { errorCode } : {}),
         });
-        await recordLoopOutcome({
+        const resilienceDecision = await recordLoopOutcome({
           ctx,
           toolName: normalizedToolName,
           toolParams: outcome.params,
           toolCallId,
           error: err,
         });
+        if (resilienceDecision.guidance) {
+          throw appendRuntimeGuidanceToError(err, resilienceDecision.guidance);
+        }
         throw err;
       }
     },

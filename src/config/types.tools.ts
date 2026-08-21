@@ -171,6 +171,19 @@ export type ToolLoopPostCompactionGuardConfig = {
   windowSize?: number;
 };
 
+export type ToolRuntimeResilienceConfig = {
+  /** Enable outcome-aware failure and denial circuit breakers (default: false). */
+  enabled?: boolean;
+  /** Equivalent terminal failures before model-visible recovery guidance (default: 2). */
+  failureWarningThreshold?: number;
+  /** Equivalent attempt number blocked before execution (default: 5). */
+  failureBlockThreshold?: number;
+  /** Unique denied side-effect operations before later side effects are blocked (default: 3). */
+  denialBlockThreshold?: number;
+  /** Browser start/open attempts allowed in one run before later launches are blocked (default: 10). */
+  browserLaunchLimit?: number;
+};
+
 export type ToolLoopDetectionConfig = {
   /** Enable tool-loop protection (default: false). */
   enabled?: boolean;
@@ -188,6 +201,8 @@ export type ToolLoopDetectionConfig = {
   detectors?: ToolLoopDetectionDetectorConfig;
   /** Post-compaction loop guard: aborts when the agent repeats the same (tool, args, result) immediately after auto-compaction-retry. */
   postCompactionGuard?: ToolLoopPostCompactionGuardConfig;
+  /** Independent, outcome-aware runtime resilience guards. */
+  runtimeResilience?: ToolRuntimeResilienceConfig;
 };
 
 export type SessionsToolsVisibility = "self" | "tree" | "agent" | "all";

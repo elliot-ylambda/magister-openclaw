@@ -660,6 +660,16 @@ export const FIELD_HELP: Record<string, string> = {
   "tools.loopDetection.detectors.pingPong": "Enable ping-pong loop detection (default: true).",
   "tools.loopDetection.postCompactionGuard.windowSize":
     "Number of post-compaction attempts during which the guard stays armed (default: 3). Lower values are stricter; higher values give the agent more attempts before abort.",
+  "tools.loopDetection.runtimeResilience.enabled":
+    "Enable outcome-aware terminal-failure, denial, and browser-launch circuit breakers independently of legacy loop detectors (default: false).",
+  "tools.loopDetection.runtimeResilience.failureWarningThreshold":
+    "Equivalent terminal failures before recovery guidance is appended to the tool result (default: 2).",
+  "tools.loopDetection.runtimeResilience.failureBlockThreshold":
+    "Equivalent attempt number that is blocked before execution (default: 5).",
+  "tools.loopDetection.runtimeResilience.denialBlockThreshold":
+    "Distinct denied side-effect operations before later side-effect calls are blocked for the run (default: 3).",
+  "tools.loopDetection.runtimeResilience.browserLaunchLimit":
+    "Browser start/open calls allowed per run before later launches are blocked (default: 10).",
   "tools.exec.notifyOnExit":
     "When true (default), backgrounded exec sessions on exit and node exec lifecycle events enqueue a system event and request a heartbeat.",
   "tools.exec.notifyOnExitEmptySuccess":

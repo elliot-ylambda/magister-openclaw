@@ -845,6 +845,7 @@ export function createOpenClawCodingTools(options?: {
       runId: options?.runId,
       ...(options?.trace ? { trace: options.trace } : {}),
       loopDetection: resolveToolLoopDetectionConfig({ cfg: options?.config, agentId }),
+      ...(tool.sideEffect ? { toolSideEffect: tool.sideEffect } : {}),
       onToolOutcome: options?.onToolOutcome,
     }),
   );
