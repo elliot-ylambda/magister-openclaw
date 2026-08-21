@@ -121,6 +121,13 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
   }
 
   const emitLifecycleTerminal = () => {
+    if (ctx.params.suppressLifecycleTerminal === true) {
+      ctx.log.debug(
+        `suppressing internal attempt lifecycle terminal: runId=${ctx.params.runId} ` +
+          `(outer run owns final payload ordering)`,
+      );
+      return;
+    }
     const terminalMeta = {
       ...(ctx.state.terminalStopReason ? { stopReason: ctx.state.terminalStopReason } : {}),
       ...(ctx.state.yielded === true ? { yielded: true } : {}),

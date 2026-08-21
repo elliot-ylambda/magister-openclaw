@@ -51,6 +51,8 @@ export type SubscribeEmbeddedPiSessionParams = {
   silentExpected?: boolean;
   /** Collect assistant text without emitting user-visible stream or block-reply events. */
   suppressAssistantDelivery?: boolean;
+  /** Suppress this attempt's terminal event so the outer run can publish its final payload first. */
+  suppressLifecycleTerminal?: boolean;
   config?: OpenClawConfig;
   sessionKey?: string;
   /** Ephemeral session UUID — regenerated on /new and /reset. */

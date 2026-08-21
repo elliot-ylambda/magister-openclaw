@@ -1,5 +1,20 @@
 export type SessionStateValue = "idle" | "processing" | "waiting";
 
+export type RuntimeResilienceFailureState = {
+  failureHash: string;
+  count: number;
+  updatedAt: number;
+};
+
+export type RuntimeResilienceRunState = {
+  lastTouchedAt: number;
+  browserLaunchCallIds: Set<string>;
+  anonymousBrowserLaunchCount: number;
+  deniedOperationIds: Set<string>;
+  failuresByStrategy: Map<string, RuntimeResilienceFailureState>;
+  failureTrackingSaturated?: boolean;
+};
+
 export type SessionState = {
   sessionId?: string;
   sessionKey?: string;
@@ -9,6 +24,7 @@ export type SessionState = {
   state: SessionStateValue;
   queueDepth: number;
   toolCallHistory?: ToolCallRecord[];
+  runtimeResilienceRuns?: Map<string, RuntimeResilienceRunState>;
   toolLoopWarningBuckets?: Map<string, number>;
   commandPollCounts?: Map<string, { count: number; lastPollAt: number }>;
 };
@@ -26,6 +42,7 @@ export type ToolCallRecord = {
   deniedOperationId?: string;
   sideEffecting?: boolean;
   browserLaunch?: boolean;
+  resilienceDenialWasNew?: boolean;
   timestamp: number;
 };
 
@@ -118,6 +135,36 @@ function mergeSessionState(target: SessionState, source: SessionState): void {
       : Math.max(target.lastLongRunningWarnAgeMs, source.lastLongRunningWarnAgeMs);
   if (source.toolCallHistory?.length) {
     target.toolCallHistory = [...(target.toolCallHistory ?? []), ...source.toolCallHistory];
+  }
+  if (source.runtimeResilienceRuns?.size) {
+    const runs = (target.runtimeResilienceRuns ??= new Map());
+    for (const [runId, sourceRun] of source.runtimeResilienceRuns) {
+      const targetRun = runs.get(runId);
+      if (!targetRun) {
+        runs.set(runId, sourceRun);
+        continue;
+      }
+      targetRun.lastTouchedAt = Math.max(targetRun.lastTouchedAt, sourceRun.lastTouchedAt);
+      targetRun.anonymousBrowserLaunchCount += sourceRun.anonymousBrowserLaunchCount;
+      for (const callId of sourceRun.browserLaunchCallIds) {
+        targetRun.browserLaunchCallIds.add(callId);
+      }
+      for (const operationId of sourceRun.deniedOperationIds) {
+        targetRun.deniedOperationIds.add(operationId);
+      }
+      targetRun.failureTrackingSaturated ||= sourceRun.failureTrackingSaturated === true;
+      for (const [strategyHash, sourceFailure] of sourceRun.failuresByStrategy) {
+        const targetFailure = targetRun.failuresByStrategy.get(strategyHash);
+        if (!targetFailure || sourceFailure.updatedAt > targetFailure.updatedAt) {
+          targetRun.failuresByStrategy.set(strategyHash, sourceFailure);
+        } else if (
+          sourceFailure.updatedAt === targetFailure.updatedAt &&
+          sourceFailure.failureHash === targetFailure.failureHash
+        ) {
+          targetFailure.count = Math.max(targetFailure.count, sourceFailure.count);
+        }
+      }
+    }
   }
   if (source.toolLoopWarningBuckets?.size) {
     const buckets = (target.toolLoopWarningBuckets ??= new Map());

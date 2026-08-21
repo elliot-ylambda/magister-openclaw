@@ -98,14 +98,22 @@ function recordFailedCall(
   params: unknown,
   error: unknown,
   index: number,
+  options?: {
+    config?: ToolLoopDetectionConfig;
+    runId?: string;
+  },
 ): void {
   const toolCallId = `${toolName}-error-${index}`;
-  recordToolCall(state, toolName, params, toolCallId);
+  recordToolCall(state, toolName, params, toolCallId, options?.config, {
+    runId: options?.runId,
+  });
   recordToolCallOutcome(state, {
     toolName,
     toolParams: params,
     toolCallId,
     error,
+    config: options?.config,
+    runId: options?.runId,
   });
 }
 
@@ -1031,6 +1039,7 @@ describe("tool-loop-detection", () => {
         { command: "deploy" },
         new Error("network reset request=req-1"),
         1,
+        { config: runtimeResilienceConfig },
       );
       recordFailedCall(
         state,
@@ -1038,6 +1047,7 @@ describe("tool-loop-detection", () => {
         { command: "deploy" },
         new Error("network reset request=req-2"),
         2,
+        { config: runtimeResilienceConfig },
       );
 
       const latest = state.toolCallHistory?.at(-1);
@@ -1053,8 +1063,12 @@ describe("tool-loop-detection", () => {
       const state = createState();
       const first = Object.assign(new Error("provider failed"), { code: "EHOSTUNREACH" });
       const second = Object.assign(new Error("provider failed"), { code: "EACCES" });
-      recordFailedCall(state, "exec", { command: "deploy" }, first, 1);
-      recordFailedCall(state, "exec", { command: "deploy" }, second, 2);
+      recordFailedCall(state, "exec", { command: "deploy" }, first, 1, {
+        config: runtimeResilienceConfig,
+      });
+      recordFailedCall(state, "exec", { command: "deploy" }, second, 2, {
+        config: runtimeResilienceConfig,
+      });
 
       const result = detectRuntimeResilienceBlock(
         state,
@@ -1286,7 +1300,7 @@ describe("tool-loop-detection", () => {
       expect(allowed.stuck).toBe(false);
     });
 
-    it("retains enough history for resilience thresholds above the legacy window", () => {
+    it("keeps resilience counts outside the configured legacy history window", () => {
       const state = createState();
       const config: ToolLoopDetectionConfig = {
         historySize: 2,
@@ -1306,7 +1320,7 @@ describe("tool-loop-detection", () => {
         );
       }
 
-      expect(state.toolCallHistory).toHaveLength(4);
+      expect(state.toolCallHistory).toHaveLength(2);
       expect(
         detectRuntimeResilienceBlock(
           state,
@@ -1316,6 +1330,187 @@ describe("tool-loop-detection", () => {
           { runId: "browser-run" },
         ),
       ).toMatchObject({ stuck: true, detector: "browser_launch_limit", count: 4 });
+    });
+
+    it("does not age browser launches out when useful work exceeds the legacy window", () => {
+      const state = createState();
+      for (let launch = 0; launch < 10; launch += 1) {
+        recordToolCall(
+          state,
+          "browser",
+          { action: "open", targetUrl: `https://example.com/${launch}` },
+          `open-${launch}`,
+          runtimeResilienceConfig,
+          { runId: "browser-run" },
+        );
+        for (let snapshot = 0; snapshot < 3; snapshot += 1) {
+          recordToolCall(
+            state,
+            "browser",
+            { action: "snapshot", launch, snapshot },
+            `snapshot-${launch}-${snapshot}`,
+            runtimeResilienceConfig,
+            { runId: "browser-run" },
+          );
+        }
+      }
+
+      expect(state.toolCallHistory).toHaveLength(TOOL_CALL_HISTORY_SIZE);
+      expect(state.toolCallHistory?.filter((record) => record.browserLaunch)).toHaveLength(7);
+      expect(
+        detectRuntimeResilienceBlock(
+          state,
+          "browser",
+          { action: "open", targetUrl: "https://example.com/blocked" },
+          runtimeResilienceConfig,
+          { runId: "browser-run" },
+        ),
+      ).toMatchObject({ stuck: true, detector: "browser_launch_limit", count: 10 });
+    });
+
+    it("does not age denials out after later read-only work", () => {
+      const state = createState();
+      for (let index = 1; index <= 3; index += 1) {
+        recordMagisterOutcome({
+          state,
+          callIndex: index,
+          operationId: `op-${index}`,
+          result: magisterResult({
+            operationId: `op-${index}`,
+            state: "failed",
+            errorCode: null,
+            approvalState: "denied",
+          }),
+          toolParams: { target: `resource-${index}` },
+        });
+      }
+      for (let index = 0; index <= TOOL_CALL_HISTORY_SIZE; index += 1) {
+        recordToolCall(
+          state,
+          "magister_read",
+          { index },
+          `read-${index}`,
+          runtimeResilienceConfig,
+          { runId: "run-resilience", sideEffect: "none" },
+        );
+      }
+
+      expect(state.toolCallHistory?.some((record) => record.outcomeKind === "denial")).toBe(false);
+      expect(
+        detectRuntimeResilienceBlock(
+          state,
+          "magister_send_agent_email",
+          { to: ["new@example.com"] },
+          runtimeResilienceConfig,
+          { runId: "run-resilience", sideEffect: "external_write" },
+        ),
+      ).toMatchObject({ stuck: true, detector: "denial_circuit_breaker", count: 3 });
+    });
+
+    it("does not age equivalent failures out after unrelated tool work", () => {
+      const state = createState();
+      for (let index = 1; index <= 4; index += 1) {
+        recordMagisterOutcome({
+          state,
+          callIndex: index,
+          operationId: `op-${index}`,
+          result: magisterResult({ operationId: `op-${index}` }),
+        });
+      }
+      for (let index = 0; index <= TOOL_CALL_HISTORY_SIZE; index += 1) {
+        recordToolCall(
+          state,
+          "magister_read",
+          { index },
+          `read-${index}`,
+          runtimeResilienceConfig,
+          { runId: "run-resilience", sideEffect: "none" },
+        );
+      }
+
+      expect(state.toolCallHistory?.some((record) => record.outcomeKind === "failure")).toBe(false);
+      expect(
+        detectRuntimeResilienceBlock(
+          state,
+          "magister_send_agent_email",
+          { to: ["person@example.com"], subject: "Hello" },
+          runtimeResilienceConfig,
+          { runId: "run-resilience", sideEffect: "external_write" },
+        ),
+      ).toMatchObject({ stuck: true, detector: "terminal_failure", count: 4 });
+    });
+
+    it("keeps interleaved run counters isolated outside the legacy window", () => {
+      const state = createState();
+      for (let index = 0; index < 10; index += 1) {
+        for (const runId of ["run-a", "run-b"]) {
+          recordToolCall(
+            state,
+            "browser",
+            { action: "open", targetUrl: `https://example.com/${runId}/${index}` },
+            `${runId}-${index}`,
+            runtimeResilienceConfig,
+            { runId },
+          );
+          recordToolCall(
+            state,
+            "browser",
+            { action: "snapshot", index },
+            `${runId}-snapshot-${index}`,
+            runtimeResilienceConfig,
+            { runId },
+          );
+        }
+      }
+
+      for (const runId of ["run-a", "run-b"]) {
+        expect(
+          detectRuntimeResilienceBlock(
+            state,
+            "browser",
+            { action: "open", targetUrl: "https://example.com/blocked" },
+            runtimeResilienceConfig,
+            { runId },
+          ),
+        ).toMatchObject({ stuck: true, detector: "browser_launch_limit", count: 10 });
+      }
+      expect(
+        detectRuntimeResilienceBlock(
+          state,
+          "browser",
+          { action: "open", targetUrl: "https://example.com/new-run" },
+          runtimeResilienceConfig,
+          { runId: "run-c" },
+        ).stuck,
+      ).toBe(false);
+    });
+
+    it("fails closed when a run exhausts its bounded failure-strategy tracker", () => {
+      const state = createState();
+      for (let index = 0; index <= 256; index += 1) {
+        recordFailedCall(
+          state,
+          "exec",
+          { command: `strategy-${index}` },
+          Object.assign(new Error("failed"), { code: "EFAILED" }),
+          index,
+          { config: runtimeResilienceConfig, runId: "wide-run" },
+        );
+      }
+
+      expect(
+        detectRuntimeResilienceBlock(
+          state,
+          "exec",
+          { command: "one-more-strategy" },
+          runtimeResilienceConfig,
+          { runId: "wide-run" },
+        ),
+      ).toMatchObject({
+        stuck: true,
+        detector: "terminal_failure",
+        count: 256,
+      });
     });
   });
 

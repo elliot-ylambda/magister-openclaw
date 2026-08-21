@@ -861,6 +861,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
   });
 
   it("makes one final tool-free partial-summary attempt at the retry limit", async () => {
+    const publishedEvents: Array<{ stream: string; data: Record<string, unknown> }> = [];
     mockedRunEmbeddedAttempt.mockClear();
     mockedCompactDirect.mockClear();
     mockedPickFallbackThinkingLevel.mockReset();
@@ -882,6 +883,9 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     const result = await runEmbeddedPiAgent({
       ...overflowBaseRunParams,
       isFinalFallbackCandidate: true,
+      onAgentEvent: (event) => {
+        publishedEvents.push(event);
+      },
       config: {
         tools: {
           loopDetection: {
@@ -897,6 +901,7 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
       expect.objectContaining({
         disableTools: true,
         suppressAssistantDelivery: true,
+        suppressLifecycleTerminal: true,
         suppressNextUserMessagePersistence: true,
         prompt: expect.stringContaining("final internal retry ceiling"),
       }),
@@ -908,9 +913,29 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
       text: expect.stringContaining("Here is the verified partial result"),
     });
     expect(result.payloads?.[0]?.text).toContain("prepared the draft");
+    expect(publishedEvents).toEqual([
+      {
+        stream: "assistant",
+        data: {
+          phase: "final_answer",
+          text: result.payloads?.[0]?.text,
+          delta: result.payloads?.[0]?.text,
+        },
+      },
+      {
+        stream: "lifecycle",
+        data: {
+          phase: "error",
+          error: "Agent stopped after reaching its retry limit.",
+          livenessState: "blocked",
+          stopReason: "retry_limit",
+        },
+      },
+    ]);
   });
 
   it("keeps the deterministic retry-limit fallback when finalization is empty", async () => {
+    const publishedEvents: Array<{ stream: string; data: Record<string, unknown> }> = [];
     mockedRunEmbeddedAttempt.mockClear();
     mockedCompactDirect.mockClear();
     mockedPickFallbackThinkingLevel.mockReset();
@@ -924,6 +949,9 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     const result = await runEmbeddedPiAgent({
       ...overflowBaseRunParams,
       isFinalFallbackCandidate: true,
+      onAgentEvent: (event) => {
+        publishedEvents.push(event);
+      },
       config: {
         tools: {
           loopDetection: {
@@ -939,9 +967,12 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
       isError: true,
     });
     expect(result.meta.error?.kind).toBe("retry_limit");
+    expect(publishedEvents.map((event) => event.stream)).toEqual(["assistant", "lifecycle"]);
+    expect(publishedEvents[0]?.data.text).toBe(result.payloads?.[0]?.text);
   });
 
   it("keeps the deterministic retry-limit fallback when finalization throws", async () => {
+    const publishedEvents: Array<{ stream: string; data: Record<string, unknown> }> = [];
     mockedRunEmbeddedAttempt.mockClear();
     mockedCompactDirect.mockClear();
     mockedPickFallbackThinkingLevel.mockReset();
@@ -956,6 +987,9 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
     const result = await runEmbeddedPiAgent({
       ...overflowBaseRunParams,
       isFinalFallbackCandidate: true,
+      onAgentEvent: (event) => {
+        publishedEvents.push(event);
+      },
       config: {
         tools: {
           loopDetection: {
@@ -971,6 +1005,8 @@ describe("runEmbeddedPiAgent overflow compaction trigger routing", () => {
       isError: true,
     });
     expect(result.meta.error?.kind).toBe("retry_limit");
+    expect(publishedEvents.map((event) => event.stream)).toEqual(["assistant", "lifecycle"]);
+    expect(publishedEvents[0]?.data.text).toBe(result.payloads?.[0]?.text);
   });
 
   it("preserves replay invalidation when retries exhaust after side effects", async () => {
