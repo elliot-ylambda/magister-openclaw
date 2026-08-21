@@ -26,6 +26,8 @@ type EmbeddedRunAttemptBase = Omit<
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   /** Collect final text for an internal attempt without streaming it to the user. */
   suppressAssistantDelivery?: boolean;
+  /** Let the outer run publish this internal attempt's result before closing subscribers. */
+  suppressLifecycleTerminal?: boolean;
   initialReplayState?: EmbeddedRunReplayState;
   /** Pluggable context engine for ingest/assemble/compact lifecycle. */
   contextEngine?: ContextEngine;
