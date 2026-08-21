@@ -3429,7 +3429,7 @@
       "action": "submit_workflow_completion",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Submit final persisted evidence for the active plan-task workflow. Call exactly once after every step and asynchronous operation is terminal.",
+      "description": "Submit final persisted evidence for the active workflow, including standalone and plan-task runs. Call exactly once after every step and asynchronous operation is terminal.",
       "idempotency_enforcement": "handler",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -3611,6 +3611,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "1b29c4f49639656cb0aa2d96674d28794d92babe53f2cab141c5306beda24149",
+  "registry_revision": "54ea7f220cf6e2b1c29d670c495e05775696eb9081cb78177cac212759731e95",
   "schema_version": 1
 }
