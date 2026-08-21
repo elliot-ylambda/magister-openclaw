@@ -3020,6 +3020,28 @@
       "transport_modes": ["json_v1"]
     },
     {
+      "capability_id": "supadata",
+      "connection_slug": null,
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:supadata", "call_integration_api"],
+      "minimum_native_action_registry_revision": "1b29c4f49639656cb0aa2d96674d28794d92babe53f2cab141c5306beda24149",
+      "proxy_services": ["supadata"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-supadata",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
       "capability_id": "tabstack",
       "connection_slug": null,
       "delegation_safe_tools": [],
@@ -3763,6 +3785,6 @@
     }
   ],
   "native_action_registry_revision": "1b29c4f49639656cb0aa2d96674d28794d92babe53f2cab141c5306beda24149",
-  "registry_revision": "fcd624906d4bdb6f352ca8c137f65e0f0c6f7a0ea023ce7d699be66422e67818",
+  "registry_revision": "177f0cfb48623c947ff4d1965279dda2c5e8a0ab3ee86421922106aafbdd30df",
   "schema_version": 1
 }
