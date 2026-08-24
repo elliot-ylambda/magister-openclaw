@@ -2415,6 +2415,7 @@ export async function runEmbeddedAttempt(
           enforceFinalTag: params.enforceFinalTag,
           silentExpected: params.silentExpected,
           suppressAssistantDelivery: params.suppressAssistantDelivery,
+          suppressLifecycleTerminal: params.suppressLifecycleTerminal,
           config: params.config,
           sessionKey: sandboxSessionKey,
           sessionId: params.sessionId,

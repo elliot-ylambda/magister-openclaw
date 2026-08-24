@@ -811,6 +811,7 @@ export async function runEmbeddedPiAgent(
         params.trigger !== "memory";
       let retryLimitFinalizationPending = false;
       let retryLimitFallbackResult: EmbeddedPiRunResult | undefined;
+      let retryLimitFinalResultPublished = false;
       const postCompactionGuard = createPostCompactionLoopGuard(
         resolvedLoopDetectionConfig?.postCompactionGuard,
         { enabled: resolvedLoopDetectionConfig?.enabled !== false },
@@ -866,6 +867,68 @@ export async function runEmbeddedPiAgent(
       const continueFromCurrentTranscript = () => {
         nextAttemptPromptOverride = MID_TURN_PRECHECK_CONTINUATION_PROMPT;
         suppressNextUserMessagePersistence = true;
+      };
+      // Magister fork: the retry-limit finalizer is an internal, tool-free
+      // attempt. Its assistant stream and per-attempt terminal are suppressed
+      // while it runs so the completed summary can be published atomically:
+      // assistant payload first, then one terminal lifecycle error. Without
+      // this ordering HTTP adapters close on the inner terminal and discard
+      // the summary returned by the run.
+      const publishRetryLimitFinalResult = async (
+        result: EmbeddedPiRunResult,
+      ): Promise<EmbeddedPiRunResult> => {
+        if (retryLimitFinalResultPublished) {
+          return result;
+        }
+        retryLimitFinalResultPublished = true;
+        const text = (result.payloads ?? [])
+          .map((payload) => payload.text?.trim() ?? "")
+          .filter(Boolean)
+          .join("\n\n");
+        if (text) {
+          const assistantData = {
+            phase: "final_answer",
+            text,
+            delta: text,
+          };
+          emitAgentEvent({
+            runId: params.runId,
+            stream: "assistant",
+            data: assistantData,
+          });
+          try {
+            await params.onAgentEvent?.({
+              stream: "assistant",
+              data: assistantData,
+            });
+          } catch (err) {
+            log.warn(
+              `[run-retry-limit-finalization] assistant callback failed: ${formatErrorMessage(err)}`,
+            );
+          }
+        }
+        const lifecycleData = {
+          phase: "error",
+          error: "Agent stopped after reaching its retry limit.",
+          livenessState: result.meta.livenessState ?? "blocked",
+          stopReason: "retry_limit",
+        };
+        emitAgentEvent({
+          runId: params.runId,
+          stream: "lifecycle",
+          data: { ...lifecycleData, endedAt: Date.now() },
+        });
+        try {
+          await params.onAgentEvent?.({
+            stream: "lifecycle",
+            data: lifecycleData,
+          });
+        } catch (err) {
+          log.warn(
+            `[run-retry-limit-finalization] lifecycle callback failed: ${formatErrorMessage(err)}`,
+          );
+        }
+        return result;
       };
       // Magister fork: emit a terminal lifecycle error from the run loop so
       // subscribers (openai-http, agent.wait) observe a terminal state even
@@ -1272,6 +1335,7 @@ export async function runEmbeddedPiAgent(
               clientTools: params.clientTools,
               disableTools: params.disableTools || isRetryLimitFinalizationAttempt,
               suppressAssistantDelivery: isRetryLimitFinalizationAttempt,
+              suppressLifecycleTerminal: isRetryLimitFinalizationAttempt,
               provider,
               modelId,
               // Use the harness selected before model/auth setup for the actual
@@ -1369,13 +1433,13 @@ export async function runEmbeddedPiAgent(
             });
           } catch (err) {
             if (isRetryLimitFinalizationAttempt && retryLimitFallbackResult) {
-              return retryLimitFallbackResult;
+              return await publishRetryLimitFinalResult(retryLimitFallbackResult);
             }
             throw postCompactionAbortError ?? err;
           }
           if (postCompactionAbortError) {
             if (isRetryLimitFinalizationAttempt && retryLimitFallbackResult) {
-              return retryLimitFallbackResult;
+              return await publishRetryLimitFinalResult(retryLimitFallbackResult);
             }
             throw postCompactionAbortError;
           }
@@ -1433,7 +1497,7 @@ export async function runEmbeddedPiAgent(
               !attempt.clientToolCalls &&
               (attempt.toolMetas?.length ?? 0) === 0
             ) {
-              return {
+              return await publishRetryLimitFinalResult({
                 ...deterministicFallback,
                 payloads: [
                   {
@@ -1456,9 +1520,9 @@ export async function runEmbeddedPiAgent(
                     lastTurnTotal,
                   }),
                 },
-              };
+              });
             }
-            return deterministicFallback;
+            return await publishRetryLimitFinalResult(deterministicFallback);
           }
           // Idle-timeout cost-runaway breaker (#76293). Logic lives in the
           // pure helper below so it stays unit-testable; the run loop just

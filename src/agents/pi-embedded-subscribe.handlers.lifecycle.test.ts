@@ -20,6 +20,7 @@ function createContext(
     onBeforeLifecycleTerminal?: () => void | Promise<void>;
     onBlockReply?: ((payload: unknown) => void) | undefined;
     onBlockReplyFlush?: () => void | Promise<void>;
+    suppressLifecycleTerminal?: boolean;
   },
 ): EmbeddedPiSubscribeContext {
   const hasOnBlockReplyOverride = Boolean(overrides && "onBlockReply" in overrides);
@@ -32,6 +33,7 @@ function createContext(
       sessionKey: "agent:main:main",
       onAgentEvent: overrides?.onAgentEvent,
       onBeforeLifecycleTerminal: overrides?.onBeforeLifecycleTerminal,
+      suppressLifecycleTerminal: overrides?.suppressLifecycleTerminal,
       ...(onBlockReply ? { onBlockReply } : {}),
       onBlockReplyFlush: overrides?.onBlockReplyFlush,
     },
@@ -452,6 +454,29 @@ describe("handleAgentEnd", () => {
       stream: "lifecycle",
       data: { phase: "end" },
     });
+  });
+
+  it("runs terminal cleanup but lets the outer run own final lifecycle ordering", async () => {
+    const { emitAgentEvent } = await import("../infra/agent-events.js");
+    vi.mocked(emitAgentEvent).mockClear();
+    const onAgentEvent = vi.fn();
+    const onBeforeLifecycleTerminal = vi.fn();
+    const ctx = createContext(undefined, {
+      onAgentEvent,
+      onBeforeLifecycleTerminal,
+      suppressLifecycleTerminal: true,
+    });
+
+    await handleAgentEnd(ctx);
+
+    expect(onBeforeLifecycleTerminal).toHaveBeenCalledTimes(1);
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(vi.mocked(emitAgentEvent)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ stream: "lifecycle" }),
+    );
+    expect(ctx.log.debug).toHaveBeenCalledWith(
+      expect.stringContaining("outer run owns final payload ordering"),
+    );
   });
 
   it("runs an async before-lifecycle callback before the lifecycle end event", async () => {

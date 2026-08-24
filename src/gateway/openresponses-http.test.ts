@@ -798,6 +798,60 @@ describe("OpenResponses HTTP API (e2e)", () => {
     });
   });
 
+  it("retains the retry-limit summary when terminal error arrives before command return", async () => {
+    const port = enabledPort;
+    const summary =
+      "I couldn't complete the task before the retry limit. Here is the verified partial result.";
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({
+            runId,
+            stream: "assistant",
+            data: { phase: "final_answer", text: summary, delta: summary },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "lifecycle",
+            data: {
+              phase: "error",
+              error: "Agent stopped after reaching its retry limit.",
+              stopReason: "retry_limit",
+            },
+          });
+          setTimeout(() => resolve({ payloads: [{ text: summary, isError: true }], meta: {} }), 50);
+        })) as never,
+    );
+
+    const res = await postResponses(port, {
+      stream: true,
+      model: "openclaw",
+      input: "finish the task",
+    });
+    expect(res.status).toBe(200);
+
+    const events = parseSseEvents(await res.text());
+    const streamedText = events
+      .filter((event) => event.event === "response.output_text.delta")
+      .map((event) => (JSON.parse(event.data) as { delta?: string }).delta ?? "")
+      .join("");
+    expect(streamedText).toBe(summary);
+    const completedEvent = events.find((event) => event.event === "response.completed");
+    const completed = JSON.parse(completedEvent?.data ?? "{}") as {
+      response?: {
+        status?: string;
+        output?: Array<{ content?: Array<{ text?: string }> }>;
+      };
+    };
+    expect(completed.response?.status).toBe("failed");
+    expect(completed.response?.output?.[0]?.content?.[0]?.text).toBe(summary);
+    expect(completed.response?.output?.[0]?.content?.[0]?.text).not.toBe(
+      "No response from OpenClaw.",
+    );
+  });
+
   it("treats write-scoped HTTP callers as non-owner and admin-scoped callers as owner", async () => {
     const port = enabledPort;
 

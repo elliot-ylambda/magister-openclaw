@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import type { DiagnosticToolLoopEvent } from "../infra/diagnostic-events.js";
-import type { SessionState, ToolCallRecord } from "../logging/diagnostic-session-state.js";
+import type {
+  RuntimeResilienceRunState,
+  SessionState,
+  ToolCallRecord,
+} from "../logging/diagnostic-session-state.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { isPlainObject } from "../utils.js";
 
@@ -47,6 +51,10 @@ const DEFAULT_RUNTIME_RESILIENCE_CONFIG = {
   denialBlockThreshold: 3,
   browserLaunchLimit: 10,
 };
+
+const RUNTIME_RESILIENCE_LEGACY_RUN_KEY = "__session__";
+const MAX_RUNTIME_RESILIENCE_RUNS_PER_SESSION = 32;
+const MAX_RUNTIME_FAILURE_STRATEGIES_PER_RUN = 256;
 
 type ResolvedRuntimeResilienceConfig = typeof DEFAULT_RUNTIME_RESILIENCE_CONFIG;
 
@@ -103,6 +111,80 @@ function resolveRuntimeResilienceConfig(
 function normalizeRunId(runId?: string): string | undefined {
   const trimmed = runId?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function runtimeResilienceRunKey(runId?: string): string {
+  return normalizeRunId(runId) ?? RUNTIME_RESILIENCE_LEGACY_RUN_KEY;
+}
+
+function getRuntimeResilienceRunState(
+  state: SessionState,
+  runId: string | undefined,
+  options: { create: boolean },
+): RuntimeResilienceRunState | undefined {
+  const key = runtimeResilienceRunKey(runId);
+  const existing = state.runtimeResilienceRuns?.get(key);
+  if (existing) {
+    existing.lastTouchedAt = Date.now();
+    return existing;
+  }
+  if (!options.create) {
+    return undefined;
+  }
+  const runs = (state.runtimeResilienceRuns ??= new Map());
+  if (runs.size >= MAX_RUNTIME_RESILIENCE_RUNS_PER_SESSION) {
+    let oldestKey: string | undefined;
+    let oldestTouchedAt = Number.POSITIVE_INFINITY;
+    for (const [candidateKey, candidate] of runs) {
+      if (candidate.lastTouchedAt < oldestTouchedAt) {
+        oldestKey = candidateKey;
+        oldestTouchedAt = candidate.lastTouchedAt;
+      }
+    }
+    if (oldestKey) {
+      runs.delete(oldestKey);
+    }
+  }
+  const created: RuntimeResilienceRunState = {
+    lastTouchedAt: Date.now(),
+    browserLaunchCallIds: new Set(),
+    anonymousBrowserLaunchCount: 0,
+    deniedOperationIds: new Set(),
+    failuresByStrategy: new Map(),
+  };
+  runs.set(key, created);
+  return created;
+}
+
+function runtimeBrowserLaunchCount(runState: RuntimeResilienceRunState | undefined): number {
+  if (!runState) {
+    return 0;
+  }
+  return runState.browserLaunchCallIds.size + runState.anonymousBrowserLaunchCount;
+}
+
+function recordRuntimeBrowserLaunch(params: {
+  state: SessionState;
+  runId?: string;
+  toolCallId?: string;
+}): void {
+  const runState = getRuntimeResilienceRunState(params.state, params.runId, { create: true });
+  if (!runState) {
+    return;
+  }
+  if (params.toolCallId) {
+    runState.browserLaunchCallIds.add(params.toolCallId);
+    return;
+  }
+  runState.anonymousBrowserLaunchCount += 1;
+}
+
+function ensureRuntimeFailureStrategyCapacity(runState: RuntimeResilienceRunState): boolean {
+  if (runState.failuresByStrategy.size < MAX_RUNTIME_FAILURE_STRATEGIES_PER_RUN) {
+    return true;
+  }
+  runState.failureTrackingSaturated = true;
+  return false;
 }
 
 function selectHistoryForScope(
@@ -163,17 +245,7 @@ function resolveLoopDetectionConfig(config?: ToolLoopDetectionConfig): ResolvedL
 }
 
 function resolveToolCallHistorySize(config?: ToolLoopDetectionConfig): number {
-  const loopHistorySize = resolveLoopDetectionConfig(config).historySize;
-  const resilience = resolveRuntimeResilienceConfig(config);
-  if (!resilience.enabled) {
-    return loopHistorySize;
-  }
-  return Math.max(
-    loopHistorySize,
-    resilience.failureBlockThreshold,
-    resilience.denialBlockThreshold,
-    resilience.browserLaunchLimit,
-  );
+  return resolveLoopDetectionConfig(config).historySize;
 }
 
 /**
@@ -789,41 +861,43 @@ function canonicalPairKey(signatureA: string, signatureB: string): string {
   return [signatureA, signatureB].toSorted().join("|");
 }
 
-function equivalentFailureCount(
-  history: readonly ToolCallRecord[],
-  strategyHash: string,
-  failureHash?: string,
-): number {
-  let selectedFailureHash = failureHash;
-  let count = 0;
-  for (let i = history.length - 1; i >= 0; i -= 1) {
-    const record = history[i];
-    if (!record || record.resilienceStrategyHash !== strategyHash) {
-      continue;
-    }
-    if (record.outcomeKind === "success") {
-      break;
-    }
-    if (record.outcomeKind !== "failure" || !record.terminalFailureHash) {
-      continue;
-    }
-    selectedFailureHash ??= record.terminalFailureHash;
-    if (record.terminalFailureHash !== selectedFailureHash) {
-      break;
-    }
-    count += 1;
+function recordRuntimeResilienceOutcomeState(params: {
+  state: SessionState;
+  runId?: string;
+  record: ToolCallRecord;
+}): void {
+  const runState = getRuntimeResilienceRunState(params.state, params.runId, { create: true });
+  if (!runState) {
+    return;
   }
-  return count;
-}
+  const record = params.record;
+  const strategyHash = record.resilienceStrategyHash;
+  if (record.outcomeKind === "success" && strategyHash) {
+    runState.failuresByStrategy.delete(strategyHash);
+  } else if (record.outcomeKind === "failure" && strategyHash && record.terminalFailureHash) {
+    const existing = runState.failuresByStrategy.get(strategyHash);
+    if (existing) {
+      existing.count = existing.failureHash === record.terminalFailureHash ? existing.count + 1 : 1;
+      existing.failureHash = record.terminalFailureHash;
+      existing.updatedAt = Date.now();
+    } else if (ensureRuntimeFailureStrategyCapacity(runState)) {
+      runState.failuresByStrategy.set(strategyHash, {
+        failureHash: record.terminalFailureHash,
+        count: 1,
+        updatedAt: Date.now(),
+      });
+    }
+  }
 
-function uniqueDeniedOperationCount(history: readonly ToolCallRecord[]): number {
-  return new Set(
-    history.flatMap((record) =>
-      record.outcomeKind === "denial" && record.sideEffecting === true && record.deniedOperationId
-        ? [record.deniedOperationId]
-        : [],
-    ),
-  ).size;
+  if (
+    record.outcomeKind === "denial" &&
+    record.sideEffecting === true &&
+    record.deniedOperationId
+  ) {
+    const sizeBefore = runState.deniedOperationIds.size;
+    runState.deniedOperationIds.add(record.deniedOperationId);
+    record.resilienceDenialWasNew = runState.deniedOperationIds.size > sizeBefore;
+  }
 }
 
 /** Independent, default-off hosted-runtime safeguards based on completed outcomes. */
@@ -838,10 +912,10 @@ export function detectRuntimeResilienceBlock(
   if (!resolved.enabled) {
     return { stuck: false };
   }
-  const history = selectHistoryForScope(state.toolCallHistory ?? [], scope);
+  const runState = getRuntimeResilienceRunState(state, scope?.runId, { create: false });
 
   if (isBrowserLaunch(toolName, params)) {
-    const launchCount = history.filter((record) => record.browserLaunch === true).length;
+    const launchCount = runtimeBrowserLaunchCount(runState);
     if (launchCount >= resolved.browserLaunchLimit) {
       return {
         stuck: true,
@@ -856,7 +930,7 @@ export function detectRuntimeResilienceBlock(
     }
   }
 
-  const deniedCount = uniqueDeniedOperationCount(history);
+  const deniedCount = runState?.deniedOperationIds.size ?? 0;
   if (
     deniedCount >= resolved.denialBlockThreshold &&
     isSideEffectAttempt(toolName, params, scope)
@@ -874,7 +948,8 @@ export function detectRuntimeResilienceBlock(
   }
 
   const strategyHash = runtimeStrategyHash(toolName, params);
-  const failureCount = equivalentFailureCount(history, strategyHash);
+  const failureState = runState?.failuresByStrategy.get(strategyHash);
+  const failureCount = failureState?.count ?? 0;
   if (failureCount >= resolved.failureBlockThreshold - 1) {
     return {
       stuck: true,
@@ -885,6 +960,18 @@ export function detectRuntimeResilienceBlock(
         `Blocked the ${resolved.failureBlockThreshold}th equivalent attempt after ${failureCount} terminal failures with the same strategy. ` +
         "Do not retry or cosmetically rephrase this call. Change strategy or report the blocker and the evidence already gathered.",
       warningKey: `terminal-failure:${scope?.runId ?? "session"}:${strategyHash}`,
+    };
+  }
+  if (runState?.failureTrackingSaturated === true && !failureState) {
+    return {
+      stuck: true,
+      level: "critical",
+      detector: "terminal_failure",
+      count: MAX_RUNTIME_FAILURE_STRATEGIES_PER_RUN,
+      message:
+        "Blocked a new strategy after this run exhausted its terminal-failure tracking capacity. " +
+        "Stop broad retry exploration and report the blocker and evidence already gathered.",
+      warningKey: `terminal-failure-capacity:${scope?.runId ?? "session"}`,
     };
   }
 
@@ -901,13 +988,13 @@ export function resolveRuntimeResilienceOutcomeDecision(
   if (!resolved.enabled) {
     return {};
   }
-  const history = selectHistoryForScope(state.toolCallHistory ?? [], scope);
+  const runState = getRuntimeResilienceRunState(state, scope?.runId, { create: false });
   if (record.outcomeKind === "failure" && record.resilienceStrategyHash) {
-    const count = equivalentFailureCount(
-      history,
-      record.resilienceStrategyHash,
-      record.terminalFailureHash,
-    );
+    const failureState = runState?.failuresByStrategy.get(record.resilienceStrategyHash);
+    const count =
+      failureState && failureState.failureHash === record.terminalFailureHash
+        ? failureState.count
+        : 0;
     if (count === resolved.failureWarningThreshold) {
       return {
         guidance:
@@ -921,14 +1008,8 @@ export function resolveRuntimeResilienceOutcomeDecision(
     record.sideEffecting === true &&
     record.deniedOperationId
   ) {
-    const deniedCount = uniqueDeniedOperationCount(history);
-    const operationOccurrences = history.filter(
-      (candidate) =>
-        candidate.outcomeKind === "denial" &&
-        candidate.sideEffecting === true &&
-        candidate.deniedOperationId === record.deniedOperationId,
-    ).length;
-    if (deniedCount === resolved.denialBlockThreshold && operationOccurrences === 1) {
+    const deniedCount = runState?.deniedOperationIds.size ?? 0;
+    if (deniedCount === resolved.denialBlockThreshold && record.resilienceDenialWasNew === true) {
       return {
         guidance:
           `USER-DECISION CIRCUIT BREAKER: ${deniedCount} distinct side-effect operations were denied in this run. ` +
@@ -1110,6 +1191,10 @@ export function recordToolCall(
     timestamp: Date.now(),
   });
 
+  if (resolveRuntimeResilienceConfig(config).enabled && isBrowserLaunch(toolName, params)) {
+    recordRuntimeBrowserLaunch({ state, runId, toolCallId });
+  }
+
   if (state.toolCallHistory.length > historySize) {
     state.toolCallHistory.shift();
   }
@@ -1206,6 +1291,10 @@ export function recordToolCallOutcome(
     };
     state.toolCallHistory.push(record);
     recordedOutcome = record;
+  }
+
+  if (recordedOutcome && resolveRuntimeResilienceConfig(params.config).enabled) {
+    recordRuntimeResilienceOutcomeState({ state, runId, record: recordedOutcome });
   }
 
   if (state.toolCallHistory.length > historySize) {

@@ -1074,7 +1074,9 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
           },
         );
         clientReq.on("error", (err) => {
-          if (!settled) reject(err);
+          if (!settled) {
+            reject(err);
+          }
         });
         clientReq.setTimeout(2_000, () => {
           if (!settled) {
@@ -1351,6 +1353,56 @@ describe("OpenAI-compatible HTTP API (e2e)", () => {
     expect(text).toContain("Context overflow: recovery exhausted");
     const data = parseSseDataLines(text);
     expect(data[data.length - 1]).toBe("[DONE]");
+  });
+
+  it("streams the retry-limit summary before closing on its terminal error", async () => {
+    const port = enabledPort;
+    const summary =
+      "I couldn't complete the task before the retry limit. Here is the verified partial result.";
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({
+            runId,
+            stream: "assistant",
+            data: { phase: "final_answer", text: summary, delta: summary },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "lifecycle",
+            data: {
+              phase: "error",
+              error: "Agent stopped after reaching its retry limit.",
+              stopReason: "retry_limit",
+            },
+          });
+          setTimeout(() => resolve({ payloads: [{ text: summary, isError: true }], meta: {} }), 50);
+        })) as never,
+    );
+
+    const res = await postChatCompletions(port, {
+      stream: true,
+      model: "openclaw",
+      messages: [{ role: "user", content: "finish the task" }],
+    });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    const data = parseSseDataLines(text);
+    const streamedContent = data
+      .filter((entry) => entry !== "[DONE]")
+      .flatMap((entry) => {
+        const parsed = JSON.parse(entry) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        return parsed.choices?.[0]?.delta?.content ?? [];
+      })
+      .join("");
+    expect(streamedContent).toBe(summary);
+    expect(text.indexOf(summary)).toBeLessThan(text.indexOf("event: error"));
+    expect(data.at(-1)).toBe("[DONE]");
   });
 
   it(
