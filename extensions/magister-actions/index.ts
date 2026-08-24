@@ -21,7 +21,12 @@ import {
   searchCorpus,
 } from "./corpus-index.js";
 import { handleCorpusIngestion } from "./corpus.js";
-import { handleRepoCheckout, startCheckoutSweeper } from "./repo-checkout.js";
+import {
+  handleRepoCheckout,
+  handleRepoPrepare,
+  handleRepoPush,
+  startCheckoutSweeper,
+} from "./repo-checkout.js";
 
 const DEFAULT_ENDPOINT = "http://magister-gateway.internal:8081/api/agent/actions";
 const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
@@ -1302,6 +1307,20 @@ export default definePluginEntry({
       match: "exact",
       gatewayRuntimeScopeSurface: "write-default",
       handler: handleRepoCheckout,
+    });
+    api.registerHttpRoute({
+      path: "/v1/prepare-repo-commit",
+      auth: "gateway",
+      match: "exact",
+      gatewayRuntimeScopeSurface: "write-default",
+      handler: handleRepoPrepare,
+    });
+    api.registerHttpRoute({
+      path: "/v1/push-repo-branch",
+      auth: "gateway",
+      match: "exact",
+      gatewayRuntimeScopeSurface: "write-default",
+      handler: handleRepoPush,
     });
     // Checkouts expire on their own schedule, not only when another one is
     // requested — a machine that never checks out again must still not hold a

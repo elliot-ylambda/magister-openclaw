@@ -6,13 +6,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CHECKOUT_TTL_MS,
   CheckoutError,
+  COMMIT_AUTHOR_EMAIL,
   checkoutRepository,
   ensureRepoRoot,
   makeReadableByTools,
   measureTree,
+  parseBranch,
+  parsePushRequest,
   parseRef,
   parseRepo,
   parseRequest,
+  prepareRepoCommit,
+  pushRepoBranch,
   resolveRepoDir,
   scrubToken,
   sweepExpiredCheckouts,
@@ -58,6 +63,33 @@ function upstreamAndCheckout(): { origin: string; repoDir: string; root: string 
   return { origin, repoDir, root };
 }
 
+/** A *bare* upstream, which is what push needs: git refuses to update the
+ *  checked-out branch of a repository that has a working tree. */
+function bareUpstreamAndCheckout(): {
+  origin: string;
+  seed: string;
+  repoDir: string;
+  root: string;
+} {
+  const seed = scratch("magister-seed-");
+  git(seed, "init", "--quiet", "--initial-branch=main");
+  fs.writeFileSync(path.join(seed, "README.md"), "first\n");
+  git(seed, "add", "README.md");
+  git(seed, "commit", "--quiet", "-m", "first");
+
+  const origin = scratch("magister-bare-");
+  git(origin, "init", "--quiet", "--bare", "--initial-branch=main");
+  git(seed, "push", "--quiet", `file://${origin}`, "main");
+
+  const root = scratch("magister-repos-");
+  process.env.MAGISTER_REPO_ROOT = root;
+  const repoDir = path.join(root, "acme", "site");
+  fs.mkdirSync(path.dirname(repoDir), { recursive: true });
+  git(root, "clone", "--quiet", "--depth", "1", `file://${origin}`, repoDir);
+  git(repoDir, "checkout", "--quiet", "--detach", "HEAD");
+  return { origin, seed, repoDir, root };
+}
+
 function request(overrides: Record<string, unknown> = {}) {
   return {
     repo: "acme/site",
@@ -65,6 +97,28 @@ function request(overrides: Record<string, unknown> = {}) {
     token: "ghu_test_token",
     ...overrides,
   } as Parameters<typeof checkoutRepository>[0];
+}
+
+function prepare(overrides: Record<string, unknown> = {}) {
+  return {
+    repo: "acme/site",
+    message: "Update the readme",
+    ...overrides,
+  } as Parameters<typeof prepareRepoCommit>[0];
+}
+
+function push(overrides: Record<string, unknown> = {}) {
+  return {
+    repo: "acme/site",
+    branch: "magister/readme",
+    token: "ghu_test_token",
+    ...overrides,
+  } as Parameters<typeof pushRepoBranch>[0];
+}
+
+function remoteTip(origin: string, branch: string): string | null {
+  const listed = git(origin, "for-each-ref", "--format=%(objectname)", `refs/heads/${branch}`);
+  return listed.trim() || null;
 }
 
 describe("repository identity validation", () => {
@@ -330,5 +384,283 @@ describe("TTL sweeping", () => {
     const swept = await sweepExpiredCheckouts();
     expect(swept.removed).toContain(orphan);
     expect(fs.existsSync(orphan)).toBe(false);
+  });
+});
+
+describe("branch validation", () => {
+  it("accepts ordinary branch names", () => {
+    expect(parseBranch("magister/readme")).toBe("magister/readme");
+    expect(parseBranch("fix-1.2")).toBe("fix-1.2");
+  });
+
+  it("rejects a value that would nest inside refs/heads twice", () => {
+    // `refs/heads/x` becomes `refs/heads/refs/heads/x` when interpolated.
+    expect(() => parseBranch("refs/heads/main")).toThrow(CheckoutError);
+  });
+
+  it("rejects git's own reserved ref shapes and argv injection", () => {
+    for (const value of ["-x", "a..b", "feature.lock", "feature/.hidden", "a//b", ""]) {
+      expect(() => parseBranch(value)).toThrow(CheckoutError);
+    }
+  });
+
+  it("rejects a commit SHA, which is a ref but never a branch to create", () => {
+    expect(() => parseBranch("a".repeat(40))).toThrow(CheckoutError);
+  });
+});
+
+describe("push request parsing", () => {
+  it("requires a full SHA and a credential, and rejects unknown fields", () => {
+    expect(() => parsePushRequest({ ...push(), commit_sha: "abc123" })).toThrow(/40-character/);
+    expect(() =>
+      parsePushRequest({ repo: "acme/site", branch: "b", commit_sha: "a".repeat(40) }),
+    ).toThrow(/credential/);
+    expect(() => parsePushRequest({ ...push(), commit_sha: "a".repeat(40), extra: 1 })).toThrow(
+      /unknown fields/,
+    );
+  });
+
+  it("treats an absent expected_remote_sha as 'this branch must not exist'", () => {
+    const parsed = parsePushRequest({ ...push(), commit_sha: "a".repeat(40) });
+    expect(parsed.expected_remote_sha).toBeUndefined();
+  });
+});
+
+describe("preparing a commit", () => {
+  it("freezes the working tree and reports the change against the checkout base", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    const base = git(repoDir, "rev-parse", "HEAD").trim();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    fs.writeFileSync(path.join(repoDir, "NEW.md"), "new\n");
+
+    const receipt = await prepareRepoCommit(prepare());
+
+    expect(receipt.status).toBe("prepared");
+    expect(receipt.base_sha).toBe(base);
+    expect(receipt.commit_sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(receipt.commit_sha).not.toBe(base);
+    expect(receipt.changed_file_count).toBe(2);
+    expect(receipt.changed_files).toEqual(
+      expect.arrayContaining([
+        { path: "README.md", change: "modified" },
+        { path: "NEW.md", change: "added" },
+      ]),
+    );
+    expect(git(repoDir, "status", "--porcelain").trim()).toBe("");
+  });
+
+  it("attributes the commit to the agent, never to the connected user", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    await prepareRepoCommit(prepare());
+    expect(git(repoDir, "log", "-1", "--format=%ae").trim()).toBe(COMMIT_AUTHOR_EMAIL);
+    expect(git(repoDir, "log", "-1", "--format=%ce").trim()).toBe(COMMIT_AUTHOR_EMAIL);
+  });
+
+  it("refuses when the agent has not changed anything", async () => {
+    bareUpstreamAndCheckout();
+    await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("nothing to commit"),
+    });
+  });
+
+  it("repeats as already_prepared instead of creating an empty second commit", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    const first = await prepareRepoCommit(prepare());
+
+    const again = await prepareRepoCommit(prepare());
+
+    expect(again.status).toBe("already_prepared");
+    expect(again.commit_sha).toBe(first.commit_sha);
+    expect(again.changed_file_count).toBe(1);
+    expect(git(repoDir, "rev-list", "--count", "HEAD").trim()).toBe("2");
+  });
+
+  it("never commits what the repository's own .gitignore excludes", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, ".gitignore"), ".env\n");
+    fs.writeFileSync(path.join(repoDir, ".env"), "SECRET=1\n");
+
+    const receipt = await prepareRepoCommit(prepare());
+
+    expect(receipt.changed_files.map((entry) => entry.path)).toEqual([".gitignore"]);
+  });
+
+  it("stacks a second commit and still reports the whole change set", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    const base = git(repoDir, "rev-parse", "HEAD").trim();
+    fs.writeFileSync(path.join(repoDir, "one.md"), "1\n");
+    await prepareRepoCommit(prepare({ message: "first pass" }));
+    fs.writeFileSync(path.join(repoDir, "two.md"), "2\n");
+
+    const receipt = await prepareRepoCommit(prepare({ message: "second pass" }));
+
+    expect(receipt.base_sha).toBe(base);
+    expect(receipt.changed_file_count).toBe(2);
+  });
+
+  it("refuses to prepare a repository that is not checked out", async () => {
+    const root = scratch("magister-repos-");
+    process.env.MAGISTER_REPO_ROOT = root;
+    await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({ statusCode: 409 });
+  });
+});
+
+describe("refreshing a checkout that holds frozen work", () => {
+  it("refuses, because a prepared commit leaves the tree clean", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    const prepared = await prepareRepoCommit(prepare());
+
+    await expect(checkoutRepository(request())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("never pushed"),
+    });
+    expect(git(repoDir, "rev-parse", "HEAD").trim()).toBe(prepared.commit_sha);
+  });
+
+  it("discards it only on an explicit request, and resets the base", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    const base = git(repoDir, "rev-parse", "HEAD").trim();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    const prepared = await prepareRepoCommit(prepare());
+
+    await checkoutRepository(request({ discard_local_changes: true }));
+
+    expect(git(repoDir, "rev-parse", "HEAD").trim()).toBe(base);
+    await expect(pushRepoBranch(push({ commit_sha: prepared.commit_sha }))).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+});
+
+describe("pushing a branch", () => {
+  async function prepared(): Promise<{
+    origin: string;
+    seed: string;
+    repoDir: string;
+    sha: string;
+  }> {
+    const context = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(context.repoDir, "README.md"), "edited\n");
+    const receipt = await prepareRepoCommit(prepare());
+    return { ...context, sha: receipt.commit_sha };
+  }
+
+  it("creates the branch and verifies it by reading the remote back", async () => {
+    const { origin, sha } = await prepared();
+
+    const receipt = await pushRepoBranch(push({ commit_sha: sha }));
+
+    expect(receipt.status).toBe("pushed");
+    expect(receipt.verified_sha).toBe(sha);
+    expect(receipt.previous_remote_sha).toBeNull();
+    expect(receipt.default_branch).toBe("main");
+    expect(receipt.pull_request_url).toContain("compare/main...magister/readme");
+    expect(remoteTip(origin, "magister/readme")).toBe(sha);
+  });
+
+  it("reports already_pushed when the branch is already at that commit", async () => {
+    const { sha } = await prepared();
+    await pushRepoBranch(push({ commit_sha: sha }));
+
+    // The retry after a lost response must not trip the "branch exists" rule
+    // that its own successful push created.
+    const receipt = await pushRepoBranch(push({ commit_sha: sha }));
+
+    expect(receipt.status).toBe("already_pushed");
+    expect(receipt.verified_sha).toBe(sha);
+  });
+
+  it("refuses the default branch", async () => {
+    const { sha } = await prepared();
+    await expect(pushRepoBranch(push({ branch: "main", commit_sha: sha }))).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("default branch"),
+    });
+  });
+
+  it("refuses a branch this checkout did not create", async () => {
+    const { origin, sha } = await prepared();
+    git(origin, "branch", "human-work", "main");
+
+    await expect(
+      pushRepoBranch(push({ branch: "human-work", commit_sha: sha })),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("not created by this checkout"),
+    });
+    expect(remoteTip(origin, "human-work")).not.toBe(sha);
+  });
+
+  it("refuses an expected SHA for a branch that does not exist yet", async () => {
+    const { sha } = await prepared();
+    await expect(
+      pushRepoBranch(push({ commit_sha: sha, expected_remote_sha: "b".repeat(40) })),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("compares and swaps when updating a branch it already owns", async () => {
+    const { origin, repoDir, sha } = await prepared();
+    await pushRepoBranch(push({ commit_sha: sha }));
+    fs.writeFileSync(path.join(repoDir, "SECOND.md"), "second\n");
+    const next = await prepareRepoCommit(prepare({ message: "second pass" }));
+
+    await expect(
+      pushRepoBranch(push({ commit_sha: next.commit_sha, expected_remote_sha: "c".repeat(40) })),
+    ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("has moved") });
+
+    const receipt = await pushRepoBranch(
+      push({ commit_sha: next.commit_sha, expected_remote_sha: sha }),
+    );
+    expect(receipt.status).toBe("pushed");
+    expect(remoteTip(origin, "magister/readme")).toBe(next.commit_sha);
+  });
+
+  it("cannot overwrite work that landed on its own branch, because it never forces", async () => {
+    const { origin, seed, repoDir, sha } = await prepared();
+    await pushRepoBranch(push({ commit_sha: sha }));
+    // Someone else advances the branch to an unrelated commit.
+    fs.writeFileSync(path.join(seed, "THEIRS.md"), "theirs\n");
+    git(seed, "add", "THEIRS.md");
+    git(seed, "commit", "--quiet", "-m", "theirs");
+    git(seed, "push", "--quiet", "--force", `file://${origin}`, "main:magister/readme");
+    const theirs = remoteTip(origin, "magister/readme");
+
+    fs.writeFileSync(path.join(repoDir, "OURS.md"), "ours\n");
+    const next = await prepareRepoCommit(prepare({ message: "ours" }));
+
+    await expect(
+      pushRepoBranch(push({ commit_sha: next.commit_sha, expected_remote_sha: theirs ?? "" })),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(remoteTip(origin, "magister/readme")).toBe(theirs);
+  });
+
+  it("refuses a commit that was never frozen here", async () => {
+    await prepared();
+    await expect(pushRepoBranch(push({ commit_sha: "d".repeat(40) }))).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("not prepared"),
+    });
+  });
+});
+
+describe("prepare with an unusable base", () => {
+  it("refuses rather than reporting a commit as having changed nothing", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    // A marker whose base is not a commit: every `base..sha` diff would come
+    // back empty and the receipt would claim an empty change set.
+    fs.writeFileSync(
+      path.join(repoDir, ".git", "magister-checkout.json"),
+      JSON.stringify({ last_used_at: new Date().toISOString(), repo: "acme/site", base_sha: "" }),
+    );
+
+    await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("base commit"),
+    });
   });
 });
