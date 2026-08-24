@@ -3239,7 +3239,7 @@
       "action": "open_pull_request",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
-      "description": "Create a branch and pull request without merging the default branch.",
+      "description": "Open a pull request without merging the default branch, either from inline file changes or from a branch push_repo_branch already pushed.",
       "idempotency_enforcement": "registry",
       "idempotency_policy": "idempotency_key",
       "input_schema": {
@@ -3272,12 +3272,17 @@
             "type": "string"
           },
           "changes": {
+            "description": "Files to commit onto a new branch. Omit when head_branch names a branch that already carries the commits.",
             "items": {
               "$ref": "#/$defs/RepoChange"
             },
             "maxItems": 100,
-            "minItems": 1,
             "type": "array"
+          },
+          "head_branch": {
+            "description": "An existing branch to open the pull request from, as returned by push_repo_branch. Provide either this or changes, never both.",
+            "maxLength": 255,
+            "type": "string"
           },
           "idempotency_key": {
             "description": "Use one fresh key for each new logical operation. Reuse that key only when retrying the exact same arguments; a later user request, even with identical content, needs a new key.",
@@ -3298,7 +3303,7 @@
             "type": "string"
           }
         },
-        "required": ["idempotency_key", "repo", "title", "body", "changes"],
+        "required": ["idempotency_key", "repo", "title", "body"],
         "type": "object"
       },
       "retry_policy": "backoff",
@@ -3556,6 +3561,123 @@
       "tool_name": "magister_submit_workflow_completion"
     },
     {
+      "action": "checkout_repo",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Check out a connected GitHub repository onto this project's machine so its files can be read and edited directly instead of one REST call at a time. Shallow; refresh by calling again with the same repo.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "natural",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Arguments for a brokered read-only checkout onto the project machine.\n\nDeliberately not idempotency-keyed: a checkout is a converge-to-a-ref\noperation, so repeating it is the normal way to refresh and the receipt\nalready reports whether anything moved.",
+        "properties": {
+          "discard_local_changes": {
+            "default": false,
+            "description": "Only set this after the user has explicitly agreed to discard uncommitted changes in an existing checkout.",
+            "type": "boolean"
+          },
+          "ref": {
+            "description": "Branch, tag, or full 40-character commit SHA. Omit for the repository's default branch.",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository as owner/name, e.g. acme/website.",
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "type": "string"
+          }
+        },
+        "required": ["repo"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_checkout_repo"
+    },
+    {
+      "action": "prepare_repo_commit",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Freeze every edit made in a checked-out repository into one commit and return its SHA and the list of changed files. Nothing reaches GitHub; push the returned commit_sha to send it.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "natural",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Arguments for freezing the checkout's current edits into one commit.\n\nNaturally idempotent rather than idempotency-keyed: repeating the same\nprepare finds a clean tree and returns the commit it already made, so a\nretry after a lost response restates the freeze instead of creating an\nempty second commit.",
+        "properties": {
+          "message": {
+            "description": "Commit message describing the change, in the user's terms.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository as owner/name; it must already be checked out.",
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "type": "string"
+          }
+        },
+        "required": ["repo", "message"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_prepare_repo_commit"
+    },
+    {
+      "action": "push_repo_branch",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Push one prepared commit to a new or previously pushed branch and verify the branch by reading it back. Never force-pushes, never touches the default branch; merging stays a separate approved step.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "natural",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Arguments for pushing one prepared commit to a branch.\n\nNaturally idempotent: a repeat that finds the branch already at\n``commit_sha`` reports success rather than colliding with its own earlier\npush.",
+        "properties": {
+          "branch": {
+            "description": "Branch to create or update. Never the default branch. An existing branch is only writable if this project's checkout created it.",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "commit_sha": {
+            "description": "The commit_sha returned by prepare_repo_commit.",
+            "maxLength": 40,
+            "minLength": 40,
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "expected_remote_sha": {
+            "description": "The commit the branch is expected to be at right now. Omit to create a branch that does not exist yet; the push is refused if the branch has moved since it was read.",
+            "maxLength": 40,
+            "minLength": 40,
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository as owner/name; it must already be checked out.",
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "type": "string"
+          }
+        },
+        "required": ["repo", "branch", "commit_sha"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "draft",
+      "spend_limited": false,
+      "tool_name": "magister_push_repo_branch"
+    },
+    {
       "action": "promote_artifact",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -3611,6 +3733,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "54ea7f220cf6e2b1c29d670c495e05775696eb9081cb78177cac212759731e95",
+  "registry_revision": "6dc501c6b2bd9e77ca5752dc139bca2acaf3f872c1a4b73da7488e56573bb4f9",
   "schema_version": 1
 }
