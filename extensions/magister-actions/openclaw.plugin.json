@@ -85,6 +85,7 @@
       "magister_publish_content",
       "magister_merge_pull_request",
       "magister_submit_workflow_completion",
+      "magister_checkout_repo",
       "magister_promote_artifact"
     ]
   },

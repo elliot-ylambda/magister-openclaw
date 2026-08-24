@@ -3556,6 +3556,43 @@
       "tool_name": "magister_submit_workflow_completion"
     },
     {
+      "action": "checkout_repo",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Check out a connected GitHub repository onto this project's machine so its files can be read directly instead of one REST call at a time. Shallow and read-only; refresh by calling again with the same repo.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "natural",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Arguments for a brokered read-only checkout onto the project machine.\n\nDeliberately not idempotency-keyed: a checkout is a converge-to-a-ref\noperation, so repeating it is the normal way to refresh and the receipt\nalready reports whether anything moved.",
+        "properties": {
+          "discard_local_changes": {
+            "default": false,
+            "description": "Only set this after the user has explicitly agreed to discard uncommitted changes in an existing checkout.",
+            "type": "boolean"
+          },
+          "ref": {
+            "description": "Branch, tag, or full 40-character commit SHA. Omit for the repository's default branch.",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository as owner/name, e.g. acme/website.",
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "type": "string"
+          }
+        },
+        "required": ["repo"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_checkout_repo"
+    },
+    {
       "action": "promote_artifact",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -3611,6 +3648,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "1b29c4f49639656cb0aa2d96674d28794d92babe53f2cab141c5306beda24149",
+  "registry_revision": "84073fb6f4f25565c3fcc0ce1d6a293de860fae408261f1bcbc091a4645be12e",
   "schema_version": 1
 }
