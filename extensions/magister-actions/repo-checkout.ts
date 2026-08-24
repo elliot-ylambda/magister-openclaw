@@ -65,6 +65,9 @@ export const MAX_PREPARED_BYTES = 32 * 1024 * 1024;
 /** The receipt is read by the model on every call, so the manifest is bounded
  *  independently of how many files the commit is allowed to touch. */
 export const MAX_MANIFEST_ENTRIES = 100;
+/** Display only. A path is truncated when the *receipt* is built, never in the
+ *  manifest itself — the same values address real files on disk. */
+export const MAX_MANIFEST_PATH_CHARS = 200;
 export const MAX_MARKER_HISTORY = 20;
 
 /** Agent commits are attributed to the agent. Borrowing the connected user's
@@ -456,31 +459,31 @@ export async function makeReadableByTools(root: string): Promise<void> {
         continue;
       }
       if (entry.isDirectory()) {
+        // Deliberately falls through to the chmod below: a directory the
+        // sandbox cannot traverse hides every file under it.
         stack.push(full);
       } else if (!entry.isFile()) {
         continue;
       }
-      try {
-        const mode = (await fs.promises.lstat(full)).mode & 0o7777;
-        const ownerReadExecute = mode & 0o500;
-        await fs.promises.chmod(
-          full,
-          (mode & ~0o077) | (ownerReadExecute >> 3) | (ownerReadExecute >> 6),
-        );
-      } catch {
-        continue;
-      }
+      await mirrorReadBits(full);
     }
   }
+  await mirrorReadBits(root);
+}
+
+/** The rule itself, on one path: owner read/execute onto group and other, and
+ *  every non-owner write bit cleared. A path that vanished mid-walk needs no
+ *  permissions, so failure is silent by design. */
+async function mirrorReadBits(target: string): Promise<void> {
   try {
-    const mode = (await fs.promises.lstat(root)).mode & 0o7777;
+    const mode = (await fs.promises.lstat(target)).mode & 0o7777;
     const ownerReadExecute = mode & 0o500;
     await fs.promises.chmod(
-      root,
+      target,
       (mode & ~0o077) | (ownerReadExecute >> 3) | (ownerReadExecute >> 6),
     );
   } catch {
-    // A root that vanished mid-sweep needs no permissions.
+    // Nothing to widen.
   }
 }
 
@@ -600,6 +603,12 @@ async function listCheckouts(): Promise<string[]> {
   return found;
 }
 
+/** The `inFlight` key for a checkout directory — the same `owner/name` the
+ *  repository lock uses, so the sweeper and the lock agree on identity. */
+function repoKeyForDir(repoDir: string): string {
+  return path.relative(repoRoot(), repoDir).split(path.sep).join("/").toLowerCase();
+}
+
 /**
  * Delete checkouts past their TTL, plus staging trees orphaned by a crash.
  *
@@ -611,6 +620,13 @@ async function listCheckouts(): Promise<string[]> {
 export async function sweepExpiredCheckouts(now = Date.now()): Promise<{ removed: string[] }> {
   const removed: string[] = [];
   for (const repoDir of await listCheckouts()) {
+    // A checkout with an operation in flight is in use whatever its marker
+    // says. The marker is only stamped when an operation *finishes*, and the
+    // sweeper also runs on its own hourly timer, so without this a prepare or
+    // push against a day-old checkout can have its tree deleted underneath it.
+    if (inFlight.has(repoKeyForDir(repoDir))) {
+      continue;
+    }
     if ((await markerAge(repoDir, now)) > CHECKOUT_TTL_MS) {
       await fs.promises.rm(repoDir, { recursive: true, force: true });
       await pruneEmptyOwner(path.dirname(repoDir));
@@ -922,15 +938,24 @@ async function requireCheckout(repo: string): Promise<{ repoDir: string; full: s
   return { repoDir, full };
 }
 
-/** `git diff --name-status`, parsed into the manifest shape the receipt uses. */
+/** `git diff --name-status -z`, parsed into the manifest shape the receipt uses.
+ *
+ *  `-z` is load-bearing, not a style choice. In its default line format git
+ *  C-quotes any path holding a byte above 0x7f, so `docs/café.md` arrives as
+ *  `"docs/caf\303\251.md"` — and every consumer below joins that value onto
+ *  `repoDir`. A quoted path silently misses `lstat`, so the file escapes the
+ *  byte budget and never has its permissions mirrored; the model is shown a
+ *  name that does not exist. `-z` emits the raw bytes with no quoting at all,
+ *  and `--no-renames` keeps the stream a flat status/path alternation. */
 function parseNameStatus(stdout: string): ManifestEntry[] {
   const entries: ManifestEntry[] = [];
-  for (const line of stdout.split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    const [code = "", file = ""] = line.split("\t");
-    if (!file) {
+  const fields = stdout.split("\0");
+  // The stream is NUL-*terminated*, so the split leaves one empty tail field;
+  // requiring a full pair to remain drops it.
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const code = fields[index] ?? "";
+    const file = fields[index + 1] ?? "";
+    if (!code || !file) {
       continue;
     }
     const change: ManifestEntry["change"] = code.startsWith("A")
@@ -938,7 +963,7 @@ function parseNameStatus(stdout: string): ManifestEntry[] {
       : code.startsWith("D")
         ? "deleted"
         : "modified";
-    entries.push({ path: file.slice(0, 200), change });
+    entries.push({ path: file, change });
   }
   return entries;
 }
@@ -958,28 +983,36 @@ async function changedBytes(repoDir: string, entries: ManifestEntry[]): Promise<
   return total;
 }
 
-/** Mirror read bits onto the files this commit touched.
+/** Mirror read bits onto the files this commit touched, and onto every
+ *  directory leading to them.
  *
- *  A file the agent creates lands under the host's 0027 umask, which is fine
- *  for the sandbox's group but leaves the checkout internally inconsistent with
- *  the tree `makeReadableByTools` produced. Doing it per-manifest keeps the cost
- *  proportional to the change rather than to the repository. */
+ *  A file the agent creates lands under the host's 0027 umask, which leaves the
+ *  checkout internally inconsistent with the tree `makeReadableByTools`
+ *  produced. The ancestors matter as much as the file: a brand-new folder is
+ *  created at 0750, and the sandbox cannot traverse it — so widening only the
+ *  leaf would produce a correctly-permissioned file nobody can reach. Walking
+ *  the manifest rather than the repository keeps the cost proportional to the
+ *  change. */
 async function mirrorChangedFiles(repoDir: string, entries: ManifestEntry[]): Promise<void> {
+  const targets = new Set<string>();
   for (const entry of entries) {
     if (entry.change === "deleted") {
       continue;
     }
-    const target = path.join(repoDir, entry.path);
-    try {
-      const mode = (await fs.promises.lstat(target)).mode & 0o7777;
-      const ownerReadExecute = mode & 0o500;
-      await fs.promises.chmod(
-        target,
-        (mode & ~0o077) | (ownerReadExecute >> 3) | (ownerReadExecute >> 6),
-      );
-    } catch {
+    const segments = entry.path.split("/");
+    // git emits repo-relative paths and never a traversal segment; one that has
+    // one is not a path this checkout owns, so it is skipped rather than joined.
+    if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
       continue;
     }
+    let current = repoDir;
+    for (const segment of segments) {
+      current = path.join(current, segment);
+      targets.add(current);
+    }
+  }
+  for (const target of targets) {
+    await mirrorReadBits(target);
   }
 }
 
@@ -1006,7 +1039,7 @@ async function performPrepare(request: PrepareRequest): Promise<PrepareReceipt> 
     throw new CheckoutError(`Could not stage changes in ${full}.`, 422, truncate(staged.stderr));
   }
 
-  const pending = await runGit(["diff", "--cached", "--name-status", "--no-renames"], {
+  const pending = await runGit(["diff", "--cached", "--name-status", "--no-renames", "-z"], {
     cwd: repoDir,
     timeoutMs: GIT_COMMAND_TIMEOUT_MS,
   });
@@ -1077,6 +1110,21 @@ async function performPrepare(request: PrepareRequest): Promise<PrepareReceipt> 
   return await prepareReceipt(repoDir, full, "prepared", commit);
 }
 
+/** One manifest entry as the *receipt* shows it, shortened here and nowhere
+ *  else: `entries` keeps the real path, because that is what `changedBytes` and
+ *  `mirrorChangedFiles` address files on disk by. A deeply nested path is
+ *  unhelpful in full and unusable cut from the front, so it keeps the end —
+ *  the file name is the part that identifies it. */
+function forDisplay(entry: ManifestEntry): ManifestEntry {
+  return {
+    path:
+      entry.path.length > MAX_MANIFEST_PATH_CHARS
+        ? `…${entry.path.slice(-(MAX_MANIFEST_PATH_CHARS - 1))}`
+        : entry.path,
+    change: entry.change,
+  };
+}
+
 /** The manifest is always the whole change against the checkout's base, not the
  *  delta since the previous freeze — that is what a reviewer sees on the pull
  *  request, and therefore what the agent must be describing. */
@@ -1087,7 +1135,7 @@ async function prepareReceipt(
   commit: PreparedCommit,
 ): Promise<PrepareReceipt> {
   const diff = await runGit(
-    ["diff", "--name-status", "--no-renames", `${commit.base_sha}..${commit.sha}`],
+    ["diff", "--name-status", "--no-renames", "-z", `${commit.base_sha}..${commit.sha}`],
     { cwd: repoDir, timeoutMs: GIT_COMMAND_TIMEOUT_MS },
   );
   const entries = parseNameStatus(diff.stdout);
@@ -1099,7 +1147,7 @@ async function prepareReceipt(
     base_sha: commit.base_sha,
     message: commit.message,
     changed_file_count: entries.length,
-    changed_files: entries.slice(0, MAX_MANIFEST_ENTRIES),
+    changed_files: entries.slice(0, MAX_MANIFEST_ENTRIES).map(forDisplay),
     byte_size: await changedBytes(repoDir, entries),
   };
 }

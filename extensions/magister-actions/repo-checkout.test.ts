@@ -9,6 +9,7 @@ import {
   COMMIT_AUTHOR_EMAIL,
   checkoutRepository,
   ensureRepoRoot,
+  MAX_MANIFEST_PATH_CHARS,
   makeReadableByTools,
   measureTree,
   parseBranch,
@@ -372,6 +373,24 @@ describe("TTL sweeping", () => {
     expect(fs.existsSync(repoDir)).toBe(true);
   });
 
+  it("never deletes a checkout an operation is standing in", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    // The marker is only stamped when an operation *finishes*, and the sweeper
+    // also runs on its own hourly timer — so a prepare against a day-old
+    // checkout is exactly when the two collide.
+    const pending = prepareRepoCommit(prepare());
+
+    const swept = await sweepExpiredCheckouts(Date.now() + CHECKOUT_TTL_MS * 2);
+
+    expect(swept.removed).toEqual([]);
+    await expect(pending).resolves.toMatchObject({ status: "prepared" });
+    expect(fs.existsSync(repoDir)).toBe(true);
+    // Once it is idle again the same sweep does collect it.
+    const after = await sweepExpiredCheckouts(Date.now() + CHECKOUT_TTL_MS * 2);
+    expect(after.removed).toContain(repoDir);
+  });
+
   it("removes a staging tree orphaned by a crashed clone", async () => {
     const root = scratch("magister-repos-");
     process.env.MAGISTER_REPO_ROOT = root;
@@ -505,6 +524,64 @@ describe("preparing a commit", () => {
     const root = scratch("magister-repos-");
     process.env.MAGISTER_REPO_ROOT = root;
     await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({ statusCode: 409 });
+  });
+});
+
+describe("manifest paths address real files", () => {
+  it("keeps a non-ASCII path verbatim, sizes it, and widens its read bits", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    const name = "docs/café — ⚙.md";
+    fs.mkdirSync(path.join(repoDir, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, name), "hello\n");
+    fs.chmodSync(path.join(repoDir, "docs"), 0o750);
+    fs.chmodSync(path.join(repoDir, name), 0o640);
+
+    const receipt = await prepareRepoCommit(prepare());
+
+    // git's default --name-status would have reported this as
+    // `"docs/caf\303\251 ..."`, which matches no file on disk — so the byte
+    // budget would have skipped it and its permissions would never have moved.
+    expect(receipt.changed_files).toEqual([{ path: name, change: "added" }]);
+    expect(receipt.byte_size).toBe(6);
+    expect(fs.statSync(path.join(repoDir, name)).mode & 0o777).toBe(0o644);
+    expect(fs.statSync(path.join(repoDir, "docs")).mode & 0o777).toBe(0o755);
+  });
+
+  it("widens every directory it created, not only the file inside them", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.mkdirSync(path.join(repoDir, "src", "deep"), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, "src", "deep", "index.ts"), "export {};\n");
+    fs.chmodSync(path.join(repoDir, "src", "deep", "index.ts"), 0o640);
+    fs.chmodSync(path.join(repoDir, "src", "deep"), 0o750);
+    fs.chmodSync(path.join(repoDir, "src"), 0o750);
+
+    await prepareRepoCommit(prepare());
+
+    // A 0750 folder is untraversable for the sandbox user, so a correctly
+    // permissioned file inside one is still unreachable.
+    expect(fs.statSync(path.join(repoDir, "src")).mode & 0o777).toBe(0o755);
+    expect(fs.statSync(path.join(repoDir, "src", "deep")).mode & 0o777).toBe(0o755);
+    expect(fs.statSync(path.join(repoDir, "src", "deep", "index.ts")).mode & 0o777).toBe(0o644);
+  });
+
+  it("shortens a long path in the receipt only, keeping the file name", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    const segment = "d".repeat(60);
+    const relative = path.join(segment, segment, segment, segment, "config.json");
+    expect(relative.length).toBeGreaterThan(MAX_MANIFEST_PATH_CHARS);
+    fs.mkdirSync(path.dirname(path.join(repoDir, relative)), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, relative), "{}\n");
+    fs.chmodSync(path.join(repoDir, relative), 0o600);
+
+    const receipt = await prepareRepoCommit(prepare());
+
+    const entry = receipt.changed_files[0];
+    expect(entry?.path).toHaveLength(MAX_MANIFEST_PATH_CHARS);
+    expect(entry?.path.startsWith("…")).toBe(true);
+    expect(entry?.path.endsWith("config.json")).toBe(true);
+    // Cosmetic only: the whole path was still measured and widened.
+    expect(receipt.byte_size).toBe(3);
+    expect(fs.statSync(path.join(repoDir, relative)).mode & 0o777).toBe(0o644);
   });
 });
 
