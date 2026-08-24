@@ -7,6 +7,7 @@ import {
   CHECKOUT_TTL_MS,
   CheckoutError,
   checkoutRepository,
+  ensureRepoRoot,
   makeReadableByTools,
   measureTree,
   parseRef,
@@ -202,6 +203,31 @@ describe("sandbox readability", () => {
     await checkoutRepository(request());
     expect(fs.statSync(path.join(repoDir, "README.md")).mode & 0o004).toBe(0o004);
     expect(fs.statSync(repoDir).mode & 0o005).toBe(0o005);
+  });
+
+  it("creates a missing repository root traversable, not 0700", async () => {
+    // Every other mkdir here is `recursive: true` with mode 0700 for the
+    // staging directory, and a recursive mkdir applies its mode to every
+    // directory it creates. If one of those created the root, it would land
+    // 0700 and the tool user could not traverse it — the bind would mount
+    // fine and every checkout would be silently unreadable.
+    const root = path.join(scratch("magister-parent-"), "repos");
+    process.env.MAGISTER_REPO_ROOT = root;
+    expect(fs.existsSync(root)).toBe(false);
+
+    await ensureRepoRoot();
+
+    expect(fs.statSync(root).mode & 0o777).toBe(0o755);
+  });
+
+  it("repairs a root that is already too restrictive", async () => {
+    const root = scratch("magister-repos-");
+    process.env.MAGISTER_REPO_ROOT = root;
+    fs.chmodSync(root, 0o700);
+
+    await ensureRepoRoot();
+
+    expect(fs.statSync(root).mode & 0o777).toBe(0o755);
   });
 });
 

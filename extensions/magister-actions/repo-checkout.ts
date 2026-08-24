@@ -239,12 +239,30 @@ async function runGit(
   }
 }
 
+/**
+ * Create the repository root at 0755, explicitly.
+ *
+ * The entrypoint already does this at boot, so this is the belt to that
+ * braces — but it is load-bearing belt. Every other `mkdir` here is
+ * `recursive: true` with mode 0700 for the staging directory, and a recursive
+ * mkdir applies its mode to *every* directory it creates. On a machine where
+ * the root is missing, creating `.staging` first would leave `/data/repos`
+ * itself at 0700, and the tool user cannot traverse it — every checkout would
+ * mount correctly and be unreadable, with nothing pointing at the cause.
+ */
+export async function ensureRepoRoot(): Promise<string> {
+  const root = repoRoot();
+  await fs.promises.mkdir(root, { recursive: true, mode: 0o755 });
+  await fs.promises.chmod(root, 0o755);
+  return root;
+}
+
 const askpassByRoot = new Map<string, string>();
 
 /** The helper itself holds no secret — it echoes the child's own environment,
  *  which only the host user can read. Written once per repository root. */
 async function ensureAskpassHelper(): Promise<string> {
-  const root = repoRoot();
+  const root = await ensureRepoRoot();
   const cached = askpassByRoot.get(root);
   if (cached) {
     return cached;
@@ -568,6 +586,7 @@ async function performCheckout(request: CheckoutRequest): Promise<CheckoutReceip
   const ref = parseRef(request.ref);
   const repoDir = resolveRepoDir(owner, name);
 
+  await ensureRepoRoot();
   await sweepExpiredCheckouts();
 
   const existing = await fs.promises
