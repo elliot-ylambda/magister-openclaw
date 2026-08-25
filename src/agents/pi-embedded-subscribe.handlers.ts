@@ -125,7 +125,10 @@ export function createEmbeddedPiSessionEventHandler(ctx: EmbeddedPiSubscribeCont
         return;
       case "agent_end":
         scheduleEvent(evt, () => {
-          return handleAgentEnd(ctx);
+          // Magister fork: the event's `messages` tail carries the failure
+          // pi-agent-core synthesizes for a swallowed loop error — the only
+          // place it is visible (no message_end is emitted for it).
+          return handleAgentEnd(ctx, evt as { messages?: unknown });
         });
         return;
       default:

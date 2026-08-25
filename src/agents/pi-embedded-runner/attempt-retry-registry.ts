@@ -135,13 +135,30 @@ export function shouldSuppressTerminalOverflowError(
  * retry budget remains. Stores *terminalData* so the run loop can emit the
  * exact event the handler withheld.
  *
- * An attempt that produced visible text is never withheld: the run loop's
- * no-visible-answer retries cannot fire for it, so withholding would delay a
- * terminal that is already correct.
+ * An attempt that produced visible text is never withheld — UNLESS it ended
+ * mid tool chain. Pre-tool narration ("I'll pull the reports first…") is not
+ * an answer: when the model's last message was a tool call and no post-tool
+ * assistant message ever arrived, the attempt was cut (a swallowed loop
+ * error, a mid-attempt compaction, an SDK loop exit) and the run loop is the
+ * only thing that can finish it. On 2026-08-25 a Google Ads analysis with
+ * one narration sentence, 8 parallel reads, and a cut tool chain emitted
+ * `end` here, closed the HTTP stream after 60s, and the same-runId retry
+ * produced the real answer headless 24 minutes later; the user's next
+ * message then queued behind that invisible run and acted on an analysis
+ * they never saw. Over-withholding stays safe: the run loop flushes the
+ * withheld terminal in its finally when no retry starts.
  */
 export function withholdTerminalForPendingRetry(
   runId: string | undefined,
-  params: { hasAssistantVisibleText: boolean; terminalData: Record<string, unknown> },
+  params: {
+    hasAssistantVisibleText: boolean;
+    /**
+     * The attempt's last assistant message ended with `stopReason: "toolUse"`
+     * and its tool results never got a follow-up model message.
+     */
+    endedMidToolChain?: boolean;
+    terminalData: Record<string, unknown>;
+  },
 ): boolean {
   if (!runId) {
     return false;
@@ -150,10 +167,16 @@ export function withholdTerminalForPendingRetry(
   if (!entry) {
     return false;
   }
-  if (params.hasAssistantVisibleText) {
+  const endedMidToolChain = params.endedMidToolChain === true;
+  if (params.hasAssistantVisibleText && !endedMidToolChain) {
     return false;
   }
-  if (!entry.hasNoVisibleAnswerRetryBudget()) {
+  // A cut tool chain is retried by whichever budget the run loop ends up
+  // spending — the no-visible-answer continuations or, when the cut was a
+  // swallowed context-overflow error, the overflow compaction retry.
+  const hasBudget =
+    entry.hasNoVisibleAnswerRetryBudget() || (endedMidToolChain && entry.hasOverflowBudget());
+  if (!hasBudget) {
     return false;
   }
   entry.withheldTerminal = params.terminalData;
