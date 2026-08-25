@@ -3693,6 +3693,38 @@
       "tool_name": "magister_push_repo_branch"
     },
     {
+      "action": "install_repo_dependencies",
+      "approval_policy": "none",
+      "async_status_adapter": "synchronous",
+      "description": "Install a checked-out repository's dependencies from its lockfile (pnpm, npm, yarn, uv, or requirements.txt) so its tests and build can run. Answers 'installing' while the work continues; call again after poll_after_seconds until it reports installed.",
+      "idempotency_enforcement": "registry",
+      "idempotency_policy": "natural",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Arguments for installing a checkout's dependencies from its lockfile.\n\nNaturally idempotent: the same lockfile installs once and every later\ncall reports ``installed``; a call while an install runs reports\n``installing`` with a poll interval rather than starting a second one.",
+        "properties": {
+          "provider": {
+            "description": "Only needed when both GitHub and GitLab are connected and neither grant settles which host holds this path. Otherwise the Gateway resolves the host from the project's connections.",
+            "pattern": "^(github|gitlab)$",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository as owner/name (GitHub) or group/subgroup/project (GitLab); it must already be checked out.",
+            "maxLength": 300,
+            "minLength": 3,
+            "pattern": "^[^\\s/]+(?:/[^\\s/]+){1,5}$",
+            "type": "string"
+          }
+        },
+        "required": ["repo"],
+        "type": "object"
+      },
+      "retry_policy": "backoff",
+      "side_effect": "internal_write",
+      "spend_limited": false,
+      "tool_name": "magister_install_repo_dependencies"
+    },
+    {
       "action": "promote_artifact",
       "approval_policy": "none",
       "async_status_adapter": "synchronous",
@@ -3748,6 +3780,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "ccbe163315b55a59c9665838f51bb55bd431d378b679a88e6fdc6e5b1eec2808",
+  "registry_revision": "30791bc944d1ccf5f4cca926f93c52a3e59ca3f3d95b53f210bb2ca03abc5d76",
   "schema_version": 1
 }

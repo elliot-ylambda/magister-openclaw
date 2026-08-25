@@ -88,6 +88,7 @@
       "magister_checkout_repo",
       "magister_prepare_repo_commit",
       "magister_push_repo_branch",
+      "magister_install_repo_dependencies",
       "magister_promote_artifact"
     ]
   },

@@ -23,6 +23,7 @@ import {
 import { handleCorpusIngestion } from "./corpus.js";
 import {
   handleRepoCheckout,
+  handleRepoInstall,
   handleRepoPrepare,
   handleRepoPush,
   startCheckoutSweeper,
@@ -33,6 +34,11 @@ const BROKER_ENDPOINT = "http://127.0.0.1:18796/api/agent/actions";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const ARTIFACT_PROMOTION_TIMEOUT_MS = 90_000;
 const SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS = 300_000;
+/** A clone or a push moves a packfile: the machine host allows 120s for the
+ *  transfer and the Gateway waits 150s for the host, so this hop must sit
+ *  above both or a large repository's checkout times out here while the
+ *  clone completes unobserved behind it. */
+const REPO_TRANSFER_TIMEOUT_MS = 180_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_WORKSPACE_DIR = "/data/.openclaw/workspace";
 const MAX_COMPLETION_ARTIFACT_BYTES = 16 * 1024 * 1024;
@@ -321,6 +327,9 @@ export function actionTimeoutMs(action: string, configuredTimeoutMs: number): nu
   }
   if (action === "create_social_draft") {
     return Math.max(configuredTimeoutMs, SOCIAL_MEDIA_UPLOAD_TIMEOUT_MS);
+  }
+  if (action === "checkout_repo" || action === "push_repo_branch") {
+    return Math.max(configuredTimeoutMs, REPO_TRANSFER_TIMEOUT_MS);
   }
   return configuredTimeoutMs;
 }
@@ -1321,6 +1330,13 @@ export default definePluginEntry({
       match: "exact",
       gatewayRuntimeScopeSurface: "write-default",
       handler: handleRepoPush,
+    });
+    api.registerHttpRoute({
+      path: "/v1/install-repo-dependencies",
+      auth: "gateway",
+      match: "exact",
+      gatewayRuntimeScopeSurface: "write-default",
+      handler: handleRepoInstall,
     });
     // Checkouts expire on their own schedule, not only when another one is
     // requested — a machine that never checks out again must still not hold a
