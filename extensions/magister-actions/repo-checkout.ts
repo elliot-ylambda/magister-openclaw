@@ -10,8 +10,8 @@ import path from "node:path";
  * operate on a tree this module put on disk and cannot exist without it, which
  * is why all three live here.
  *
- * The Gateway resolves the project's GitHub grant and posts it here; this host
- * process runs `git` with the credential reachable only through `GIT_ASKPASS`
+ * The Gateway resolves the project's GitHub or GitLab grant and posts it here;
+ * this host process runs `git` with the credential reachable only through `GIT_ASKPASS`
  * plus the child's own environment. The credential never appears in argv, in a
  * remote URL, in Git config, in a response body, or anywhere the sandbox can
  * read: the model-directed shell runs `--clearenv --unshare-net --unshare-pid`
@@ -79,9 +79,43 @@ export const COMMIT_AUTHOR_EMAIL = "agent@noreply.magistermarketing.com";
 const SEGMENT_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
 const REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,254}$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
+/** GitHub owner names are alphanumerics and hyphens. Enforcing that here, not
+ *  just trusting GitHub's own rule, is what keeps the two on-disk layouts
+ *  apart: a GitLab checkout lives under a host-named directory, and no GitHub
+ *  owner can be spelled like a hostname because one has no dot. */
+const GITHUB_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
+/**
+ * Every git host a checkout can talk to, and the few things that differ.
+ *
+ * The Gateway names the provider from the project's grant and the machine
+ * owns the host mapping, so no URL ever travels on the wire to be validated —
+ * a provider this table does not list is refused outright.
+ */
+export const REPO_PROVIDERS = {
+  github: {
+    host: "github.com",
+    label: "GitHub",
+    /** Installation and user-to-server tokens authenticate as this fixed user. */
+    askpassUsername: "x-access-token",
+    /** `owner/name` only; GitHub has no nested namespaces. */
+    maxSegments: 2,
+  },
+  gitlab: {
+    host: "gitlab.com",
+    label: "GitLab",
+    /** An OAuth access token is the password for the fixed user `oauth2`. */
+    askpassUsername: "oauth2",
+    /** `group/subgroup/…/project`: GitLab nests groups. Six is deeper than any
+     *  layout seen in practice and keeps the containment check finite. */
+    maxSegments: 6,
+  },
+} as const;
+export type RepoProvider = keyof typeof REPO_PROVIDERS;
 
 export type CheckoutRequest = {
   repo: string;
+  provider: RepoProvider;
   ref?: string;
   discard_local_changes: boolean;
   token: string;
@@ -91,6 +125,7 @@ export type CheckoutRequest = {
 export type CheckoutReceipt = {
   status: "checked_out" | "refreshed" | "already_current";
   repo: string;
+  provider: RepoProvider;
   path: string;
   ref: string;
   commit_sha: string;
@@ -101,6 +136,7 @@ export type CheckoutReceipt = {
 
 export type PrepareRequest = {
   repo: string;
+  provider: RepoProvider;
   message: string;
   /** Deliberately always absent. Freezing a commit is a local `git` operation,
    *  so this is the one brokered request that never carries a credential; the
@@ -125,6 +161,7 @@ export type PrepareReceipt = {
 
 export type PushRequest = {
   repo: string;
+  provider: RepoProvider;
   branch: string;
   commit_sha: string;
   expected_remote_sha?: string;
@@ -135,6 +172,7 @@ export type PushRequest = {
 export type PushReceipt = {
   status: "pushed" | "already_pushed";
   repo: string;
+  provider: RepoProvider;
   branch: string;
   commit_sha: string;
   verified_sha: string;
@@ -156,24 +194,44 @@ export class CheckoutError extends Error {
 
 // ── Validation ──────────────────────────────────────────────────────────
 
-/** `owner/name`, each segment safe as a single path component.
+/** Absent means GitHub. A Gateway from before GitLab support sends no
+ *  provider, and every checkout it ever made was a GitHub one, so the default
+ *  is what keeps those machines correct during a rollout. */
+export function parseProvider(value: unknown): RepoProvider {
+  if (value === undefined || value === null) {
+    return "github";
+  }
+  if (typeof value === "string" && Object.hasOwn(REPO_PROVIDERS, value)) {
+    return value as RepoProvider;
+  }
+  throw new CheckoutError("provider is not a supported git host");
+}
+
+export type ParsedRepo = { provider: RepoProvider; segments: string[]; full: string };
+
+/** A repository path — `owner/name` on GitHub, `group/…/project` on GitLab —
+ *  with every segment safe as a single path component.
  *
  *  The leading character class is what rejects `.` and `..`: a bare
  *  `[^/\s]+/[^/\s]+` pattern accepts `../x`, which would resolve outside the
  *  repo root. `resolveRepoDir` re-checks containment anyway. */
-export function parseRepo(value: unknown): { owner: string; name: string; full: string } {
+export function parseRepo(value: unknown, provider: RepoProvider = "github"): ParsedRepo {
+  const spec = REPO_PROVIDERS[provider];
+  const shape = provider === "github" ? "owner/name" : "group/subgroup/project";
   if (typeof value !== "string" || !value.includes("/")) {
-    throw new CheckoutError("repo must be in owner/name form");
+    throw new CheckoutError(`repo must be in ${shape} form`);
   }
-  const parts = value.split("/");
-  if (parts.length !== 2) {
-    throw new CheckoutError("repo must be in owner/name form");
+  const segments = value.split("/");
+  if (segments.length < 2 || segments.length > spec.maxSegments) {
+    throw new CheckoutError(`repo must be in ${shape} form`);
   }
-  const [owner = "", name = ""] = parts;
-  if (!SEGMENT_RE.test(owner) || !SEGMENT_RE.test(name)) {
-    throw new CheckoutError("repo owner and name must be plain GitHub identifiers");
+  if (segments.some((segment) => !SEGMENT_RE.test(segment))) {
+    throw new CheckoutError(`repo segments must be plain ${spec.label} identifiers`);
   }
-  return { owner, name, full: `${owner}/${name}` };
+  if (provider === "github" && !GITHUB_OWNER_RE.test(segments[0] ?? "")) {
+    throw new CheckoutError("repo owner must be a plain GitHub account name");
+  }
+  return { provider, segments, full: segments.join("/") };
 }
 
 /** A branch, a tag, or a full commit SHA.
@@ -221,10 +279,24 @@ export function parseSha(value: unknown, label: string): string {
   return value;
 }
 
-export function resolveRepoDir(owner: string, name: string): string {
-  const resolved = path.resolve(repoRoot(), owner, name);
+/** Where a checkout lives.
+ *
+ *  GitHub keeps the original two-level layout every existing checkout already
+ *  uses, so nothing is orphaned or re-cloned by this change. Any other host
+ *  gets a directory named after it, so `acme/site` on two hosts can never share
+ *  a path — and that directory cannot collide with a GitHub owner, because
+ *  `parseRepo` forbids the dot a hostname needs. */
+export function resolveRepoDir(parsed: ParsedRepo): string {
+  const parts =
+    parsed.provider === "github"
+      ? parsed.segments
+      : [REPO_PROVIDERS[parsed.provider].host, ...parsed.segments];
+  const resolved = path.resolve(repoRoot(), ...parts);
   const prefix = `${repoRoot()}${path.sep}`;
-  if (!resolved.startsWith(prefix) || resolved.slice(prefix.length).split(path.sep).length !== 2) {
+  if (
+    !resolved.startsWith(prefix) ||
+    resolved.slice(prefix.length).split(path.sep).length !== parts.length
+  ) {
     throw new CheckoutError("resolved checkout path escapes the repository root", 400);
   }
   return resolved;
@@ -249,11 +321,13 @@ async function runGit(
   options: {
     cwd?: string;
     token?: string;
+    /** Which host the token belongs to — it decides the askpass username. */
+    provider?: RepoProvider;
     timeoutMs: number;
     onTick?: () => Promise<boolean>;
   },
 ): Promise<GitResult> {
-  const { cwd, token, timeoutMs, onTick } = options;
+  const { cwd, token, provider = "github", timeoutMs, onTick } = options;
   // An empty HOME plus GIT_CONFIG_NOSYSTEM means git reads no user or system
   // config, so no inherited credential.helper can cache or exfiltrate the
   // token, and no `~/.gitconfig` can rewrite the remote URL.
@@ -267,7 +341,7 @@ async function runGit(
     GIT_CONFIG_SYSTEM: "/dev/null",
   };
   if (token) {
-    env.GIT_ASKPASS = await ensureAskpassHelper();
+    env.GIT_ASKPASS = await ensureAskpassHelper(REPO_PROVIDERS[provider].askpassUsername);
     env.MAGISTER_GIT_TOKEN = token;
   }
   const child = spawn(
@@ -325,7 +399,7 @@ async function runGit(
       throw new CheckoutError(
         "The repository exceeded the checkout size limit while cloning.",
         413,
-        "This repository is too large for a brokered checkout. Use the GitHub integration to read individual files.",
+        "This repository is too large for a brokered checkout. Read the files you need one at a time through the integration API instead.",
       );
     }
     return { code, stdout, stderr: token ? scrubToken(stderr, token) : stderr };
@@ -355,31 +429,35 @@ export async function ensureRepoRoot(): Promise<string> {
   return root;
 }
 
-const askpassByRoot = new Map<string, string>();
+const askpassByRootAndUser = new Map<string, string>();
 
 /** The helper itself holds no secret — it echoes the child's own environment,
- *  which only the host user can read. Written once per repository root. */
-async function ensureAskpassHelper(): Promise<string> {
+ *  which only the host user can read. Written once per repository root and
+ *  username; the username is the one thing about HTTPS auth that differs
+ *  between hosts, so each gets its own tiny script rather than one that
+ *  reads a second variable. */
+async function ensureAskpassHelper(username: string): Promise<string> {
   const root = await ensureRepoRoot();
-  const cached = askpassByRoot.get(root);
+  const key = `${root}\0${username}`;
+  const cached = askpassByRootAndUser.get(key);
   if (cached) {
     return cached;
   }
   const dir = path.join(root, STAGING_DIR_NAME);
   await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(path.join(dir, ".githome"), { recursive: true, mode: 0o700 });
-  const target = path.join(dir, "askpass.sh");
+  const target = path.join(dir, `askpass-${username}.sh`);
   const script = [
     "#!/bin/sh",
     'case "$1" in',
-    "  Username*) printf '%s\\n' 'x-access-token' ;;",
+    `  Username*) printf '%s\\n' '${username}' ;;`,
     "  *) printf '%s\\n' \"$MAGISTER_GIT_TOKEN\" ;;",
     "esac",
     "",
   ].join("\n");
   await fs.promises.writeFile(target, script, { mode: 0o700 });
   await fs.promises.chmod(target, 0o700);
-  askpassByRoot.set(root, target);
+  askpassByRootAndUser.set(key, target);
   return target;
 }
 
@@ -576,37 +654,59 @@ async function markerAge(repoDir: string, now: number): Promise<number> {
   }
 }
 
+/** A checkout is any directory under the root that has a `.git`; the walk
+ *  stops there and never descends into a repository's own tree. Bounded by the
+ *  deepest layout a provider allows plus its host directory, so a stray deep
+ *  tree cannot turn the hourly sweep into a full-volume crawl. */
+const MAX_CHECKOUT_DEPTH =
+  1 + Math.max(...Object.values(REPO_PROVIDERS).map((spec) => spec.maxSegments));
+
 async function listCheckouts(): Promise<string[]> {
   const found: string[] = [];
-  let owners: fs.Dirent[];
-  try {
-    owners = await fs.promises.readdir(repoRoot(), { withFileTypes: true });
-  } catch {
-    return found;
-  }
-  for (const owner of owners) {
-    if (!owner.isDirectory() || owner.name.startsWith(".")) {
-      continue;
-    }
-    let repos: fs.Dirent[];
+  const stack: Array<{ dir: string; depth: number }> = [{ dir: repoRoot(), depth: 0 }];
+  while (stack.length > 0) {
+    const { dir, depth } = stack.pop() as { dir: string; depth: number };
+    let entries: fs.Dirent[];
     try {
-      repos = await fs.promises.readdir(path.join(repoRoot(), owner.name), { withFileTypes: true });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
       continue;
     }
-    for (const repo of repos) {
-      if (repo.isDirectory() && !repo.name.startsWith(".")) {
-        found.push(path.join(repoRoot(), owner.name, repo.name));
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) {
+        continue;
+      }
+      const full = path.join(dir, entry.name);
+      const isCheckout = await fs.promises
+        .stat(path.join(full, ".git"))
+        .then(() => true)
+        .catch(() => false);
+      if (isCheckout) {
+        found.push(full);
+      } else if (depth + 1 < MAX_CHECKOUT_DEPTH) {
+        stack.push({ dir: full, depth: depth + 1 });
       }
     }
   }
   return found;
 }
 
-/** The `inFlight` key for a checkout directory — the same `owner/name` the
- *  repository lock uses, so the sweeper and the lock agree on identity. */
+/** The `inFlight` key for a checkout directory — the same `provider:path`
+ *  the repository lock uses, so the sweeper and the lock agree on identity.
+ *  A directory under a host name belongs to that host; anything else is the
+ *  GitHub layout. */
 function repoKeyForDir(repoDir: string): string {
-  return path.relative(repoRoot(), repoDir).split(path.sep).join("/").toLowerCase();
+  const relative = path.relative(repoRoot(), repoDir).split(path.sep);
+  for (const [provider, spec] of Object.entries(REPO_PROVIDERS)) {
+    if (provider !== "github" && relative[0] === spec.host) {
+      return lockKey(provider as RepoProvider, relative.slice(1).join("/"));
+    }
+  }
+  return lockKey("github", relative.join("/"));
+}
+
+function lockKey(provider: RepoProvider, repo: string): string {
+  return `${provider}:${repo.toLowerCase()}`;
 }
 
 /**
@@ -629,7 +729,7 @@ export async function sweepExpiredCheckouts(now = Date.now()): Promise<{ removed
     }
     if ((await markerAge(repoDir, now)) > CHECKOUT_TTL_MS) {
       await fs.promises.rm(repoDir, { recursive: true, force: true });
-      await pruneEmptyOwner(path.dirname(repoDir));
+      await pruneEmptyAncestors(path.dirname(repoDir));
       removed.push(repoDir);
     }
   }
@@ -657,14 +757,22 @@ export async function sweepExpiredCheckouts(now = Date.now()): Promise<{ removed
   return { removed };
 }
 
-async function pruneEmptyOwner(ownerDir: string): Promise<void> {
-  try {
-    const remaining = await fs.promises.readdir(ownerDir);
-    if (remaining.length === 0) {
-      await fs.promises.rmdir(ownerDir);
+/** Remove now-empty owner, group, and host directories up to — never
+ *  including — the repository root, so a nested GitLab path leaves no husk
+ *  behind once its checkout is gone. */
+async function pruneEmptyAncestors(dir: string): Promise<void> {
+  const root = repoRoot();
+  let current = dir;
+  while (current !== root && current.startsWith(`${root}${path.sep}`)) {
+    try {
+      if ((await fs.promises.readdir(current)).length > 0) {
+        return;
+      }
+      await fs.promises.rmdir(current);
+    } catch {
+      return; // A non-empty or already-removed directory is fine either way.
     }
-  } catch {
-    // A non-empty or already-removed owner directory is fine either way.
+    current = path.dirname(current);
   }
 }
 
@@ -701,10 +809,10 @@ async function isDirty(repoDir: string): Promise<boolean> {
   return result.code === 0 && result.stdout.trim().length > 0;
 }
 
-function remoteUrl(repo: string): string {
+function remoteUrl(provider: RepoProvider, repo: string): string {
   // No credential and no username here: the whole point of GIT_ASKPASS is that
   // the URL stays clean enough to appear in an error message.
-  return `https://github.com/${repo}.git`;
+  return `https://${REPO_PROVIDERS[provider].host}/${repo}.git`;
 }
 
 async function fetchRef(
@@ -717,6 +825,7 @@ async function fetchRef(
   const fetched = await runGit(["fetch", "--depth", "1", "--no-tags", "origin", "--", target], {
     cwd: repoDir,
     token: request.token,
+    provider: request.provider,
     timeoutMs: CLONE_TIMEOUT_MS,
     onTick: budget,
   });
@@ -750,9 +859,10 @@ function truncate(value: string, limit = 400): string {
 }
 
 async function performCheckout(request: CheckoutRequest): Promise<CheckoutReceipt> {
-  const { owner, name, full } = parseRepo(request.repo);
+  const parsed = parseRepo(request.repo, request.provider);
+  const { full } = parsed;
   const ref = parseRef(request.ref);
-  const repoDir = resolveRepoDir(owner, name);
+  const repoDir = resolveRepoDir(parsed);
 
   await ensureRepoRoot();
   await sweepExpiredCheckouts();
@@ -799,11 +909,11 @@ async function performCheckout(request: CheckoutRequest): Promise<CheckoutReceip
   });
   if (stats.exceeded) {
     await fs.promises.rm(repoDir, { recursive: true, force: true });
-    await pruneEmptyOwner(path.dirname(repoDir));
+    await pruneEmptyAncestors(path.dirname(repoDir));
     throw new CheckoutError(
       `${full} exceeds the checkout limit of ${MAX_CHECKOUT_FILES} files or ${Math.round(MAX_CHECKOUT_BYTES / (1024 * 1024))} MiB.`,
       413,
-      "This repository is too large for a brokered checkout. Use the GitHub integration to read individual files.",
+      `This repository is too large for a brokered checkout. Use the ${REPO_PROVIDERS[request.provider].label} integration to read individual files.`,
     );
   }
 
@@ -820,6 +930,7 @@ async function performCheckout(request: CheckoutRequest): Promise<CheckoutReceip
   return {
     status,
     repo: full,
+    provider: request.provider,
     path: repoDir,
     ref: ref ? ref.ref : "HEAD",
     commit_sha: head,
@@ -863,9 +974,10 @@ async function cloneFresh(
     if (ref && !ref.isSha) {
       args.push("--branch", ref.ref);
     }
-    args.push("--", remoteUrl(request.repo), staging);
+    args.push("--", remoteUrl(request.provider, request.repo), staging);
     const cloned = await runGit(args, {
       token: request.token,
+      provider: request.provider,
       timeoutMs: CLONE_TIMEOUT_MS,
       onTick: () => withinCheckoutBudget(staging),
     });
@@ -895,8 +1007,13 @@ async function cloneFresh(
  *  Unlike the Gateway's `min instances = 2`, the OpenClaw host is a single
  *  process on a single machine, so an in-process map really is the authority
  *  here — there is no second writer to race with. */
-async function withRepoLock<T>(repo: string, busy: string, task: () => Promise<T>): Promise<T> {
-  const key = repo.toLowerCase();
+async function withRepoLock<T>(
+  provider: RepoProvider,
+  repo: string,
+  busy: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const key = lockKey(provider, repo);
   if (inFlight.has(key)) {
     throw new CheckoutError(
       busy,
@@ -914,16 +1031,23 @@ async function withRepoLock<T>(repo: string, busy: string, task: () => Promise<T
 }
 
 export async function checkoutRepository(request: CheckoutRequest): Promise<CheckoutReceipt> {
-  return withRepoLock(request.repo, `A checkout of ${request.repo} is already running.`, () =>
-    performCheckout(request),
+  return withRepoLock(
+    request.provider,
+    request.repo,
+    `A checkout of ${request.repo} is already running.`,
+    () => performCheckout(request),
   );
 }
 
 // ── Prepare ─────────────────────────────────────────────────────────────
 
-async function requireCheckout(repo: string): Promise<{ repoDir: string; full: string }> {
-  const { owner, name, full } = parseRepo(repo);
-  const repoDir = resolveRepoDir(owner, name);
+async function requireCheckout(
+  repo: string,
+  provider: RepoProvider,
+): Promise<{ repoDir: string; full: string }> {
+  const parsed = parseRepo(repo, provider);
+  const { full } = parsed;
+  const repoDir = resolveRepoDir(parsed);
   const present = await fs.promises
     .stat(path.join(repoDir, ".git"))
     .then(() => true)
@@ -1017,7 +1141,7 @@ async function mirrorChangedFiles(repoDir: string, entries: ManifestEntry[]): Pr
 }
 
 async function performPrepare(request: PrepareRequest): Promise<PrepareReceipt> {
-  const { repoDir, full } = await requireCheckout(request.repo);
+  const { repoDir, full } = await requireCheckout(request.repo, request.provider);
   const marker = await readMarker(repoDir);
   const prepared = marker?.prepared ?? [];
   // A marker written before this field existed, or a checkout nothing has
@@ -1153,8 +1277,11 @@ async function prepareReceipt(
 }
 
 export async function prepareRepoCommit(request: PrepareRequest): Promise<PrepareReceipt> {
-  return withRepoLock(request.repo, `An operation on ${request.repo} is already running.`, () =>
-    performPrepare(request),
+  return withRepoLock(
+    request.provider,
+    request.repo,
+    `An operation on ${request.repo} is already running.`,
+    () => performPrepare(request),
   );
 }
 
@@ -1167,17 +1294,19 @@ type RemoteView = { defaultBranch: string; tip: string | null };
 async function readRemote(
   repoDir: string,
   repo: string,
+  provider: RepoProvider,
   branch: string,
   token: string,
 ): Promise<RemoteView> {
   const listed = await runGit(["ls-remote", "--symref", "origin", "HEAD", `refs/heads/${branch}`], {
     cwd: repoDir,
     token,
+    provider,
     timeoutMs: GIT_COMMAND_TIMEOUT_MS,
   });
   if (listed.code !== 0) {
     throw new CheckoutError(
-      `Could not read the current state of ${repo} on GitHub.`,
+      `Could not read the current state of ${repo} on ${REPO_PROVIDERS[provider].label}.`,
       502,
       truncate(listed.stderr),
     );
@@ -1205,8 +1334,33 @@ async function readRemote(
   return { defaultBranch, tip };
 }
 
+/** The two links a reviewer follows from the receipt, in each host's own URL
+ *  grammar. GitLab's compare page is the merge-request form itself, so the
+ *  link lands on "new merge request" with both branches filled in. */
+export function reviewUrls(
+  provider: RepoProvider,
+  repo: string,
+  defaultBranch: string,
+  branch: string,
+): { branch_url: string; pull_request_url: string } {
+  const base = `https://${REPO_PROVIDERS[provider].host}/${repo}`;
+  if (provider === "gitlab") {
+    const source = encodeURIComponent(branch);
+    const target = encodeURIComponent(defaultBranch);
+    return {
+      branch_url: `${base}/-/tree/${branch}`,
+      pull_request_url: `${base}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${source}&merge_request%5Btarget_branch%5D=${target}`,
+    };
+  }
+  return {
+    branch_url: `${base}/tree/${branch}`,
+    pull_request_url: `${base}/compare/${defaultBranch}...${branch}?expand=1`,
+  };
+}
+
 async function performPush(request: PushRequest): Promise<PushReceipt> {
-  const { repoDir, full } = await requireCheckout(request.repo);
+  const { repoDir, full } = await requireCheckout(request.repo, request.provider);
+  const label = REPO_PROVIDERS[request.provider].label;
   const marker = await readMarker(repoDir);
   const prepared = marker?.prepared ?? [];
   const frozen = prepared.find((commit) => commit.sha === request.commit_sha);
@@ -1218,17 +1372,17 @@ async function performPush(request: PushRequest): Promise<PushReceipt> {
     );
   }
 
-  const remote = await readRemote(repoDir, full, request.branch, request.token);
+  const remote = await readRemote(repoDir, full, request.provider, request.branch, request.token);
   const receipt = (status: PushReceipt["status"], verified: string): PushReceipt => ({
     status,
     repo: full,
+    provider: request.provider,
     branch: request.branch,
     commit_sha: request.commit_sha,
     verified_sha: verified,
     previous_remote_sha: remote.tip,
     default_branch: remote.defaultBranch,
-    branch_url: `https://github.com/${full}/tree/${request.branch}`,
-    pull_request_url: `https://github.com/${full}/compare/${remote.defaultBranch}...${request.branch}?expand=1`,
+    ...reviewUrls(request.provider, full, remote.defaultBranch, request.branch),
   });
 
   const recordPush = async () => {
@@ -1286,22 +1440,27 @@ async function performPush(request: PushRequest): Promise<PushReceipt> {
   // is the remote's own tip, so there is no missing history to send.
   const pushed = await runGit(
     ["push", "origin", `${request.commit_sha}:refs/heads/${request.branch}`],
-    { cwd: repoDir, token: request.token, timeoutMs: PUSH_TIMEOUT_MS },
+    {
+      cwd: repoDir,
+      token: request.token,
+      provider: request.provider,
+      timeoutMs: PUSH_TIMEOUT_MS,
+    },
   );
   if (pushed.code !== 0) {
     throw new CheckoutError(
-      `GitHub rejected the push to ${request.branch}.`,
+      `${label} rejected the push to ${request.branch}.`,
       409,
       truncate(pushed.stderr),
     );
   }
 
-  const after = await readRemote(repoDir, full, request.branch, request.token);
+  const after = await readRemote(repoDir, full, request.provider, request.branch, request.token);
   if (after.tip !== request.commit_sha) {
     throw new CheckoutError(
       `The push to ${request.branch} reported success but the branch is not at ${request.commit_sha.slice(0, 12)}.`,
       502,
-      "Re-read the branch on GitHub before making any further change to it.",
+      `Re-read the branch on ${label} before making any further change to it.`,
     );
   }
   await recordPush();
@@ -1309,8 +1468,11 @@ async function performPush(request: PushRequest): Promise<PushReceipt> {
 }
 
 export async function pushRepoBranch(request: PushRequest): Promise<PushReceipt> {
-  return withRepoLock(request.repo, `An operation on ${request.repo} is already running.`, () =>
-    performPush(request),
+  return withRepoLock(
+    request.provider,
+    request.repo,
+    `An operation on ${request.repo} is already running.`,
+    () => performPush(request),
   );
 }
 
@@ -1339,7 +1501,14 @@ export function parseRequest(value: unknown): CheckoutRequest {
     throw new CheckoutError("checkout request must be an object");
   }
   const row = value as Record<string, unknown>;
-  const allowed = new Set(["repo", "ref", "discard_local_changes", "token", "mutation_context"]);
+  const allowed = new Set([
+    "repo",
+    "provider",
+    "ref",
+    "discard_local_changes",
+    "token",
+    "mutation_context",
+  ]);
   if (Object.keys(row).some((key) => !allowed.has(key))) {
     throw new CheckoutError("checkout request has unknown fields");
   }
@@ -1349,10 +1518,12 @@ export function parseRequest(value: unknown): CheckoutRequest {
   if (row.discard_local_changes !== undefined && typeof row.discard_local_changes !== "boolean") {
     throw new CheckoutError("discard_local_changes must be a boolean");
   }
-  const { full } = parseRepo(row.repo);
+  const provider = parseProvider(row.provider);
+  const { full } = parseRepo(row.repo, provider);
   const ref = parseRef(row.ref);
   return {
     repo: full,
+    provider,
     ref: ref?.ref,
     discard_local_changes: row.discard_local_changes === true,
     token: row.token,
@@ -1365,7 +1536,7 @@ function requireFields(value: unknown, allowed: string[], label: string): Record
     throw new CheckoutError(`${label} request must be an object`);
   }
   const row = value as Record<string, unknown>;
-  const permitted = new Set([...allowed, "mutation_context"]);
+  const permitted = new Set([...allowed, "provider", "mutation_context"]);
   if (Object.keys(row).some((key) => !permitted.has(key))) {
     throw new CheckoutError(`${label} request has unknown fields`);
   }
@@ -1374,14 +1545,20 @@ function requireFields(value: unknown, allowed: string[], label: string): Record
 
 export function parsePrepareRequest(value: unknown): PrepareRequest {
   const row = requireFields(value, ["repo", "message"], "prepare");
-  const { full } = parseRepo(row.repo);
+  const provider = parseProvider(row.provider);
+  const { full } = parseRepo(row.repo, provider);
   if (typeof row.message !== "string" || !row.message.trim()) {
     throw new CheckoutError("prepare request needs a commit message");
   }
   if (row.message.length > 2_000) {
     throw new CheckoutError("commit message is too long");
   }
-  return { repo: full, message: row.message.trim(), mutation_context: row.mutation_context };
+  return {
+    repo: full,
+    provider,
+    message: row.message.trim(),
+    mutation_context: row.mutation_context,
+  };
 }
 
 export function parsePushRequest(value: unknown): PushRequest {
@@ -1393,9 +1570,11 @@ export function parsePushRequest(value: unknown): PushRequest {
   if (typeof row.token !== "string" || !row.token) {
     throw new CheckoutError("push request is missing the repository credential", 401);
   }
-  const { full } = parseRepo(row.repo);
+  const provider = parseProvider(row.provider);
+  const { full } = parseRepo(row.repo, provider);
   return {
     repo: full,
+    provider,
     branch: parseBranch(row.branch),
     commit_sha: parseSha(row.commit_sha, "commit_sha"),
     expected_remote_sha:

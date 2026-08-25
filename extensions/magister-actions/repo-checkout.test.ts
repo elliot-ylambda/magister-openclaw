@@ -13,6 +13,7 @@ import {
   makeReadableByTools,
   measureTree,
   parseBranch,
+  parseProvider,
   parsePushRequest,
   parseRef,
   parseRepo,
@@ -20,6 +21,7 @@ import {
   prepareRepoCommit,
   pushRepoBranch,
   resolveRepoDir,
+  reviewUrls,
   scrubToken,
   sweepExpiredCheckouts,
 } from "./repo-checkout.js";
@@ -94,6 +96,7 @@ function bareUpstreamAndCheckout(): {
 function request(overrides: Record<string, unknown> = {}) {
   return {
     repo: "acme/site",
+    provider: "github",
     discard_local_changes: false,
     token: "ghu_test_token",
     ...overrides,
@@ -103,6 +106,7 @@ function request(overrides: Record<string, unknown> = {}) {
 function prepare(overrides: Record<string, unknown> = {}) {
   return {
     repo: "acme/site",
+    provider: "github",
     message: "Update the readme",
     ...overrides,
   } as Parameters<typeof prepareRepoCommit>[0];
@@ -111,6 +115,7 @@ function prepare(overrides: Record<string, unknown> = {}) {
 function push(overrides: Record<string, unknown> = {}) {
   return {
     repo: "acme/site",
+    provider: "github",
     branch: "magister/readme",
     token: "ghu_test_token",
     ...overrides,
@@ -125,26 +130,84 @@ function remoteTip(origin: string, branch: string): string | null {
 describe("repository identity validation", () => {
   it("accepts a plain owner/name pair", () => {
     expect(parseRepo("acme/site").full).toBe("acme/site");
-    expect(parseRepo("a-b_c.d/e.f-g_h").full).toBe("a-b_c.d/e.f-g_h");
+    expect(parseRepo("a-b/e.f-g_h").full).toBe("a-b/e.f-g_h");
+    expect(parseRepo("acme/site").provider).toBe("github");
   });
 
   it("rejects traversal segments that a naive owner/name pattern would allow", () => {
     // `^[^/\s]+/[^/\s]+$` matches all of these; each resolves outside the root.
     for (const value of ["../etc", "../..", "acme/..", "./x", "acme/."]) {
       expect(() => parseRepo(value)).toThrow(CheckoutError);
+      expect(() => parseRepo(value, "gitlab")).toThrow(CheckoutError);
     }
   });
 
-  it("rejects shapes that are not exactly two segments", () => {
+  it("rejects GitHub shapes that are not exactly two segments", () => {
     for (const value of ["acme", "acme/site/extra", "/site", "acme/", "acme site", 7, null]) {
       expect(() => parseRepo(value)).toThrow(CheckoutError);
+    }
+  });
+
+  it("holds a GitHub owner to GitHub's own rule, which is what keeps it from ever spelling a hostname", () => {
+    // A GitLab checkout lives under `gitlab.com/…`; an owner with a dot could
+    // collide with that directory, and GitHub forbids the dot anyway.
+    for (const owner of ["gitlab.com", "a.b", "a_b", "-lead", "x".repeat(40)]) {
+      expect(() => parseRepo(`${owner}/site`)).toThrow(CheckoutError);
+    }
+    expect(parseRepo("a-b/site").full).toBe("a-b/site");
+  });
+
+  it("accepts nested GitLab groups up to the provider's depth and no further", () => {
+    expect(parseRepo("group/project", "gitlab").full).toBe("group/project");
+    expect(parseRepo("group/sub/deeper/project", "gitlab").segments).toEqual([
+      "group",
+      "sub",
+      "deeper",
+      "project",
+    ]);
+    expect(parseRepo("g.roup/sub_1/project", "gitlab").provider).toBe("gitlab");
+    expect(() => parseRepo("a/b/c/d/e/f/g", "gitlab")).toThrow(CheckoutError);
+    expect(() => parseRepo("lonely", "gitlab")).toThrow(CheckoutError);
+  });
+
+  it("reads an absent provider as GitHub and refuses one it does not know", () => {
+    expect(parseProvider(undefined)).toBe("github");
+    expect(parseProvider(null)).toBe("github");
+    expect(parseProvider("gitlab")).toBe("gitlab");
+    for (const value of ["bitbucket", "", "GITHUB", 1, {}]) {
+      expect(() => parseProvider(value)).toThrow(CheckoutError);
     }
   });
 
   it("keeps a resolved checkout directory inside the repository root", () => {
     const root = scratch("magister-repos-");
     process.env.MAGISTER_REPO_ROOT = root;
-    expect(resolveRepoDir("acme", "site")).toBe(path.join(root, "acme", "site"));
+    expect(resolveRepoDir(parseRepo("acme/site"))).toBe(path.join(root, "acme", "site"));
+  });
+
+  it("gives every host but GitHub its own directory, so the same path on two hosts never collides", () => {
+    const root = scratch("magister-repos-");
+    process.env.MAGISTER_REPO_ROOT = root;
+    expect(resolveRepoDir(parseRepo("acme/site", "gitlab"))).toBe(
+      path.join(root, "gitlab.com", "acme", "site"),
+    );
+    expect(resolveRepoDir(parseRepo("group/sub/project", "gitlab"))).toBe(
+      path.join(root, "gitlab.com", "group", "sub", "project"),
+    );
+    // GitHub keeps the original layout, so nothing already on disk is orphaned.
+    expect(resolveRepoDir(parseRepo("acme/site", "github"))).toBe(path.join(root, "acme", "site"));
+  });
+
+  it("renders review links in each host's own URL grammar", () => {
+    expect(reviewUrls("github", "acme/site", "main", "magister/x")).toEqual({
+      branch_url: "https://github.com/acme/site/tree/magister/x",
+      pull_request_url: "https://github.com/acme/site/compare/main...magister/x?expand=1",
+    });
+    const gitlab = reviewUrls("gitlab", "group/sub/project", "main", "magister/x");
+    expect(gitlab.branch_url).toBe("https://gitlab.com/group/sub/project/-/tree/magister/x");
+    expect(gitlab.pull_request_url).toBe(
+      "https://gitlab.com/group/sub/project/-/merge_requests/new?merge_request%5Bsource_branch%5D=magister%2Fx&merge_request%5Btarget_branch%5D=main",
+    );
   });
 });
 
@@ -189,6 +252,21 @@ describe("request parsing", () => {
       parseRequest({ repo: "acme/site", token: "t", discard_local_changes: true })
         .discard_local_changes,
     ).toBe(true);
+  });
+
+  it("carries the provider through every request shape, defaulting to GitHub", () => {
+    expect(parseRequest({ repo: "acme/site", token: "t" }).provider).toBe("github");
+    expect(
+      parseRequest({ repo: "group/sub/project", provider: "gitlab", token: "t" }).provider,
+    ).toBe("gitlab");
+    // A three-segment path is only a repository on a host that nests groups.
+    expect(() => parseRequest({ repo: "group/sub/project", token: "t" })).toThrow(CheckoutError);
+    expect(() => parseRequest({ repo: "acme/site", provider: "svn", token: "t" })).toThrow(
+      /provider/,
+    );
+    expect(
+      parsePushRequest({ ...push(), commit_sha: "a".repeat(40), provider: "gitlab" }).provider,
+    ).toBe("gitlab");
   });
 });
 
@@ -403,6 +481,92 @@ describe("TTL sweeping", () => {
     const swept = await sweepExpiredCheckouts();
     expect(swept.removed).toContain(orphan);
     expect(fs.existsSync(orphan)).toBe(false);
+  });
+});
+
+describe("a GitLab checkout in the host-named layout", () => {
+  /** A real upstream cloned into where a GitLab checkout lives, so the refresh
+   *  path runs against actual git under a nested group path. */
+  function gitlabUpstreamAndCheckout(): { origin: string; repoDir: string; root: string } {
+    const origin = scratch("magister-origin-");
+    git(origin, "init", "--quiet", "--initial-branch=main");
+    fs.writeFileSync(path.join(origin, "README.md"), "first\n");
+    git(origin, "add", "README.md");
+    git(origin, "commit", "--quiet", "-m", "first");
+
+    const root = scratch("magister-repos-");
+    process.env.MAGISTER_REPO_ROOT = root;
+    const repoDir = path.join(root, "gitlab.com", "group", "sub", "project");
+    fs.mkdirSync(path.dirname(repoDir), { recursive: true });
+    git(root, "clone", "--quiet", "--depth", "1", `file://${origin}`, repoDir);
+    return { origin, repoDir, root };
+  }
+
+  const gitlab = (overrides: Record<string, unknown> = {}) =>
+    request({ repo: "group/sub/project", provider: "gitlab", token: "glpat_test", ...overrides });
+
+  it("refreshes in place and reports its host and nested path", async () => {
+    const { origin, repoDir } = gitlabUpstreamAndCheckout();
+    fs.writeFileSync(path.join(origin, "README.md"), "second\n");
+    git(origin, "commit", "--quiet", "-am", "second");
+
+    const receipt = await checkoutRepository(gitlab());
+    expect(receipt.status).toBe("refreshed");
+    expect(receipt.provider).toBe("gitlab");
+    expect(receipt.repo).toBe("group/sub/project");
+    expect(receipt.path).toBe(repoDir);
+    expect(fs.readFileSync(path.join(repoDir, "README.md"), "utf8")).toBe("second\n");
+  });
+
+  it("authenticates as the host's own fixed username, not GitHub's", async () => {
+    const { root } = gitlabUpstreamAndCheckout();
+    await checkoutRepository(gitlab());
+    const helper = fs.readFileSync(path.join(root, ".staging", "askpass-oauth2.sh"), "utf8");
+    expect(helper).toContain("'oauth2'");
+    expect(helper).not.toContain("x-access-token");
+    // The credential itself is never written into the helper.
+    expect(helper).not.toContain("glpat_test");
+    expect(fs.existsSync(path.join(root, ".staging", "askpass-x-access-token.sh"))).toBe(false);
+  });
+
+  it("is found by the sweeper under its nested path and leaves no empty group directories behind", async () => {
+    const { repoDir, root } = gitlabUpstreamAndCheckout();
+    const stale = new Date(Date.now() - CHECKOUT_TTL_MS - 60_000).toISOString();
+    fs.writeFileSync(
+      path.join(repoDir, ".git", "magister-checkout.json"),
+      JSON.stringify({ last_used_at: stale, repo: "group/sub/project" }),
+    );
+
+    const swept = await sweepExpiredCheckouts();
+    expect(swept.removed).toContain(repoDir);
+    expect(fs.existsSync(path.join(root, "gitlab.com"))).toBe(false);
+    expect(fs.existsSync(root)).toBe(true);
+  });
+
+  it("is never swept while an operation on it is in flight", async () => {
+    const { repoDir } = gitlabUpstreamAndCheckout();
+    git(repoDir, "checkout", "--quiet", "--detach", "HEAD");
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited\n");
+    // The lock key and the sweeper's key must agree on a nested GitLab path,
+    // or the sweeper would delete the tree a prepare is standing in.
+    const pending = prepareRepoCommit(prepare({ repo: "group/sub/project", provider: "gitlab" }));
+
+    const swept = await sweepExpiredCheckouts(Date.now() + CHECKOUT_TTL_MS * 2);
+
+    expect(swept.removed).toEqual([]);
+    await expect(pending).resolves.toMatchObject({ status: "prepared" });
+    expect(fs.existsSync(repoDir)).toBe(true);
+  });
+
+  it("keeps the two layouts apart: the same path on GitHub is a different checkout", async () => {
+    const { root } = gitlabUpstreamAndCheckout();
+    await expect(
+      prepareRepoCommit(prepare({ repo: "group/sub", provider: "github", message: "x" })),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("not checked out"),
+    });
+    expect(fs.existsSync(path.join(root, "group"))).toBe(false);
   });
 });
 
