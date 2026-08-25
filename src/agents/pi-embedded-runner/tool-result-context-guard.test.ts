@@ -761,3 +761,57 @@ describe("installContextEngineLoopHook", () => {
     expect(engine.assemble).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("installToolResultContextGuard phantom details", () => {
+  it("does not preemptively overflow when unsent details inflate the estimate", async () => {
+    const agent = makeGuardableAgent();
+    // Eight tool results shaped like the incident: small sent content plus a
+    // retained `details.truncation.content` original. Retained-size total
+    // (~7.9k chars) exceeds the 1k-token window's high-water mark (3.6k chars),
+    // but the sent-size total (~1.6k) fits with room to spare, and each result
+    // stays under the per-result cap.
+    const contextForNextCall = Array.from({ length: 8 }, (_, i) =>
+      makeToolResultWithDetails(`call_${i}`, "x".repeat(100), "d".repeat(320)),
+    );
+
+    const transformed = (await applyGuardToContext(agent, contextForNextCall)) as AgentMessage[];
+
+    expect(transformed).toBe(contextForNextCall);
+    for (const msg of transformed) {
+      expect(getToolResultText(msg)).toBe("x".repeat(100));
+      expect((msg as { details?: unknown }).details).toBeDefined();
+    }
+  });
+
+  it("drops only the details when they alone trip the per-result cap, keeping non-text blocks", async () => {
+    const agent = makeGuardableAgent();
+    const contextForNextCall = [
+      castAgentMessage({
+        role: "toolResult",
+        toolCallId: "call_img",
+        toolName: "read",
+        content: [
+          { type: "image", data: "abc", mimeType: "image/png" },
+          { type: "text", text: "x".repeat(100) },
+        ],
+        details: { truncation: { truncated: true, outputLines: 100, content: "d".repeat(4_000) } },
+        isError: false,
+        timestamp: Date.now(),
+      }),
+    ];
+
+    const transformed = (await applyGuardToContext(
+      agent,
+      contextForNextCall,
+      20_000,
+    )) as AgentMessage[];
+
+    const result = transformed[0] as { details?: unknown; content?: unknown };
+    expect(result.details).toBeUndefined();
+    const blocks = result.content as Array<{ type?: string }>;
+    expect(blocks.some((b) => b?.type === "image")).toBe(true);
+    expect(getToolResultText(transformed[0])).toBe("x".repeat(100));
+    // The persisted session message keeps its details payload untouched.
+    expect((contextForNextCall[0] as { details?: unknown }).details).toBeDefined();
+  });
+});
