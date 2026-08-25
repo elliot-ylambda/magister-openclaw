@@ -67,3 +67,27 @@ describe("tool-result-char-estimator", () => {
     expect(chars).toBeGreaterThanOrEqual(11); // "hello world".length
   });
 });
+
+describe("tool-result-char-estimator details handling", () => {
+  function makeToolResultWithDetails(): AgentMessage {
+    return {
+      role: "toolResult",
+      toolCallId: "call_1",
+      toolName: "read",
+      isError: false,
+      content: [{ type: "text", text: "x".repeat(100) }],
+      details: { truncation: { truncated: true, outputLines: 100, content: "d".repeat(10_000) } },
+      timestamp: Date.now(),
+    } as unknown as AgentMessage;
+  }
+
+  it("excludes toolResult details from the default sent-size estimate", () => {
+    const cache = createMessageCharEstimateCache();
+    expect(estimateMessageCharsCached(makeToolResultWithDetails(), cache)).toBeLessThan(1_000);
+  });
+
+  it("includes toolResult details in the retained-size estimate when opted in", () => {
+    const cache = createMessageCharEstimateCache({ includeToolResultDetails: true });
+    expect(estimateMessageCharsCached(makeToolResultWithDetails(), cache)).toBeGreaterThan(10_000);
+  });
+});
