@@ -444,6 +444,10 @@ export function installToolResultContextGuard(params: {
       throw new Error(PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE);
     }
 
+    // Results under the per-result cap may still carry `details` here. That
+    // is fine for the wire view: provider converters serialize only content
+    // (never `details`), so they cost no model context — which is also why
+    // the aggregate check above uses the sent-size estimate.
     return contextMessages;
   }) as GuardableTransformContext;
 

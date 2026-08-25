@@ -769,7 +769,9 @@ describe("installToolResultContextGuard phantom details", () => {
     // retained `details.truncation.content` original. Retained-size total
     // (~7.9k chars) exceeds the 1k-token window's high-water mark (3.6k chars),
     // but the sent-size total (~1.6k) fits with room to spare, and each result
-    // stays under the per-result cap.
+    // stays under the per-result cap: (100 content + 384 details-JSON) × 2 =
+    // 968 of the 1,000-char cap. The toBe() identity assertion below fails
+    // loudly if fixture drift ever pushes a result over the cap.
     const contextForNextCall = Array.from({ length: 8 }, (_, i) =>
       makeToolResultWithDetails(`call_${i}`, "x".repeat(100), "d".repeat(320)),
     );
