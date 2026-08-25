@@ -822,3 +822,162 @@ describe("handleAgentEnd retryable-empty-attempt withholding (Magister fork)", (
     );
   });
 });
+
+describe("handleAgentEnd cut-tool-chain withholding (Magister fork)", () => {
+  // 2026-08-25 (Digmatix): the model narrated one sentence, issued eight
+  // parallel reads, and the loop threw before the next model call. The SDK
+  // swallowed the throw (synthetic error message, no message_end), the
+  // handler saw a stale toolUse lastAssistant plus visible narration, emitted
+  // `end`, the HTTP stream closed at 60s, and the same-runId retry answered
+  // headless for 24 minutes.
+  const OVERFLOW_ERROR =
+    "Context overflow: estimated context size exceeds safe threshold during tool loop.";
+
+  function createCutToolChainContext(onAgentEvent: (event: unknown) => void) {
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "text", text: "I'll pull the underlying Google Ads reports first." },
+          { type: "toolCall", id: "call_1", name: "magister_integration_read", arguments: {} },
+        ],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.assistantTexts = ["I'll pull the underlying Google Ads reports first."];
+    ctx.state.livenessState = "working";
+    return ctx;
+  }
+
+  afterEach(() => {
+    disarmAttemptRetryRecovery("run-1");
+  });
+
+  it("withholds the terminal end of a cut tool chain despite pre-tool narration", async () => {
+    const { emitAgentEvent } = await import("../infra/agent-events.js");
+    vi.mocked(emitAgentEvent).mockClear();
+    armRun();
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createCutToolChainContext(onAgentEvent));
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(vi.mocked(emitAgentEvent)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ stream: "lifecycle" }),
+    );
+    // The run loop's finally flushes exactly the #76477 payload if no retry starts.
+    expect(consumeWithheldTerminal("run-1")).toEqual({
+      livenessState: "abandoned",
+      replayInvalid: true,
+    });
+  });
+
+  it("still emits the #76477 abandoned end for a cut tool chain when the run is not armed", async () => {
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createCutToolChainContext(onAgentEvent));
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: { phase: "end", livenessState: "abandoned", replayInvalid: true },
+    });
+    expect(consumeWithheldTerminal("run-1")).toBeNull();
+  });
+
+  it("suppresses a context overflow the agent loop swallowed while overflow recovery can retry", async () => {
+    const { emitAgentEvent } = await import("../infra/agent-events.js");
+    vi.mocked(emitAgentEvent).mockClear();
+    armRun({ noAnswer: () => false, overflow: () => true });
+    const onAgentEvent = vi.fn();
+    const ctx = createCutToolChainContext(onAgentEvent);
+
+    await handleAgentEnd(ctx, {
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: OVERFLOW_ERROR,
+          content: [{ type: "text", text: "" }],
+        },
+      ],
+    });
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(vi.mocked(emitAgentEvent)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ stream: "lifecycle" }),
+    );
+    expect(consumeSuppressedTerminal("run-1")).toBe(true);
+    expect(consumeWithheldTerminal("run-1")).toBeNull();
+  });
+
+  it("withholds a non-overflow failure the agent loop swallowed while a retry is still possible", async () => {
+    armRun();
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createCutToolChainContext(onAgentEvent), {
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "convertToLlm exploded",
+          content: [{ type: "text", text: "" }],
+        },
+      ],
+    });
+
+    expect(onAgentEvent).not.toHaveBeenCalled();
+    expect(consumeWithheldTerminal("run-1")).toEqual({
+      livenessState: "abandoned",
+      replayInvalid: true,
+    });
+  });
+
+  it("surfaces a swallowed failure as a terminal error once every retry is spent", async () => {
+    armRun({ noAnswer: () => false, overflow: () => false });
+    const onAgentEvent = vi.fn();
+
+    await handleAgentEnd(createCutToolChainContext(onAgentEvent), {
+      messages: [
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "convertToLlm exploded",
+          content: [{ type: "text", text: "" }],
+        },
+      ],
+    });
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: expect.objectContaining({
+        phase: "error",
+        error: expect.stringContaining("convertToLlm exploded"),
+        livenessState: "abandoned",
+        replayInvalid: true,
+      }),
+    });
+    expect(consumeWithheldTerminal("run-1")).toBeNull();
+  });
+
+  it("ignores agent_end messages whose tail is the assistant message it already saw", async () => {
+    const onAgentEvent = vi.fn();
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "stop",
+        content: [{ type: "text", text: "Final answer." }],
+      },
+      { onAgentEvent },
+    );
+    ctx.state.assistantTexts = ["Final answer."];
+    ctx.state.livenessState = "working";
+
+    await handleAgentEnd(ctx, { messages: [ctx.state.lastAssistant] });
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: { phase: "end", livenessState: "working" },
+    });
+  });
+});

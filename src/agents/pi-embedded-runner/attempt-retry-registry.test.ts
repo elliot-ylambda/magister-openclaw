@@ -117,6 +117,56 @@ describe("attempt retry registry: ordinary attempt ends", () => {
     expect(consumeWithheldTerminal(RUN_ID)).toBeNull();
   });
 
+  // 2026-08-25: one narration sentence, eight parallel reads, then the tool
+  // chain was cut. The narration counted as a visible answer, `end` closed the
+  // HTTP stream after 60s, and the same-runId retry answered headless.
+  it("withholds an attempt cut mid tool chain even though it narrated before the tool call", () => {
+    arm();
+    expect(
+      withholdTerminalForPendingRetry(RUN_ID, {
+        hasAssistantVisibleText: true,
+        endedMidToolChain: true,
+        terminalData: TERMINAL_DATA,
+      }),
+    ).toBe(true);
+    expect(consumeWithheldTerminal(RUN_ID)).toEqual(TERMINAL_DATA);
+  });
+
+  it("draws on the overflow budget for a cut tool chain when continuation retries are spent", () => {
+    arm({ noAnswer: () => false, overflow: () => true });
+    expect(
+      withholdTerminalForPendingRetry(RUN_ID, {
+        hasAssistantVisibleText: true,
+        endedMidToolChain: true,
+        terminalData: TERMINAL_DATA,
+      }),
+    ).toBe(true);
+    expect(consumeWithheldTerminal(RUN_ID)).toEqual(TERMINAL_DATA);
+  });
+
+  it("does not withhold a cut tool chain once every budget is spent", () => {
+    arm({ noAnswer: () => false, overflow: () => false });
+    expect(
+      withholdTerminalForPendingRetry(RUN_ID, {
+        hasAssistantVisibleText: true,
+        endedMidToolChain: true,
+        terminalData: TERMINAL_DATA,
+      }),
+    ).toBe(false);
+    expect(consumeWithheldTerminal(RUN_ID)).toBeNull();
+  });
+
+  it("still never withholds a finished answer that merely used tools earlier", () => {
+    arm();
+    expect(
+      withholdTerminalForPendingRetry(RUN_ID, {
+        hasAssistantVisibleText: true,
+        endedMidToolChain: false,
+        terminalData: TERMINAL_DATA,
+      }),
+    ).toBe(false);
+  });
+
   it("does not withhold when the run is not armed", () => {
     expect(
       withholdTerminalForPendingRetry(RUN_ID, {

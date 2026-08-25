@@ -238,9 +238,32 @@ type MagisterMediaStreamingEvent = {
   urls: string[];
 };
 
+// Magister fork: the same `thinking` / `tool` custom SSE events the Chat
+// Completions handler forwards (openai-http.ts). The gateway parses both
+// transports with the same vocabulary (_parse_openresponses_sse in chat.py).
+type MagisterThinkingStreamingEvent = {
+  type: "thinking";
+  delta: string;
+};
+
+type MagisterToolStreamingEvent = {
+  type: "tool";
+  phase?: unknown;
+  name?: unknown;
+  toolCallId?: unknown;
+  isError?: unknown;
+  args?: unknown;
+  result?: unknown;
+};
+
 function writeSseEvent(
   res: ServerResponse,
-  event: StreamingEvent | MagisterApprovalStreamingEvent | MagisterMediaStreamingEvent,
+  event:
+    | StreamingEvent
+    | MagisterApprovalStreamingEvent
+    | MagisterMediaStreamingEvent
+    | MagisterThinkingStreamingEvent
+    | MagisterToolStreamingEvent,
 ) {
   res.write(`event: ${event.type}\n`);
   res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -986,10 +1009,40 @@ export async function handleOpenResponsesHttpRequest(
       return;
     }
 
+    // Magister fork: forward thinking and tool events exactly as the Chat
+    // Completions handler does (openai-http.ts). Without them an attachment
+    // turn is silent for its entire tool loop — the gateway's per-line
+    // watchdog sees nothing, its agent.wait liveness probe can only stretch
+    // that silence to SSE_LIVENESS_MAX_SILENCE_SECONDS, and on 2026-08-22 a
+    // 79-call attachment turn was killed as "went quiet" at 1807s with its
+    // final answer discarded.
+    if (evt.stream === "thinking") {
+      const delta = typeof evt.data?.delta === "string" ? evt.data.delta : "";
+      if (delta) {
+        writeSseEvent(res, { type: "thinking", delta });
+      }
+      return;
+    }
+
     if (evt.stream === "tool") {
       const data = evt.data as Record<string, unknown> | undefined;
       if (data) {
         const approval = extractMagisterApprovalEventFromToolEvent(data);
+        if (data.phase === "update" && approval) {
+          // This update exists only to surface the pending card before a held
+          // tool resolves. Keep the ordinary tool block in its running state.
+          writeSseEvent(res, { type: "approval", ...approval });
+          return;
+        }
+        writeSseEvent(res, {
+          type: "tool",
+          phase: data.phase,
+          name: data.name,
+          toolCallId: data.toolCallId,
+          ...(data.isError !== undefined && { isError: data.isError }),
+          ...(data.args !== undefined && { args: data.args }),
+          ...(Boolean(data.isError) && data.result !== undefined && { result: data.result }),
+        });
         if (approval) {
           writeSseEvent(res, { type: "approval", ...approval });
         }

@@ -1,3 +1,4 @@
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import {
@@ -41,9 +42,39 @@ export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
   });
 }
 
-export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<void> {
+/**
+ * Magister fork: the failure message pi-agent-core synthesizes when the loop
+ * itself throws (transformContext, convertToLlm, stream setup). The SDK's
+ * `runWithLifecycle` catches that throw, pushes an assistant message with
+ * `stopReason: "error"` into agent state WITHOUT a `message_end`, and resolves
+ * `prompt()` normally — so `ctx.state.lastAssistant` (updated only on
+ * `message_end`) still points at the last real assistant message, the attempt
+ * reports success, and the only trace of the failure is the tail of the
+ * `agent_end` event's `messages`. Read it from there, or the per-attempt
+ * terminal below classifies a cut tool chain as a clean `end` (2026-08-25).
+ */
+export function resolveSwallowedRunFailure(
+  evt: { messages?: unknown } | undefined,
+  lastAssistant: unknown,
+): (AgentMessage & { role: "assistant" }) | null {
+  const messages = evt?.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return null;
+  }
+  const tail = messages[messages.length - 1];
+  if (!isAssistantMessage(tail) || tail.stopReason !== "error" || tail === lastAssistant) {
+    return null;
+  }
+  return tail;
+}
+
+export function handleAgentEnd(
+  ctx: EmbeddedPiSubscribeContext,
+  evt?: { messages?: unknown },
+): void | Promise<void> {
   const lastAssistant = ctx.state.lastAssistant;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
+  const swallowedFailure = isError ? null : resolveSwallowedRunFailure(evt, lastAssistant);
   let lifecycleErrorText: string | undefined;
   const hasAssistantVisibleText =
     Array.isArray(ctx.state.assistantTexts) &&
@@ -180,6 +211,20 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
       ...(livenessState ? { livenessState } : {}),
       ...(replayInvalid ? { replayInvalid } : {}),
     };
+    // Magister fork: a loop error the SDK swallowed (see
+    // resolveSwallowedRunFailure) gets the same treatment a streamed error
+    // would have: a recoverable context overflow is the run loop's to retry,
+    // so its terminal is suppressed exactly like the `isError` branch above.
+    if (swallowedFailure) {
+      const swallowedText = swallowedFailure.errorMessage?.trim() || undefined;
+      if (shouldSuppressTerminalOverflowError(ctx.params.runId, swallowedText)) {
+        ctx.log.warn(
+          `suppressing terminal lifecycle error for recoverable context overflow ` +
+            `swallowed by the agent loop: runId=${ctx.params.runId} (run loop owns overflow recovery)`,
+        );
+        return;
+      }
+    }
     // Magister fork: an attempt that produced no visible answer is not
     // terminal for the run while the run loop can still retry it — the
     // planning-only, reasoning-only, empty-response, and compaction-
@@ -187,17 +232,56 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext): void | Promise<
     // `end` here closes HTTP/WS subscribers, and the retried attempt's real
     // answer then goes nowhere (2026-08-07: GPT-5.6 returned empty, the retry
     // answered 13s later, the user got "Agent didn't return a response").
-    // The run loop emits what we withhold, in its finally.
+    // The same holds for an attempt cut mid tool chain (#76477's
+    // `incompleteTerminalAssistant`): its pre-tool narration is not an
+    // answer, and the retry that finishes the chain reuses this runId
+    // (2026-08-25: one sentence, 8 reads, 24 headless minutes). The run loop
+    // emits what we withhold, in its finally.
+    const endedMidToolChain = incompleteTerminalAssistant || swallowedFailure !== null;
     if (
       withholdTerminalForPendingRetry(ctx.params.runId, {
         hasAssistantVisibleText,
+        endedMidToolChain,
         terminalData: endData,
       })
     ) {
       ctx.log.debug(
-        `withholding terminal lifecycle end for a retryable empty attempt: ` +
-          `runId=${ctx.params.runId} (run loop owns the terminal)`,
+        `withholding terminal lifecycle end for a retryable ${
+          endedMidToolChain ? "cut-tool-chain" : "empty"
+        } attempt: runId=${ctx.params.runId} (run loop owns the terminal)`,
       );
+      return;
+    }
+    if (swallowedFailure) {
+      // No retry budget is left to finish this attempt, so its swallowed
+      // failure is the run's real outcome: surface it as an error rather
+      // than a clean `end` that hides a cut tool chain behind narration.
+      const swallowedErrorText =
+        buildTextObservationFields((swallowedFailure.errorMessage || "Agent run failed.").trim(), {
+          provider: swallowedFailure.provider,
+        }).textPreview ?? "Agent run failed.";
+      ctx.log.warn(
+        `embedded run agent end: runId=${sanitizeForConsole(ctx.params.runId) ?? "-"} ` +
+          `isError=true (swallowed by agent loop) error=${swallowedErrorText}`,
+      );
+      emitAgentEvent({
+        runId: ctx.params.runId,
+        stream: "lifecycle",
+        data: {
+          phase: "error",
+          error: swallowedErrorText,
+          ...endData,
+          endedAt: Date.now(),
+        },
+      });
+      void ctx.params.onAgentEvent?.({
+        stream: "lifecycle",
+        data: {
+          phase: "error",
+          error: swallowedErrorText,
+          ...endData,
+        },
+      });
       return;
     }
     emitAgentEvent({

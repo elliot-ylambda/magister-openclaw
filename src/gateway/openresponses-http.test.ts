@@ -798,6 +798,81 @@ describe("OpenResponses HTTP API (e2e)", () => {
     });
   });
 
+  it("forwards thinking and tool events like the chat completions handler (Magister fork)", async () => {
+    // 2026-08-22: a 79-call attachment turn streamed nothing but its final
+    // text, so the gateway's watchdog saw 1807s of silence and killed it.
+    const port = enabledPort;
+    agentCommand.mockClear();
+    agentCommand.mockImplementationOnce(
+      ((opts: unknown) =>
+        new Promise((resolve) => {
+          const runId = (opts as { runId?: string } | undefined)?.runId ?? "";
+          emitAgentEvent({ runId, stream: "thinking", data: { delta: "Checking the " } });
+          emitAgentEvent({ runId, stream: "thinking", data: { delta: "" } });
+          emitAgentEvent({
+            runId,
+            stream: "tool",
+            data: {
+              phase: "start",
+              name: "magister_integration_read",
+              toolCallId: "call_1",
+              args: { path: "v24/customers/1/googleAds:search" },
+            },
+          });
+          emitAgentEvent({
+            runId,
+            stream: "tool",
+            data: {
+              phase: "result",
+              name: "magister_integration_read",
+              toolCallId: "call_1",
+              isError: true,
+              result: "quota exceeded",
+            },
+          });
+          emitAgentEvent({ runId, stream: "assistant", data: { delta: "Done." } });
+          emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "end" } });
+          setTimeout(() => resolve({ payloads: [{ text: "Done." }], meta: {} }), 50);
+        })) as never,
+    );
+
+    const res = await postResponses(port, {
+      stream: true,
+      model: "openclaw",
+      input: "analyse my ads",
+    });
+    expect(res.status).toBe(200);
+
+    const events = parseSseEvents(await res.text());
+    const thinkingEvents = events.filter((event) => event.event === "thinking");
+    expect(thinkingEvents.map((event) => JSON.parse(event.data))).toEqual([
+      { type: "thinking", delta: "Checking the " },
+    ]);
+    const toolEvents = events.filter((event) => event.event === "tool");
+    expect(toolEvents.map((event) => JSON.parse(event.data))).toEqual([
+      {
+        type: "tool",
+        phase: "start",
+        name: "magister_integration_read",
+        toolCallId: "call_1",
+        args: { path: "v24/customers/1/googleAds:search" },
+      },
+      {
+        type: "tool",
+        phase: "result",
+        name: "magister_integration_read",
+        toolCallId: "call_1",
+        isError: true,
+        result: "quota exceeded",
+      },
+    ]);
+    // Ordering: activity precedes the answer, and the response still finalizes.
+    const order = events.map((event) => event.event);
+    expect(order.indexOf("thinking")).toBeLessThan(order.indexOf("response.output_text.delta"));
+    expect(order.indexOf("tool")).toBeLessThan(order.indexOf("response.output_text.delta"));
+    expect(events.some((event) => event.data === "[DONE]")).toBe(true);
+  });
+
   it("retains the retry-limit summary when terminal error arrives before command return", async () => {
     const port = enabledPort;
     const summary =
