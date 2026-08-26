@@ -3576,16 +3576,21 @@
             "description": "Only set this after the user has explicitly agreed to discard uncommitted changes in an existing checkout.",
             "type": "boolean"
           },
+          "provider": {
+            "description": "Only needed when both GitHub and GitLab are connected and neither grant settles which host holds this path. Otherwise the Gateway resolves the host from the project's connections.",
+            "pattern": "^(github|gitlab)$",
+            "type": "string"
+          },
           "ref": {
             "description": "Branch, tag, or full 40-character commit SHA. Omit for the repository's default branch.",
             "maxLength": 255,
             "type": "string"
           },
           "repo": {
-            "description": "Repository as owner/name, e.g. acme/website.",
+            "description": "Repository as owner/name (GitHub) or group/subgroup/project (GitLab), e.g. acme/website.",
             "maxLength": 300,
             "minLength": 3,
-            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "pattern": "^[^\\s/]+(?:/[^\\s/]+){1,5}$",
             "type": "string"
           }
         },
@@ -3614,11 +3619,16 @@
             "minLength": 1,
             "type": "string"
           },
+          "provider": {
+            "description": "Only needed when both GitHub and GitLab are connected and neither grant settles which host holds this path. Otherwise the Gateway resolves the host from the project's connections.",
+            "pattern": "^(github|gitlab)$",
+            "type": "string"
+          },
           "repo": {
-            "description": "Repository as owner/name; it must already be checked out.",
+            "description": "Repository as owner/name (GitHub) or group/subgroup/project (GitLab); it must already be checked out.",
             "maxLength": 300,
             "minLength": 3,
-            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "pattern": "^[^\\s/]+(?:/[^\\s/]+){1,5}$",
             "type": "string"
           }
         },
@@ -3661,11 +3671,16 @@
             "pattern": "^[0-9a-f]{40}$",
             "type": "string"
           },
+          "provider": {
+            "description": "Only needed when both GitHub and GitLab are connected and neither grant settles which host holds this path. Otherwise the Gateway resolves the host from the project's connections.",
+            "pattern": "^(github|gitlab)$",
+            "type": "string"
+          },
           "repo": {
-            "description": "Repository as owner/name; it must already be checked out.",
+            "description": "Repository as owner/name (GitHub) or group/subgroup/project (GitLab); it must already be checked out.",
             "maxLength": 300,
             "minLength": 3,
-            "pattern": "^[^/\\s]+/[^/\\s]+$",
+            "pattern": "^[^\\s/]+(?:/[^\\s/]+){1,5}$",
             "type": "string"
           }
         },
@@ -3733,6 +3748,6 @@
       "tool_name": "magister_promote_artifact"
     }
   ],
-  "registry_revision": "6dc501c6b2bd9e77ca5752dc139bca2acaf3f872c1a4b73da7488e56573bb4f9",
+  "registry_revision": "ccbe163315b55a59c9665838f51bb55bd431d378b679a88e6fdc6e5b1eec2808",
   "schema_version": 1
 }
