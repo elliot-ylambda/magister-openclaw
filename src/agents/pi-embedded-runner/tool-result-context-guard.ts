@@ -107,6 +107,18 @@ function truncateToolResultToChars(
     return msg;
   }
 
+  const sourceRecord = msg as unknown as Record<string, unknown>;
+  if (sourceRecord.details !== undefined) {
+    const { details: _details, ...rest } = sourceRecord;
+    const withoutDetails = rest as unknown as AgentMessage;
+    if (estimateMessageCharsCached(withoutDetails, cache) <= maxChars) {
+      // Oversized `details` alone tripped the cap. Details are never sent to
+      // providers, so drop only them and keep the content — including
+      // non-text blocks — intact.
+      return withoutDetails;
+    }
+  }
+
   const rawText = getToolResultText(msg);
   if (!rawText) {
     const omittedChars = Math.max(
@@ -140,7 +152,9 @@ function toolResultsNeedTruncation(params: {
   maxSingleToolResultChars: number;
 }): boolean {
   const { messages, maxSingleToolResultChars } = params;
-  const estimateCache = createMessageCharEstimateCache();
+  // Retained-size view on purpose: an oversized `details` payload should trip
+  // the per-result pass so that pass can strip it from the wire view.
+  const estimateCache = createMessageCharEstimateCache({ includeToolResultDetails: true });
   for (const message of messages) {
     if (!isToolResultMessage(message)) {
       continue;
@@ -156,6 +170,9 @@ function exceedsPreemptiveOverflowThreshold(params: {
   messages: AgentMessage[];
   maxContextChars: number;
 }): boolean {
+  // Sent-size view: `details` never reach the provider, so counting them here
+  // fired preemptive overflows (and the compaction/retry loop behind them) on
+  // contexts that actually fit the model window.
   const estimateCache = createMessageCharEstimateCache();
   return estimateContextChars(params.messages, estimateCache) > params.maxContextChars;
 }
@@ -187,7 +204,7 @@ function enforceToolResultLimitInPlace(params: {
   maxSingleToolResultChars: number;
 }): void {
   const { messages, maxSingleToolResultChars } = params;
-  const estimateCache = createMessageCharEstimateCache();
+  const estimateCache = createMessageCharEstimateCache({ includeToolResultDetails: true });
 
   for (const message of messages) {
     if (!isToolResultMessage(message)) {
@@ -427,6 +444,10 @@ export function installToolResultContextGuard(params: {
       throw new Error(PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE);
     }
 
+    // Results under the per-result cap may still carry `details` here. That
+    // is fine for the wire view: provider converters serialize only content
+    // (never `details`), so they cost no model context — which is also why
+    // the aggregate check above uses the sent-size estimate.
     return contextMessages;
   }) as GuardableTransformContext;
 
