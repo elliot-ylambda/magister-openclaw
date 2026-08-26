@@ -4,7 +4,10 @@ export const CHARS_PER_TOKEN_ESTIMATE = 4;
 export const TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE = 2;
 const IMAGE_CHAR_ESTIMATE = 8_000;
 
-export type MessageCharEstimateCache = WeakMap<AgentMessage, number>;
+export type MessageCharEstimateCache = {
+  cache: WeakMap<AgentMessage, number>;
+  includeToolResultDetails: boolean;
+};
 
 function isTextBlock(block: unknown): block is { type: "text"; text: string } {
   return (
@@ -76,7 +79,7 @@ export function getToolResultText(msg: AgentMessage): string {
   return chunks.join("\n");
 }
 
-function estimateMessageChars(msg: AgentMessage): number {
+function estimateMessageChars(msg: AgentMessage, includeToolResultDetails: boolean): number {
   if (!msg || typeof msg !== "object") {
     return 0;
   }
@@ -127,8 +130,14 @@ function estimateMessageChars(msg: AgentMessage): number {
   if (isToolResultMessage(msg)) {
     const content = getToolResultContent(msg);
     let chars = estimateContentBlockChars(content);
-    const details = (msg as { details?: unknown }).details;
-    chars += estimateUnknownChars(details);
+    if (includeToolResultDetails) {
+      // Retained-size view: counts `details` payloads (e.g. untruncated
+      // originals kept by tool-result truncation). Provider converters never
+      // serialize `details`, so this mode must never be used to estimate what
+      // the model is actually sent.
+      const details = (msg as { details?: unknown }).details;
+      chars += estimateUnknownChars(details);
+    }
     const weightedChars = Math.ceil(
       chars * (CHARS_PER_TOKEN_ESTIMATE / TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE),
     );
@@ -138,20 +147,27 @@ function estimateMessageChars(msg: AgentMessage): number {
   return 256;
 }
 
-export function createMessageCharEstimateCache(): MessageCharEstimateCache {
-  return new WeakMap<AgentMessage, number>();
+export function createMessageCharEstimateCache(
+  options: { includeToolResultDetails?: boolean } = {},
+): MessageCharEstimateCache {
+  // Default is the sent-size view: `details` are excluded because provider
+  // converters never serialize them, so they cost no model context.
+  return {
+    cache: new WeakMap<AgentMessage, number>(),
+    includeToolResultDetails: options.includeToolResultDetails ?? false,
+  };
 }
 
 export function estimateMessageCharsCached(
   msg: AgentMessage,
   cache: MessageCharEstimateCache,
 ): number {
-  const hit = cache.get(msg);
+  const hit = cache.cache.get(msg);
   if (hit !== undefined) {
     return hit;
   }
-  const estimated = estimateMessageChars(msg);
-  cache.set(msg, estimated);
+  const estimated = estimateMessageChars(msg, cache.includeToolResultDetails);
+  cache.cache.set(msg, estimated);
   return estimated;
 }
 
@@ -166,5 +182,5 @@ export function invalidateMessageCharsCacheEntry(
   cache: MessageCharEstimateCache,
   msg: AgentMessage,
 ): void {
-  cache.delete(msg);
+  cache.cache.delete(msg);
 }
