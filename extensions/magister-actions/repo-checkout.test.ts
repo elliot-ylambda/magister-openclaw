@@ -7,12 +7,17 @@ import {
   CHECKOUT_TTL_MS,
   CheckoutError,
   COMMIT_AUTHOR_EMAIL,
+  awaitRepositoryIdle,
   checkoutRepository,
+  detectPackageManager,
   ensureRepoRoot,
+  INSTALL_POLL_SECONDS,
+  installRepoDependencies,
   MAX_MANIFEST_PATH_CHARS,
   makeReadableByTools,
   measureTree,
   parseBranch,
+  parseInstallRequest,
   parseProvider,
   parsePushRequest,
   parseRef,
@@ -24,12 +29,15 @@ import {
   reviewUrls,
   scrubToken,
   sweepExpiredCheckouts,
+  workLayer,
 } from "./repo-checkout.js";
 
 const temporary: string[] = [];
 
 afterEach(() => {
   delete process.env.MAGISTER_REPO_ROOT;
+  delete process.env.MAGISTER_TOOL_SANDBOX_LAUNCHER;
+  delete process.env.MAGISTER_CHECKOUT_LOCK_WAIT_MS;
   for (const root of temporary.splice(0)) {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -903,5 +911,291 @@ describe("prepare with an unusable base", () => {
       statusCode: 409,
       message: expect.stringContaining("base commit"),
     });
+  });
+});
+
+// ── Phase 3.5: the work layer, installs, and evidence ─────────────────────
+
+/** A stand-in for the tool-sandbox launcher: records every invocation and
+ *  does, on the real filesystem, what the supervisor's overlay would make
+ *  the sandbox's writes look like from the host. */
+function fakeLauncher(root: string, options: { fetchExit?: number } = {}): string {
+  const dir = scratch("magister-launcher-");
+  const log = path.join(dir, "launcher.log");
+  const script = path.join(dir, "launcher.sh");
+  const record = String.raw`printf '{"at":"%s","cwd":".","command":"%s","exit_code":0,"duration_ms":5}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LAYER/runs.jsonl"`;
+  fs.writeFileSync(
+    script,
+    [
+      "#!/bin/sh",
+      `ROOT='${root}'`,
+      `LOG='${log}'`,
+      'W=""; P=""',
+      'while [ $# -gt 0 ]; do case "$1" in',
+      '  --workspace) W="$2"; shift 2;;',
+      '  --profile) P="$2"; shift 2;;',
+      "  --attempt|--timeout) shift 2;;",
+      "  --) shift; break;;",
+      "  *) shift;;",
+      "esac; done",
+      String.raw`printf '%s %s\n' "$P" "$*" >> "$LOG"`,
+      'REL="${W#$ROOT/}"; LAYER="$ROOT/.work/$REL"',
+      'case "$P" in',
+      `  fetcher) mkdir -p "$LAYER/upper/node_modules"; echo x > "$LAYER/upper/node_modules/.installed"; exit ${options.fetchExit ?? 0};;`,
+      `  tool) mkdir -p "$LAYER"; ${record}; exit 0;;`,
+      '  maintenance) if [ "$1" = "remove-work-layer" ]; then rm -rf "$LAYER"; else rm -rf "$LAYER/upper" "$LAYER/work"; mkdir -p "$LAYER/upper"; fi; exit 0;;',
+      "esac",
+      "exit 70",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  process.env.MAGISTER_TOOL_SANDBOX_LAUNCHER = script;
+  return log;
+}
+
+function readMarkerFile(repoDir: string): Record<string, unknown> {
+  return JSON.parse(
+    fs.readFileSync(path.join(repoDir, ".git", "magister-checkout.json"), "utf8"),
+  ) as Record<string, unknown>;
+}
+
+async function settled<T>(poll: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const value = await poll();
+    if (done(value) || Date.now() > deadline) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+const install = () =>
+  ({ repo: "acme/site", provider: "github" }) as Parameters<typeof installRepoDependencies>[0];
+
+describe("choosing the package manager", () => {
+  it("installs only from a lockfile, in a fixed order of precedence", async () => {
+    const dir = scratch("magister-pm-");
+    expect(await detectPackageManager(dir)).toBeNull();
+    fs.writeFileSync(path.join(dir, "requirements.txt"), "pytest\n");
+    expect((await detectPackageManager(dir))?.name).toBe("pip");
+    fs.writeFileSync(path.join(dir, "uv.lock"), "");
+    expect((await detectPackageManager(dir))?.name).toBe("uv");
+    fs.writeFileSync(path.join(dir, "yarn.lock"), "");
+    const classic = await detectPackageManager(dir);
+    expect(classic?.name).toBe("yarn");
+    expect(classic?.rebuild).toBeNull();
+    fs.writeFileSync(path.join(dir, ".yarnrc.yml"), "");
+    expect((await detectPackageManager(dir))?.rebuild).toEqual(["corepack", "yarn", "rebuild"]);
+    fs.writeFileSync(path.join(dir, "package-lock.json"), "{}");
+    expect((await detectPackageManager(dir))?.name).toBe("npm");
+    fs.writeFileSync(path.join(dir, "pnpm-lock.yaml"), "");
+    const pnpm = await detectPackageManager(dir);
+    expect(pnpm?.name).toBe("pnpm");
+    expect(pnpm?.install).toContain("--ignore-scripts");
+    expect(pnpm?.install).toContain("--frozen-lockfile");
+  });
+
+  it("parses an install request like the other repository requests", () => {
+    expect(parseInstallRequest({ repo: "acme/site" })).toEqual({
+      repo: "acme/site",
+      provider: "github",
+      mutation_context: undefined,
+    });
+    expect(parseInstallRequest({ repo: "g/s/p", provider: "gitlab" }).provider).toBe("gitlab");
+    expect(() => parseInstallRequest({ repo: "acme/site", token: "t" })).toThrow(/unknown fields/);
+  });
+});
+
+describe("installing dependencies", () => {
+  it("runs in the background — fetch then rebuild — and answers installing until done", async () => {
+    const { repoDir, root } = upstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "package-lock.json"), '{"lockfileVersion":3}');
+    const log = fakeLauncher(root);
+
+    const first = await installRepoDependencies(install());
+    expect(first.status).toBe("installing");
+    expect(first.poll_after_seconds).toBe(INSTALL_POLL_SECONDS);
+    expect(first.manager).toBe("npm");
+
+    const done = await settled(
+      () => installRepoDependencies(install()),
+      (r) => r.status !== "installing",
+    );
+    expect(done.status).toBe("installed");
+    expect(done.rebuild).toEqual({ ran: true, exit_code: 0 });
+    expect(done.installed_at).toBeDefined();
+    expect(fs.existsSync(path.join(workLayer(repoDir).upper, "node_modules", ".installed"))).toBe(
+      true,
+    );
+
+    const calls = fs.readFileSync(log, "utf8").trim().split("\n");
+    expect(calls).toEqual(["fetcher npm ci --no-audit --no-fund", "tool npm rebuild"]);
+    expect((readMarkerFile(repoDir).deps as { state: string }).state).toBe("installed");
+
+    // The same lockfile again is a no-op, and says so at once.
+    const again = await installRepoDependencies(install());
+    expect(again.status).toBe("installed");
+    expect(fs.readFileSync(log, "utf8").trim().split("\n")).toHaveLength(2);
+    await awaitRepositoryIdle("github", "acme/site");
+  });
+
+  it("reports a failed install once, then lets the next call retry", async () => {
+    const { repoDir, root } = upstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "package-lock.json"), "{}");
+    fakeLauncher(root, { fetchExit: 1 });
+
+    expect((await installRepoDependencies(install())).status).toBe("installing");
+    await settled(
+      () => Promise.resolve((readMarkerFile(repoDir).deps as { state: string } | undefined)?.state),
+      (state) => state === "failed",
+    );
+    await expect(installRepoDependencies(install())).rejects.toMatchObject({
+      statusCode: 422,
+      message: expect.stringContaining("failed"),
+    });
+    // Reported once: the marker forgot the failure, so this starts over.
+    expect((await installRepoDependencies(install())).status).toBe("installing");
+    await awaitRepositoryIdle("github", "acme/site");
+  });
+
+  it("refuses a checkout with no lockfile rather than resolving unpinned dependencies", async () => {
+    const { root } = upstreamAndCheckout();
+    fakeLauncher(root);
+    await expect(installRepoDependencies(install())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("no lockfile"),
+    });
+  });
+});
+
+describe("the work layer as evidence", () => {
+  it("a freeze names the tracked files the sandbox shadowed and attaches what was run", async () => {
+    const { repoDir, origin } = bareUpstreamAndCheckout();
+    const layer = workLayer(repoDir);
+    fs.mkdirSync(layer.upper, { recursive: true });
+    // A formatter in the sandbox rewrote README.md and dropped a new file.
+    fs.writeFileSync(path.join(layer.upper, "README.md"), "formatted\n");
+    fs.writeFileSync(path.join(layer.upper, "scratch.txt"), "not tracked\n");
+    fs.writeFileSync(
+      layer.runsLog,
+      [
+        '{"at":"2026-01-01T00:00:00Z","cwd":".","command":"npm test","exit_code":1,"duration_ms":900}',
+        '{"at":"2026-01-01T00:01:00Z","cwd":".","command":"npm test","exit_code":0,"duration_ms":850}',
+      ].join("\n") + "\n",
+    );
+    fs.writeFileSync(path.join(repoDir, "README.md"), "edited by the file tools\n");
+
+    const frozen = await prepareRepoCommit(prepare());
+    expect(frozen.shadowed_tracked_files).toEqual([{ path: "README.md", change: "modified" }]);
+    expect(frozen.warnings.some((w) => w.includes("not in this commit"))).toBe(true);
+    expect(frozen.verification.map((r) => r.exit_code)).toEqual([1, 0]);
+    // The committed README is the file-tool edit, never the sandbox's.
+    expect(git(repoDir, "show", `${frozen.commit_sha}:README.md`)).toBe(
+      "edited by the file tools\n",
+    );
+
+    // Only commands since the previous freeze count for the next one.
+    fs.appendFileSync(
+      layer.runsLog,
+      '{"at":"2999-01-01T00:00:00Z","cwd":".","command":"npm run build","exit_code":0,"duration_ms":10}\n',
+    );
+    fs.writeFileSync(path.join(repoDir, "second.txt"), "more\n");
+    const second = await prepareRepoCommit(prepare({ message: "second" }));
+    expect(second.verification.map((r) => r.command)).toEqual(["npm run build"]);
+
+    const pushed = await pushRepoBranch(push({ commit_sha: frozen.commit_sha }));
+    expect(pushed.verification.map((r) => r.exit_code)).toEqual([1, 0]);
+    expect(remoteTip(origin, "magister/readme")).toBe(frozen.commit_sha);
+  });
+
+  it("warns when nothing was run, so an unverified push says so", async () => {
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.writeFileSync(path.join(repoDir, "README.md"), "changed\n");
+    const frozen = await prepareRepoCommit(prepare());
+    expect(frozen.verification).toEqual([]);
+    expect(frozen.warnings).toEqual([expect.stringContaining("nothing was verified")]);
+  });
+
+  it("discarding resets the work layer and forgets installed dependencies", async () => {
+    const { repoDir } = upstreamAndCheckout();
+    const layer = workLayer(repoDir);
+    fs.mkdirSync(path.join(layer.upper, "node_modules"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, ".git", "magister-checkout.json"),
+      JSON.stringify({
+        last_used_at: new Date().toISOString(),
+        repo: "acme/site",
+        deps: {
+          manager: "npm",
+          lockfile: "package-lock.json",
+          sha256: "x",
+          state: "installed",
+          started_at: "2026-01-01T00:00:00Z",
+        },
+      }),
+    );
+
+    const kept = await checkoutRepository(request());
+    expect(kept.status).toBe("already_current");
+    expect(fs.existsSync(path.join(layer.upper, "node_modules"))).toBe(true);
+
+    await checkoutRepository(request({ discard_local_changes: true }));
+    expect(fs.existsSync(path.join(layer.upper, "node_modules"))).toBe(false);
+    expect(readMarkerFile(repoDir).deps).toBeUndefined();
+  });
+
+  it("a host operation waits out a running command, then refuses; a dead holder is stale", async () => {
+    process.env.MAGISTER_CHECKOUT_LOCK_WAIT_MS = "150";
+    const { repoDir } = bareUpstreamAndCheckout();
+    const layer = workLayer(repoDir);
+    fs.mkdirSync(layer.lock, { recursive: true });
+    fs.writeFileSync(
+      path.join(layer.lock, "owner.json"),
+      JSON.stringify({ owner: "attempt:t", pid: process.pid }),
+    );
+    fs.writeFileSync(path.join(repoDir, "README.md"), "changed\n");
+
+    await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("still running"),
+    });
+    fs.writeFileSync(
+      path.join(layer.lock, "owner.json"),
+      JSON.stringify({ owner: "attempt:t", pid: 2 ** 22 - 1 }),
+    );
+    await expect(prepareRepoCommit(prepare())).resolves.toMatchObject({ status: "prepared" });
+    expect(fs.existsSync(layer.lock)).toBe(false);
+  });
+
+  it("the sweeper removes a checkout's work layer with it and reclaims an orphaned one", async () => {
+    const { repoDir, root } = upstreamAndCheckout();
+    const layer = workLayer(repoDir);
+    fs.mkdirSync(path.join(layer.upper, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(layer.upper, "dist", "bundle.js"), "x");
+    const stale = new Date(Date.now() - CHECKOUT_TTL_MS - 60_000).toISOString();
+    fs.writeFileSync(
+      path.join(repoDir, ".git", "magister-checkout.json"),
+      JSON.stringify({ last_used_at: stale, repo: "acme/site" }),
+    );
+    const orphan = path.join(root, ".work", "acme", "gone", "upper");
+    fs.mkdirSync(orphan, { recursive: true });
+    fs.writeFileSync(path.join(orphan, "leftover"), "x");
+
+    const swept = await sweepExpiredCheckouts();
+    expect(swept.removed).toContain(repoDir);
+    expect(fs.existsSync(repoDir)).toBe(false);
+    expect(fs.existsSync(layer.root)).toBe(false);
+    expect(fs.existsSync(path.dirname(orphan))).toBe(false);
+    expect(fs.existsSync(path.join(root, ".work"))).toBe(true);
+  });
+
+  it("asks the supervisor, not the host, to reset a layer when there is one", async () => {
+    const { repoDir, root } = upstreamAndCheckout();
+    const log = fakeLauncher(root);
+    fs.mkdirSync(path.join(workLayer(repoDir).upper, "node_modules"), { recursive: true });
+    await checkoutRepository(request({ discard_local_changes: true }));
+    expect(fs.readFileSync(log, "utf8")).toContain("maintenance reset-work-layer");
   });
 });

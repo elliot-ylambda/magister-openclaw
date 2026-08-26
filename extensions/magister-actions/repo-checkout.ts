@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
@@ -76,6 +77,35 @@ export const MAX_MARKER_HISTORY = 20;
 export const COMMIT_AUTHOR_NAME = "Magister Agent";
 export const COMMIT_AUTHOR_EMAIL = "agent@noreply.magistermarketing.com";
 
+/** Where the sandbox's writes to a checkout land (Phase 3.5): a sibling of
+ *  the checkouts, mirrored by path. The supervisor mounts the real tree as
+ *  the lower layer of an overlay and this as the upper, so build output,
+ *  test caches, and a formatter's edits never reach the tree the freeze
+ *  reads. Mirrors `sandbox_supervisor.WORK_DIR_NAME`. */
+export const WORK_DIR_NAME = ".work";
+export const RUNS_LOG_NAME = "runs.jsonl";
+const CHECKOUT_LOCK_NAME = ".attempt.lock";
+/** A holder that cannot be checked for liveness is presumed dead after this. */
+const CHECKOUT_LOCK_STALE_MS = 120_000;
+/** How long a host operation waits for a running command before refusing.
+ *  Read per call so a test can shorten it. */
+function checkoutLockWaitMs(): number {
+  const configured = Number(process.env.MAGISTER_CHECKOUT_LOCK_WAIT_MS);
+  return Number.isFinite(configured) && configured >= 0 ? configured : 30_000;
+}
+/** A dependency install and a rebuild each get this long inside the sandbox. */
+export const INSTALL_TIMEOUT_SECONDS = 300;
+const SANDBOX_OUTPUT_TAIL_CHARS = 4_000;
+/** How many run records a freeze attaches as its evidence. */
+export const MAX_VERIFICATION_RECORDS = 20;
+export const MAX_SHADOWED_ENTRIES = 100;
+/** The one client the host uses to reach the sandbox supervisor — the same
+ *  launcher the exec tool uses, so there is no second privilege path. Read
+ *  per call, like `repoRoot()`. */
+function toolSandboxLauncher(): string | undefined {
+  return process.env.MAGISTER_TOOL_SANDBOX_LAUNCHER || undefined;
+}
+
 const SEGMENT_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/;
 const REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,254}$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
@@ -147,6 +177,16 @@ export type PrepareRequest = {
 
 export type ManifestEntry = { path: string; change: "added" | "modified" | "deleted" };
 
+/** One command the model ran inside the checkout, as the supervisor recorded
+ *  it: what, where, how it ended. Never its output. */
+export type RunRecord = {
+  at: string;
+  cwd: string;
+  command: string;
+  exit_code: number;
+  duration_ms: number;
+};
+
 export type PrepareReceipt = {
   status: "prepared" | "already_prepared";
   repo: string;
@@ -157,7 +197,47 @@ export type PrepareReceipt = {
   changed_file_count: number;
   changed_files: ManifestEntry[];
   byte_size: number;
+  /** Tracked files a sandbox command wrote — a formatter, a code generator.
+   *  Those writes live in the work layer, not in this commit, and they hide
+   *  the committed version from the sandbox's own view. */
+  shadowed_tracked_files: ManifestEntry[];
+  /** Commands run in the checkout since the previous freeze. */
+  verification: RunRecord[];
+  warnings: string[];
 };
+
+export type InstallRequest = {
+  repo: string;
+  provider: RepoProvider;
+  token?: undefined;
+  mutation_context?: unknown;
+};
+
+export type InstallReceipt = {
+  /** `installing` means the work continues on the machine after this reply;
+   *  call again after `poll_after_seconds` for the outcome. An install can
+   *  run for minutes, longer than any single hop between the model and this
+   *  host is allowed to wait. */
+  status: "installing" | "installed";
+  repo: string;
+  provider: RepoProvider;
+  path: string;
+  manager: "pnpm" | "npm" | "yarn" | "uv" | "pip";
+  lockfile: string;
+  /** The offline second step that runs lifecycle scripts, for managers that
+   *  have one. A non-zero exit is reported, not fatal: a package whose
+   *  postinstall needs the network fails here by design. */
+  rebuild: { ran: boolean; exit_code: number | null };
+  byte_size: number;
+  warnings: string[];
+  installed_at?: string;
+  poll_after_seconds?: number;
+};
+
+export const INSTALL_POLL_SECONDS = 20;
+/** An install still marked running after this long is presumed dead —
+ *  the host restarted mid-install — and a new one may start. */
+const INSTALL_STALE_MS = 2 * INSTALL_TIMEOUT_SECONDS * 1_000 + 60_000;
 
 export type PushRequest = {
   repo: string;
@@ -180,6 +260,9 @@ export type PushReceipt = {
   default_branch: string;
   branch_url: string;
   pull_request_url: string;
+  /** What was run against the tree this commit froze — the pull request's
+   *  "Verification" section. Evidence a person reads, not a gate. */
+  verification: RunRecord[];
 };
 
 export class CheckoutError extends Error {
@@ -570,13 +653,30 @@ export type PreparedCommit = {
   base_sha: string;
   prepared_at: string;
   message: string;
+  verification?: RunRecord[];
 };
 
 export type PushedBranch = { branch: string; sha: string; pushed_at: string };
 
+export type InstalledDependencies = {
+  manager: InstallReceipt["manager"];
+  lockfile: string;
+  sha256: string;
+  state: "running" | "installed" | "failed";
+  started_at: string;
+  finished_at?: string;
+  rebuild?: InstallReceipt["rebuild"];
+  warnings?: string[];
+  /** For `failed`: the bounded tail of the install's output. */
+  error?: string;
+};
+
 type CheckoutMarker = {
   last_used_at: string;
   repo: string;
+  /** The lockfile the work layer's dependencies were installed from, so a
+   *  repeat install with the same lockfile is a no-op rather than a refetch. */
+  deps?: InstalledDependencies;
   /** The upstream commit this checkout started from. Every manifest is diffed
    *  against it, so a stack of prepared commits still describes one change set
    *  rather than the delta since the previous freeze. */
@@ -728,11 +828,25 @@ export async function sweepExpiredCheckouts(now = Date.now()): Promise<{ removed
       continue;
     }
     if ((await markerAge(repoDir, now)) > CHECKOUT_TTL_MS) {
-      await fs.promises.rm(repoDir, { recursive: true, force: true });
+      try {
+        // Taken with no wait: a command running in a day-old checkout keeps
+        // it alive for one more sweep rather than losing its tree.
+        await withCheckoutLock(repoDir, "host:sweep", async () => {
+          // The layer goes first, while the marker still exists to name it.
+          await workLayerControl(repoDir, "remove-work-layer");
+          await fs.promises.rm(repoDir, { recursive: true, force: true });
+        });
+      } catch (error) {
+        if (error instanceof CheckoutError && error.statusCode === 409) {
+          continue;
+        }
+        throw error;
+      }
       await pruneEmptyAncestors(path.dirname(repoDir));
       removed.push(repoDir);
     }
   }
+  removed.push(...(await sweepOrphanedWorkLayers()));
   const staging = path.join(repoRoot(), STAGING_DIR_NAME);
   let pending: fs.Dirent[] = [];
   try {
@@ -757,11 +871,52 @@ export async function sweepExpiredCheckouts(now = Date.now()): Promise<{ removed
   return { removed };
 }
 
+/** A work layer whose checkout is gone — a crash between the two halves of
+ *  a sweep — is reclaimed on the next one. The supervisor accepts the removal
+ *  by path even without the marker, for exactly this case. */
+async function sweepOrphanedWorkLayers(): Promise<string[]> {
+  const removed: string[] = [];
+  const workRoot = path.join(repoRoot(), WORK_DIR_NAME);
+  const stack: Array<{ dir: string; depth: number }> = [{ dir: workRoot, depth: 0 }];
+  while (stack.length > 0) {
+    const { dir, depth } = stack.pop() as { dir: string; depth: number };
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const isLayer = entries.some((entry) => entry.name === "upper" || entry.name === RUNS_LOG_NAME);
+    if (isLayer && dir !== workRoot) {
+      const checkout = path.join(repoRoot(), path.relative(workRoot, dir));
+      const present = await fs.promises
+        .stat(path.join(checkout, ".git"))
+        .then(() => true)
+        .catch(() => false);
+      if (!present) {
+        try {
+          await workLayerControl(checkout, "remove-work-layer");
+          removed.push(dir);
+        } catch {
+          // Try again next sweep.
+        }
+      }
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".") && depth + 1 < MAX_CHECKOUT_DEPTH) {
+        stack.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
+      }
+    }
+  }
+  return removed;
+}
+
 /** Remove now-empty owner, group, and host directories up to — never
  *  including — the repository root, so a nested GitLab path leaves no husk
  *  behind once its checkout is gone. */
-async function pruneEmptyAncestors(dir: string): Promise<void> {
-  const root = repoRoot();
+async function pruneEmptyAncestors(dir: string, stopAt = repoRoot()): Promise<void> {
+  const root = stopAt;
   let current = dir;
   while (current !== root && current.startsWith(`${root}${path.sep}`)) {
     try {
@@ -785,8 +940,278 @@ async function totalBytes(): Promise<number> {
         maxBytes: Number.POSITIVE_INFINITY,
       })
     ).bytes;
+    total += (
+      await measureTree(workLayer(repoDir).upper, {
+        maxFiles: Number.POSITIVE_INFINITY,
+        maxBytes: Number.POSITIVE_INFINITY,
+      })
+    ).bytes;
   }
   return total;
+}
+
+// ── Work layer ──────────────────────────────────────────────────────────
+
+export type WorkLayer = {
+  root: string;
+  upper: string;
+  work: string;
+  runsLog: string;
+  lock: string;
+};
+
+/** The sandbox-owned layer beside a checkout, mirrored by path. */
+export function workLayer(repoDir: string): WorkLayer {
+  const root = path.join(repoRoot(), WORK_DIR_NAME, path.relative(repoRoot(), repoDir));
+  return {
+    root,
+    upper: path.join(root, "upper"),
+    work: path.join(root, "work"),
+    runsLog: path.join(root, RUNS_LOG_NAME),
+    lock: path.join(root, CHECKOUT_LOCK_NAME),
+  };
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM still proves the process exists; only ESRCH means it is gone.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function lockIsStale(lockDir: string): boolean {
+  try {
+    const owner = JSON.parse(fs.readFileSync(path.join(lockDir, "owner.json"), "utf8")) as {
+      pid?: unknown;
+    };
+    const pid = Number(owner.pid);
+    return !Number.isInteger(pid) || pid <= 0 || !pidAlive(pid);
+  } catch {
+    try {
+      return Date.now() - fs.lstatSync(lockDir).mtimeMs > CHECKOUT_LOCK_STALE_MS;
+    } catch {
+      return true;
+    }
+  }
+}
+
+/** Hold the checkout against the sandbox while a host operation runs.
+ *
+ *  The supervisor takes the same directory lock for every command it runs in
+ *  the checkout, because a `git reset` or a layer reset under a mounted
+ *  overlay is undefined, and two commands cannot share one upper layer. A
+ *  directory is the lock because both sides can take it with nothing but
+ *  `mkdir`; the holder's pid is what makes a crashed holder's lock stale.
+ *  The in-process `withRepoLock` still serialises host operations among
+ *  themselves; this one is host-versus-sandbox. */
+async function withCheckoutLock<T>(
+  repoDir: string,
+  owner: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const layer = workLayer(repoDir);
+  await fs.promises.mkdir(layer.root, { recursive: true });
+  const deadline = Date.now() + checkoutLockWaitMs();
+  for (;;) {
+    try {
+      await fs.promises.mkdir(layer.lock, { mode: 0o770 });
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      if (lockIsStale(layer.lock)) {
+        await fs.promises.rm(layer.lock, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new CheckoutError(
+          "A command is still running in this checkout.",
+          409,
+          "Wait for it to finish — or stop it — then retry.",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+  try {
+    await fs.promises.writeFile(
+      path.join(layer.lock, "owner.json"),
+      JSON.stringify({ owner, pid: process.pid, at: Math.floor(Date.now() / 1000) }),
+      { mode: 0o660 },
+    );
+    return await task();
+  } finally {
+    await fs.promises.rm(layer.lock, { recursive: true, force: true });
+  }
+}
+
+type SandboxRun = { code: number; output: string };
+
+/** Run one command through the tool-sandbox launcher and collect a bounded
+ *  tail of its output. The launcher's own diagnostics arrive on stderr
+ *  prefixed `tool-sandbox:`; a contract refusal is exit 64. */
+async function runInSandbox(
+  profile: "fetcher" | "tool" | "maintenance",
+  repoDir: string,
+  argv: string[],
+  timeoutSeconds: number,
+): Promise<SandboxRun> {
+  const launcher = toolSandboxLauncher();
+  if (!launcher) {
+    throw new CheckoutError(
+      "The tool sandbox is unavailable on this machine.",
+      503,
+      "Retry later; if it persists the machine needs attention.",
+    );
+  }
+  const attempt = `repo-${profile}-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+  const child = spawn(
+    launcher,
+    [
+      "--workspace",
+      repoDir,
+      "--attempt",
+      attempt,
+      "--profile",
+      profile,
+      "--timeout",
+      String(timeoutSeconds),
+      "--",
+      ...argv,
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  let output = "";
+  const collect = (chunk: Buffer) => {
+    output = (output + chunk.toString("utf8")).slice(-SANDBOX_OUTPUT_TAIL_CHARS);
+  };
+  child.stdout.on("data", collect);
+  child.stderr.on("data", collect);
+  const code = await new Promise<number>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (value) => resolve(value ?? -1));
+  });
+  return { code, output };
+}
+
+/** Reset or remove a checkout's work layer.
+ *
+ *  Entries the sandbox created inside `upper` belong to the sandbox user, and
+ *  a directory it made is not one the host may delete from, so the supervisor
+ *  does this as root on the host's behalf. Without a supervisor — tests, a
+ *  machine with the sandbox off — the host removes what it can itself. */
+async function workLayerControl(
+  repoDir: string,
+  operation: "reset-work-layer" | "remove-work-layer",
+): Promise<void> {
+  const layer = workLayer(repoDir);
+  if (!toolSandboxLauncher()) {
+    if (operation === "remove-work-layer") {
+      await fs.promises.rm(layer.root, { recursive: true, force: true });
+      // Up to, never including, `.work` — the same rule the supervisor keeps.
+      await pruneEmptyAncestors(path.dirname(layer.root), path.join(repoRoot(), WORK_DIR_NAME));
+    } else {
+      await fs.promises.rm(layer.upper, { recursive: true, force: true });
+      await fs.promises.rm(layer.work, { recursive: true, force: true });
+    }
+    return;
+  }
+  const run = await runInSandbox("maintenance", repoDir, [operation], 60);
+  if (run.code !== 0) {
+    throw new CheckoutError(
+      `Could not ${operation === "reset-work-layer" ? "reset" : "remove"} the checkout's work layer.`,
+      run.output.includes("still running") ? 409 : 502,
+      truncate(run.output),
+    );
+  }
+}
+
+/** The supervisor's run log, newest last. Unreadable or absent is empty:
+ *  the evidence is a courtesy, never a precondition. */
+async function readRunRecords(repoDir: string): Promise<RunRecord[]> {
+  let raw: string;
+  try {
+    raw = await fs.promises.readFile(workLayer(repoDir).runsLog, "utf8");
+  } catch {
+    return [];
+  }
+  const records: RunRecord[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (typeof parsed.at === "string" && typeof parsed.command === "string") {
+        records.push({
+          at: parsed.at,
+          cwd: typeof parsed.cwd === "string" ? parsed.cwd : ".",
+          command: parsed.command,
+          exit_code: typeof parsed.exit_code === "number" ? parsed.exit_code : -1,
+          duration_ms: typeof parsed.duration_ms === "number" ? parsed.duration_ms : 0,
+        });
+      }
+    } catch {
+      continue;
+    }
+  }
+  return records;
+}
+
+/** Tracked files the sandbox wrote or deleted, read from the upper layer.
+ *
+ *  A regular file in `upper` at a tracked path is a modification the freeze
+ *  will not see; overlayfs records a deletion as a character device, so that
+ *  is a tracked file the sandbox removed. Package and cache directories are
+ *  skipped by name, and the walk is bounded — this is a warning, not an audit. */
+async function shadowedTrackedFiles(
+  repoDir: string,
+  tracked: Set<string>,
+): Promise<ManifestEntry[]> {
+  const upper = workLayer(repoDir).upper;
+  const skip = new Set([
+    ".git",
+    ".magister-cache",
+    "node_modules",
+    ".venv",
+    ".yarn",
+    "__pycache__",
+  ]);
+  const found: ManifestEntry[] = [];
+  const stack = [upper];
+  let visited = 0;
+  while (stack.length > 0 && found.length < MAX_SHADOWED_ENTRIES && visited < 20_000) {
+    const current = stack.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      visited += 1;
+      if (current === upper && skip.has(entry.name)) {
+        continue;
+      }
+      const full = path.join(current, entry.name);
+      const relative = path.relative(upper, full).split(path.sep).join("/");
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        stack.push(full);
+      } else if (entry.isCharacterDevice() && tracked.has(relative)) {
+        found.push({ path: relative, change: "deleted" });
+      } else if ((entry.isFile() || entry.isSymbolicLink()) && tracked.has(relative)) {
+        found.push({ path: relative, change: "modified" });
+      }
+      if (found.length >= MAX_SHADOWED_ENTRIES) {
+        break;
+      }
+    }
+  }
+  return found.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 // ── Checkout ────────────────────────────────────────────────────────────
@@ -874,29 +1299,46 @@ async function performCheckout(request: CheckoutRequest): Promise<CheckoutReceip
 
   let status: CheckoutReceipt["status"];
   if (existing) {
-    const marker = await readMarker(repoDir);
-    const unpushed = unpushedCommits(marker);
-    if (unpushed.length > 0 && !request.discard_local_changes) {
-      throw new CheckoutError(
-        `The existing checkout of ${full} has ${unpushed.length} prepared commit(s) that were never pushed.`,
-        409,
-        "Push that work to a branch first, or ask the user whether to discard it and retry with discard_local_changes=true.",
-      );
-    }
-    if (await isDirty(repoDir)) {
-      if (!request.discard_local_changes) {
+    status = await withCheckoutLock(repoDir, "host:checkout", async () => {
+      const marker = await readMarker(repoDir);
+      const unpushed = unpushedCommits(marker);
+      if (unpushed.length > 0 && !request.discard_local_changes) {
         throw new CheckoutError(
-          `The existing checkout of ${full} has uncommitted changes.`,
+          `The existing checkout of ${full} has ${unpushed.length} prepared commit(s) that were never pushed.`,
           409,
-          "Ask the user whether to keep or discard that work; retry with discard_local_changes=true only if they choose to discard it.",
+          "Push that work to a branch first, or ask the user whether to discard it and retry with discard_local_changes=true.",
         );
       }
-      await runGit(["reset", "--hard"], { cwd: repoDir, timeoutMs: GIT_COMMAND_TIMEOUT_MS });
-      await runGit(["clean", "-fdx"], { cwd: repoDir, timeoutMs: GIT_COMMAND_TIMEOUT_MS });
-    }
-    const before = await headSha(repoDir);
-    await fetchRef(repoDir, request, ref, () => withinCheckoutBudget(repoDir));
-    status = (await headSha(repoDir)) === before ? "already_current" : "refreshed";
+      if (await isDirty(repoDir)) {
+        if (!request.discard_local_changes) {
+          throw new CheckoutError(
+            `The existing checkout of ${full} has uncommitted changes.`,
+            409,
+            "Ask the user whether to keep or discard that work; retry with discard_local_changes=true only if they choose to discard it.",
+          );
+        }
+        await runGit(["reset", "--hard"], { cwd: repoDir, timeoutMs: GIT_COMMAND_TIMEOUT_MS });
+        await runGit(["clean", "-fdx"], { cwd: repoDir, timeoutMs: GIT_COMMAND_TIMEOUT_MS });
+      }
+      if (request.discard_local_changes) {
+        // Discarding means the whole state, not only what git tracks: the
+        // work layer's build output and shadowed edits go with it. Installed
+        // dependencies go too, so the marker forgets them.
+        const deps = marker?.deps;
+        if (deps?.state === "running" && !installIsStale(deps)) {
+          throw new CheckoutError(
+            `Dependencies are still installing in ${full}.`,
+            409,
+            "Wait for the install to finish, then retry.",
+          );
+        }
+        await workLayerControl(repoDir, "reset-work-layer");
+        await stampMarker(repoDir, full, { deps: undefined });
+      }
+      const before = await headSha(repoDir);
+      await fetchRef(repoDir, request, ref, () => withinCheckoutBudget(repoDir));
+      return (await headSha(repoDir)) === before ? "already_current" : "refreshed";
+    });
   } else {
     await ensureRoomForNewCheckout();
     await cloneFresh(repoDir, request, ref);
@@ -1140,8 +1582,35 @@ async function mirrorChangedFiles(repoDir: string, entries: ManifestEntry[]): Pr
   }
 }
 
+async function trackedFiles(repoDir: string): Promise<Set<string>> {
+  const listed = await runGit(["ls-files", "-z"], {
+    cwd: repoDir,
+    timeoutMs: GIT_COMMAND_TIMEOUT_MS,
+  });
+  return new Set(listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : []);
+}
+
+/** The commands run in the checkout since the previous freeze, oldest first
+ *  and bounded. What they were run against is the tree this freeze reads. */
+async function verificationSince(
+  repoDir: string,
+  previous: PreparedCommit | undefined,
+): Promise<RunRecord[]> {
+  const records = await readRunRecords(repoDir);
+  const since = previous?.prepared_at;
+  return records.filter((record) => !since || record.at > since).slice(-MAX_VERIFICATION_RECORDS);
+}
+
 async function performPrepare(request: PrepareRequest): Promise<PrepareReceipt> {
   const { repoDir, full } = await requireCheckout(request.repo, request.provider);
+  return withCheckoutLock(repoDir, "host:prepare", () => freezeCheckout(repoDir, full, request));
+}
+
+async function freezeCheckout(
+  repoDir: string,
+  full: string,
+  request: PrepareRequest,
+): Promise<PrepareReceipt> {
   const marker = await readMarker(repoDir);
   const prepared = marker?.prepared ?? [];
   // A marker written before this field existed, or a checkout nothing has
@@ -1225,6 +1694,7 @@ async function performPrepare(request: PrepareRequest): Promise<PrepareReceipt> 
     base_sha: base,
     prepared_at: new Date().toISOString(),
     message: request.message,
+    verification: await verificationSince(repoDir, prepared.at(-1)),
   };
   await mirrorChangedFiles(repoDir, pendingEntries);
   await stampMarker(repoDir, full, {
@@ -1263,6 +1733,19 @@ async function prepareReceipt(
     { cwd: repoDir, timeoutMs: GIT_COMMAND_TIMEOUT_MS },
   );
   const entries = parseNameStatus(diff.stdout);
+  const shadowed = await shadowedTrackedFiles(repoDir, await trackedFiles(repoDir));
+  const verification = commit.verification ?? [];
+  const warnings: string[] = [];
+  if (shadowed.length > 0) {
+    warnings.push(
+      `${shadowed.length} tracked file(s) were changed by a command in the sandbox and are not in this commit. Re-apply those changes with the file tools, or discard the work layer with checkout_repo discard_local_changes=true.`,
+    );
+  }
+  if (verification.length === 0) {
+    warnings.push(
+      "No command was run in this checkout since the last freeze; nothing was verified.",
+    );
+  }
   return {
     status,
     repo: full,
@@ -1273,6 +1756,9 @@ async function prepareReceipt(
     changed_file_count: entries.length,
     changed_files: entries.slice(0, MAX_MANIFEST_ENTRIES).map(forDisplay),
     byte_size: await changedBytes(repoDir, entries),
+    shadowed_tracked_files: shadowed.map(forDisplay),
+    verification,
+    warnings,
   };
 }
 
@@ -1360,6 +1846,14 @@ export function reviewUrls(
 
 async function performPush(request: PushRequest): Promise<PushReceipt> {
   const { repoDir, full } = await requireCheckout(request.repo, request.provider);
+  return withCheckoutLock(repoDir, "host:push", () => pushFrozenCommit(repoDir, full, request));
+}
+
+async function pushFrozenCommit(
+  repoDir: string,
+  full: string,
+  request: PushRequest,
+): Promise<PushReceipt> {
   const label = REPO_PROVIDERS[request.provider].label;
   const marker = await readMarker(repoDir);
   const prepared = marker?.prepared ?? [];
@@ -1383,6 +1877,7 @@ async function performPush(request: PushRequest): Promise<PushReceipt> {
     previous_remote_sha: remote.tip,
     default_branch: remote.defaultBranch,
     ...reviewUrls(request.provider, full, remote.defaultBranch, request.branch),
+    verification: frozen.verification ?? [],
   });
 
   const recordPush = async () => {
@@ -1476,6 +1971,293 @@ export async function pushRepoBranch(request: PushRequest): Promise<PushReceipt>
   );
 }
 
+// ── Install dependencies ────────────────────────────────────────────────
+
+export type PackageManager = {
+  name: InstallReceipt["manager"];
+  lockfile: string;
+  /** Runs in the fetcher profile: network on, lifecycle scripts off. */
+  install: string[];
+  /** Runs in the tool profile afterwards: lifecycle scripts on, network off.
+   *  Null for managers that have no offline second step. */
+  rebuild: string[] | null;
+  warnings: string[];
+};
+
+/** Which manager a checkout is installed with, decided by its lockfile.
+ *
+ *  Only a lockfile is ever installed from: resolving unpinned dependencies
+ *  would put whatever is newest on the registry into the tree the agent then
+ *  tests and pushes, and that is not the project the user has. */
+export async function detectPackageManager(repoDir: string): Promise<PackageManager | null> {
+  const has = (name: string) =>
+    fs.promises
+      .stat(path.join(repoDir, name))
+      .then(() => true)
+      .catch(() => false);
+  if (await has("pnpm-lock.yaml")) {
+    return {
+      name: "pnpm",
+      lockfile: "pnpm-lock.yaml",
+      install: ["corepack", "pnpm", "install", "--frozen-lockfile", "--ignore-scripts"],
+      rebuild: ["corepack", "pnpm", "rebuild"],
+      warnings: [],
+    };
+  }
+  if (await has("package-lock.json")) {
+    return {
+      name: "npm",
+      lockfile: "package-lock.json",
+      // Scripts are off through the fetcher's environment, which wins over .npmrc.
+      install: ["npm", "ci", "--no-audit", "--no-fund"],
+      rebuild: ["npm", "rebuild"],
+      warnings: [],
+    };
+  }
+  if (await has("yarn.lock")) {
+    if (await has(".yarnrc.yml")) {
+      return {
+        name: "yarn",
+        lockfile: "yarn.lock",
+        install: ["corepack", "yarn", "install", "--immutable"],
+        rebuild: ["corepack", "yarn", "rebuild"],
+        warnings: [],
+      };
+    }
+    return {
+      name: "yarn",
+      lockfile: "yarn.lock",
+      install: [
+        "corepack",
+        "yarn@1",
+        "install",
+        "--frozen-lockfile",
+        "--ignore-scripts",
+        "--non-interactive",
+      ],
+      rebuild: null,
+      warnings: [
+        "Yarn 1 lifecycle scripts were not run; a package that builds itself on install may not work.",
+      ],
+    };
+  }
+  if (await has("uv.lock")) {
+    return {
+      name: "uv",
+      lockfile: "uv.lock",
+      // --no-build: a source distribution is code, and the fetcher runs none.
+      install: ["uv", "sync", "--frozen", "--no-build", "--no-install-project"],
+      rebuild: null,
+      warnings: [
+        "Dependencies only: the project itself was not installed. Run tests with `uv run --offline --no-sync pytest`, or point PYTHONPATH at the source directory.",
+      ],
+    };
+  }
+  if (await has("requirements.txt")) {
+    return {
+      name: "pip",
+      lockfile: "requirements.txt",
+      install: [
+        "sh",
+        "-c",
+        "uv venv .venv && uv pip install --python .venv/bin/python --only-binary :all: -r requirements.txt",
+      ],
+      rebuild: null,
+      warnings: [
+        "Installed into .venv from binary wheels only; a requirement that ships no wheel fails the install rather than building from source.",
+      ],
+    };
+  }
+  return null;
+}
+
+/** The two sandbox steps, run to completion and recorded in the marker.
+ *
+ *  Runs detached from the request that started it: an install can take
+ *  minutes, and no hop between the model and this host waits that long. The
+ *  marker is the only channel back — every exit of this function, including
+ *  a thrown one, leaves a terminal state there for the next call to read. */
+async function runInstall(
+  repoDir: string,
+  full: string,
+  manager: PackageManager,
+  sha256: string,
+): Promise<void> {
+  const record = (patch: Partial<InstalledDependencies>) =>
+    stampMarker(repoDir, full, {
+      deps: {
+        manager: manager.name,
+        lockfile: manager.lockfile,
+        sha256,
+        state: "running",
+        started_at: new Date().toISOString(),
+        ...patch,
+      },
+    });
+  try {
+    // Fetch without executing: the fetcher has the network and runs no
+    // repository or package code.
+    const fetched = await runInSandbox(
+      "fetcher",
+      repoDir,
+      manager.install,
+      INSTALL_TIMEOUT_SECONDS,
+    );
+    if (fetched.code !== 0) {
+      await record({
+        state: "failed",
+        finished_at: new Date().toISOString(),
+        error:
+          fetched.code === 124
+            ? `The install exceeded ${INSTALL_TIMEOUT_SECONDS}s. ${truncate(fetched.output, 1_000)}`
+            : truncate(fetched.output, 1_200),
+      });
+      return;
+    }
+    // Execute without the network: lifecycle scripts run in the same sandbox
+    // the test suite does, with exactly its blast radius.
+    let rebuild: InstallReceipt["rebuild"] = { ran: false, exit_code: null };
+    const warnings = [...manager.warnings];
+    if (manager.rebuild) {
+      const rebuilt = await runInSandbox("tool", repoDir, manager.rebuild, INSTALL_TIMEOUT_SECONDS);
+      rebuild = { ran: true, exit_code: rebuilt.code };
+      if (rebuilt.code !== 0) {
+        warnings.push(
+          `Lifecycle scripts exited ${rebuilt.code}. A package that downloads during install cannot here, because the sandbox has no network: ${truncate(rebuilt.output, 300)}`,
+        );
+      }
+    }
+    await record({ state: "installed", finished_at: new Date().toISOString(), rebuild, warnings });
+  } catch (error) {
+    await record({
+      state: "failed",
+      finished_at: new Date().toISOString(),
+      error: truncate(error instanceof Error ? error.message : String(error), 600),
+    });
+  }
+}
+
+function installIsStale(deps: InstalledDependencies): boolean {
+  const started = Date.parse(deps.started_at);
+  return !Number.isFinite(started) || Date.now() - started > INSTALL_STALE_MS;
+}
+
+async function performInstall(request: InstallRequest): Promise<InstallReceipt> {
+  const { repoDir, full } = await requireCheckout(request.repo, request.provider);
+  const manager = await detectPackageManager(repoDir);
+  if (!manager) {
+    throw new CheckoutError(
+      `${full} has no lockfile this machine can install from.`,
+      409,
+      "Supported: pnpm-lock.yaml, package-lock.json, yarn.lock, uv.lock, requirements.txt. Unpinned dependencies are never resolved here.",
+    );
+  }
+  const sha256 = createHash("sha256")
+    .update(await fs.promises.readFile(path.join(repoDir, manager.lockfile)))
+    .digest("hex");
+  const layer = workLayer(repoDir);
+  const receipt = async (
+    status: InstallReceipt["status"],
+    rebuild: InstallReceipt["rebuild"],
+    warnings: string[],
+  ): Promise<InstallReceipt> => ({
+    status,
+    repo: full,
+    provider: request.provider,
+    path: repoDir,
+    manager: manager.name,
+    lockfile: manager.lockfile,
+    rebuild,
+    byte_size: (
+      await measureTree(layer.upper, {
+        maxFiles: Number.POSITIVE_INFINITY,
+        maxBytes: Number.POSITIVE_INFINITY,
+      })
+    ).bytes,
+    warnings,
+    ...(status === "installing" ? { poll_after_seconds: INSTALL_POLL_SECONDS } : {}),
+  });
+
+  const deps = (await readMarker(repoDir))?.deps;
+  const sameLockfile = deps?.sha256 === sha256 && deps.manager === manager.name;
+  if (deps?.state === "running" && !installIsStale(deps)) {
+    return receipt("installing", { ran: false, exit_code: null }, [
+      `Dependencies are still installing; call again in about ${INSTALL_POLL_SECONDS} seconds.`,
+    ]);
+  }
+  if (deps?.state === "failed" && sameLockfile) {
+    // Reported once. The marker forgets the failure so the next call retries
+    // rather than repeating the same refusal forever.
+    await stampMarker(repoDir, full, { deps: undefined });
+    throw new CheckoutError(
+      `Installing dependencies with ${manager.name} failed.`,
+      422,
+      deps.error ?? "The install produced no output.",
+    );
+  }
+  const installedRoot = manager.name === "uv" || manager.name === "pip" ? ".venv" : "node_modules";
+  const present = await fs.promises
+    .stat(path.join(layer.upper, installedRoot))
+    .then(() => true)
+    .catch(() => false);
+  if (deps?.state === "installed" && sameLockfile && present) {
+    return {
+      ...(await receipt("installed", deps.rebuild ?? { ran: false, exit_code: null }, [
+        ...(deps.warnings ?? []),
+      ])),
+      installed_at: deps.finished_at,
+    };
+  }
+
+  await stampMarker(repoDir, full, {
+    deps: {
+      manager: manager.name,
+      lockfile: manager.lockfile,
+      sha256,
+      state: "running",
+      started_at: new Date().toISOString(),
+    },
+  });
+  // Detached on purpose — see runInstall. The in-process repository lock is
+  // held for the install's whole duration so a freeze or push cannot start
+  // underneath it; the checkout lock itself belongs to the supervisor for
+  // each sandbox step it runs on the host's behalf.
+  void withRepoLock(
+    request.provider,
+    request.repo,
+    `An operation on ${request.repo} is already running.`,
+    () => runInstall(repoDir, full, manager, sha256),
+  ).catch(() => undefined);
+  return receipt("installing", { ran: false, exit_code: null }, [
+    `Installing with ${manager.name} from ${manager.lockfile}; call again in about ${INSTALL_POLL_SECONDS} seconds.`,
+    ...manager.warnings,
+  ]);
+}
+
+/** Wait for whatever is in flight on a repository — a detached install, most
+ *  likely — to finish. For tests and orderly shutdown; never a user path. */
+export async function awaitRepositoryIdle(provider: RepoProvider, repo: string): Promise<void> {
+  const running = inFlight.get(lockKey(provider, repo));
+  if (running) {
+    await running.catch(() => undefined);
+  }
+}
+
+export async function installRepoDependencies(request: InstallRequest): Promise<InstallReceipt> {
+  const key = lockKey(request.provider, request.repo);
+  // A poll while the install runs must answer, not collide with the lock the
+  // install holds; anything else in flight is a genuine conflict.
+  const deps = (await readMarker(resolveRepoDir(parseRepo(request.repo, request.provider))))?.deps;
+  if (inFlight.has(key) && !(deps?.state === "running" && !installIsStale(deps))) {
+    throw new CheckoutError(
+      `An operation on ${request.repo} is already running.`,
+      409,
+      "Wait for the in-flight repository operation to finish, then retry.",
+    );
+  }
+  return performInstall(request);
+}
+
 // ── HTTP surface ────────────────────────────────────────────────────────
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -1559,6 +2341,13 @@ export function parsePrepareRequest(value: unknown): PrepareRequest {
     message: row.message.trim(),
     mutation_context: row.mutation_context,
   };
+}
+
+export function parseInstallRequest(value: unknown): InstallRequest {
+  const row = requireFields(value, ["repo"], "install");
+  const provider = parseProvider(row.provider);
+  const { full } = parseRepo(row.repo, provider);
+  return { repo: full, provider, mutation_context: row.mutation_context };
 }
 
 export function parsePushRequest(value: unknown): PushRequest {
@@ -1656,6 +2445,15 @@ export function handleRepoPush(req: IncomingMessage, res: ServerResponse): Promi
     execute: pushRepoBranch,
     errorCode: "push_rejected",
     failure: "pushing the branch failed",
+  });
+}
+
+export function handleRepoInstall(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  return handleBrokeredPost(req, res, {
+    parse: parseInstallRequest,
+    execute: installRepoDependencies,
+    errorCode: "install_rejected",
+    failure: "installing dependencies failed",
   });
 }
 
