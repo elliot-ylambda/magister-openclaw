@@ -50,4 +50,16 @@ describe("sessions_spawn: cron isolated session note suppression", () => {
       }),
     ).toBe(SUBAGENT_SPAWN_SESSION_ACCEPTED_NOTE);
   });
+
+  it("carries the foreground-delivery contract and the inline recovery path", () => {
+    // The turn's visible reply is all the user gets; a child spawned for the
+    // current reply's deliverable is a wrong delegation and must be undone.
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
+      "that reply must say what is running and that results will follow",
+    );
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
+      "kill it (subagents kill) and do the work inline",
+    );
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("can never reach the reply you are composing");
+  });
 });

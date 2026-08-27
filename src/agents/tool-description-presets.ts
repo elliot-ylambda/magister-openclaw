@@ -42,9 +42,14 @@ export function describeSessionsSpawnTool(options?: {
     options?.threadAvailable
       ? '`mode="run"` is one-shot and `mode="session"` is persistent and thread-bound.'
       : '`mode="run"` is one-shot background work.',
+    // Fire-and-forget is the one property models reliably get wrong: every
+    // other tool returns its result to the caller, this one never does. State
+    // it at the decision point, before the spawn happens (#magister ledger-0).
+    "Unlike other tools, a child's output does NOT return to this tool call and can never appear in the reply you are composing now; it arrives only after this turn ends.",
+    "Never spawn for work the current reply must contain - do that work inline yourself.",
     "Subagents inherit the parent workspace directory automatically.",
     'For native subagents only, set `context="fork"` when the child needs the current transcript context; otherwise omit it or use `context="isolated"`.',
-    "Use this when the work should happen in a fresh child session instead of the current one.",
+    "Use this for background or long-running side work the user is not waiting on in this turn, when it should happen in a fresh child session instead of the current one.",
   ];
   if (options?.acpAvailable === false) {
     return baseDescription
@@ -57,9 +62,9 @@ export function describeSessionsSpawnTool(options?: {
       .join(" ");
   }
   return [
-    ...baseDescription.slice(0, 3),
+    ...baseDescription.slice(0, 5),
     '`runtime="acp"` is for external ACP harness ids such as codex, claude, gemini, or opencode, or agents configured with `agents.list[].runtime.type="acp"`.',
-    ...baseDescription.slice(3),
+    ...baseDescription.slice(5),
   ].join(" ");
 }
 

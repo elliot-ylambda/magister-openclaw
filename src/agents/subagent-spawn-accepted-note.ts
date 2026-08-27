@@ -1,7 +1,9 @@
 import { isCronSessionKey } from "../routing/session-key.js";
 
 export const SUBAGENT_SPAWN_ACCEPTED_NOTE =
-  "Auto-announce is push-based. After spawning children, do NOT call sessions_list, sessions_history, exec sleep, or any polling tool. Track expected child session keys. If any required child completion has not arrived yet, call sessions_yield to end the turn and wait for completion events as user messages. Only send your final answer after ALL expected completions arrive. If a child completion event arrives AFTER your final answer, reply ONLY with NO_REPLY.";
+  "Auto-announce is push-based. After spawning children, do NOT call sessions_list, sessions_history, exec sleep, or any polling tool. Track expected child session keys. If any required child completion has not arrived yet, call sessions_yield to end the turn and wait for completion events as user messages. Only send your final answer after ALL expected completions arrive. If a child completion event arrives AFTER your final answer, reply ONLY with NO_REPLY. " +
+  "The user sees only your visible reply text this turn: if you end the turn while children run, that reply must say what is running and that results will follow. " +
+  "If the user's current request needs a child's output inside THIS reply, you delegated wrongly: kill it (subagents kill) and do the work inline instead - a spawned child's output can never reach the reply you are composing.";
 export const SUBAGENT_SPAWN_SESSION_ACCEPTED_NOTE =
   "thread-bound session stays active after this task; continue in-thread for follow-ups.";
 
