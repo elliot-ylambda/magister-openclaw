@@ -36,30 +36,42 @@ export function describeSessionsSendTool(): string {
 export function describeSessionsSpawnTool(options?: {
   acpAvailable?: boolean;
   threadAvailable?: boolean;
+  /**
+   * False for cron isolated sessions, where the agent turn is the whole run
+   * and child results are collected inside it (the same split
+   * `resolveSubagentSpawnAcceptedNote` makes). Everywhere else the visible
+   * reply is the deliverable and a child's output can never reach it.
+   */
+  foregroundReply?: boolean;
 }): string {
-  const baseDescription = [
-    'Spawn a clean isolated session by default with `runtime="subagent"` or `runtime="acp"`.',
+  const acpAvailable = options?.acpAvailable !== false;
+  const foregroundReply = options?.foregroundReply !== false;
+  return [
+    acpAvailable
+      ? 'Spawn a clean isolated session by default with `runtime="subagent"` or `runtime="acp"`.'
+      : "Spawn a clean isolated session by default with the native subagent runtime.",
     options?.threadAvailable
       ? '`mode="run"` is one-shot and `mode="session"` is persistent and thread-bound.'
       : '`mode="run"` is one-shot background work.',
+    // Fire-and-forget is the one property models reliably get wrong: every
+    // other tool returns its result to the caller, this one never does. State
+    // it at the decision point, before the spawn happens
+    // (github.com/elliot-ylambda/magister-openclaw/pull/70).
+    ...(foregroundReply
+      ? [
+          "A child's output never returns to this call and cannot appear in the reply you are composing now; never spawn for work the current reply must contain - do that inline.",
+        ]
+      : []),
     "Subagents inherit the parent workspace directory automatically.",
+    ...(acpAvailable
+      ? [
+          '`runtime="acp"` is for external ACP harness ids such as codex, claude, gemini, or opencode, or agents configured with `agents.list[].runtime.type="acp"`.',
+        ]
+      : []),
     'For native subagents only, set `context="fork"` when the child needs the current transcript context; otherwise omit it or use `context="isolated"`.',
-    "Use this when the work should happen in a fresh child session instead of the current one.",
-  ];
-  if (options?.acpAvailable === false) {
-    return baseDescription
-      .map((line) =>
-        line.replace(
-          ' with `runtime="subagent"` or `runtime="acp"`',
-          " with the native subagent runtime",
-        ),
-      )
-      .join(" ");
-  }
-  return [
-    ...baseDescription.slice(0, 3),
-    '`runtime="acp"` is for external ACP harness ids such as codex, claude, gemini, or opencode, or agents configured with `agents.list[].runtime.type="acp"`.',
-    ...baseDescription.slice(3),
+    foregroundReply
+      ? "Use this for background side work the user is not waiting on in this reply."
+      : "Use this when the work should happen in a fresh child session instead of the current one.",
   ].join(" ");
 }
 

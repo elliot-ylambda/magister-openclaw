@@ -478,6 +478,8 @@ export function createSubagentRunManager(params: {
     runId?: string;
     childSessionKey?: string;
     reason?: string;
+    /** "requester" when the owning session killed its own child (subagents kill). */
+    initiatedBy?: "requester";
   }): number => {
     const runIds = new Set<string>();
     if (typeof markParams.runId === "string" && markParams.runId.trim()) {
@@ -535,6 +537,7 @@ export function createSubagentRunManager(params: {
             accountId: entry.requesterOrigin?.accountId,
             outcome: SUBAGENT_ENDED_OUTCOME_KILLED,
             error: reason,
+            killedByRequester: markParams.initiatedBy === "requester" ? true : undefined,
             inFlightRunIds: params.endedHookInFlightRunIds,
             persist: () => params.persist(),
           });

@@ -1315,9 +1315,10 @@ export async function spawnSubagentDirect(
     childSessionKey,
     runId: childRunId,
     mode: spawnMode,
-    note: preparedSpawnContext.forkFallbackNote
-      ? `${acceptedNote} ${preparedSpawnContext.forkFallbackNote}`
-      : acceptedNote,
+    // acceptedNote is undefined for cron isolated sessions; never interpolate
+    // it into the fork-fallback string.
+    note:
+      [acceptedNote, preparedSpawnContext.forkFallbackNote].filter(Boolean).join(" ") || undefined,
     modelApplied: resolvedModel ? modelApplied : undefined,
     attachments: attachmentsReceipt,
   };

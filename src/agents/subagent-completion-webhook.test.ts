@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   normalizeSubagentCompletionWebhookOutcome,
   sendSubagentCompletionWebhook,
+  shouldSkipSubagentCompletionWebhook,
 } from "./subagent-completion-webhook.js";
 
 const temporaryRoots: string[] = [];
@@ -30,6 +31,25 @@ describe("normalizeSubagentCompletionWebhookOutcome", () => {
     expect(normalizeSubagentCompletionWebhookOutcome("killed")).toBe("error");
     expect(normalizeSubagentCompletionWebhookOutcome("reset")).toBe("error");
     expect(normalizeSubagentCompletionWebhookOutcome("deleted")).toBe("error");
+  });
+});
+
+describe("shouldSkipSubagentCompletionWebhook", () => {
+  it("skips only a kill the requester issued itself", () => {
+    // `subagents kill` by the owning session is a control action the requester
+    // already knows about; reporting it would render a "Background task failed"
+    // card in the user's chat for a turn that succeeded inline.
+    expect(
+      shouldSkipSubagentCompletionWebhook({ outcome: "killed", killedByRequester: true }),
+    ).toBe(true);
+    expect(shouldSkipSubagentCompletionWebhook({ outcome: "killed" })).toBe(false);
+    expect(
+      shouldSkipSubagentCompletionWebhook({ outcome: "killed", killedByRequester: false }),
+    ).toBe(false);
+    expect(shouldSkipSubagentCompletionWebhook({ outcome: "error", killedByRequester: true })).toBe(
+      false,
+    );
+    expect(shouldSkipSubagentCompletionWebhook({ outcome: "ok" })).toBe(false);
   });
 });
 

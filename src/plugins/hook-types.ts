@@ -592,6 +592,12 @@ export type PluginHookSubagentEndedEvent = {
   endedAt?: number;
   outcome?: "ok" | "error" | "timeout" | "killed" | "reset" | "deleted";
   error?: string;
+  /**
+   * True when the requester session itself killed this child (`subagents kill`).
+   * That is a deliberate control action by the party that would be told about
+   * the result, not a task failure to report back to it.
+   */
+  killedByRequester?: boolean;
 };
 
 export type PluginHookGatewayContext = {

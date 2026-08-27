@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Agents/subagents: state the `sessions_spawn` fire-and-forget contract at the decision point for interactive sessions (tool description, spawn note with a callable `subagents(action="kill", target="last")` recovery, `sessions_yield`, and the system prompt), keep the cron in-turn wait protocol, stop interpolating `undefined` into the fork-fallback spawn note, and stop reporting a requester-initiated `subagents kill` to the Magister completion webhook as a failed background task.
 - Agents/runtime resilience: add independent, run-scoped terminal-failure, user-denial, and browser-launch circuit breakers, plus one tool-free truthful partial-summary attempt when the final model retry ceiling is exhausted.
 - Magister/memory: checkpoint meaningful conversations into bounded dated notes and inject a small frozen recent-chat summary into the next session, without automatically changing curated project or user memory.
 - Agents/skills: add channel-aware `metadata.openclaw.preloadChannels` so short surface contracts can be loaded in full on matching runtime channels while remaining catalog-only elsewhere.
