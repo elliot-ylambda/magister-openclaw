@@ -70,6 +70,7 @@ export async function emitSubagentEndedHookOnce(params: {
   accountId?: string;
   outcome?: SubagentLifecycleEndedOutcome;
   error?: string;
+  killedByRequester?: boolean;
   inFlightRunIds: Set<string>;
   persist: () => void;
 }) {
@@ -102,6 +103,9 @@ export async function emitSubagentEndedHookOnce(params: {
           endedAt: params.entry.endedAt,
           outcome: params.outcome,
           error: params.error,
+          // Only present on a requester-initiated kill so every other
+          // subagent_ended event keeps its exact prior shape.
+          ...(params.killedByRequester ? { killedByRequester: true } : {}),
         },
         {
           runId: params.entry.runId,

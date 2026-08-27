@@ -473,8 +473,8 @@ function buildMessagingSection(params: {
     : `- Runtime-generated completion events may ask for a user update. Rewrite those in your normal assistant voice and send the update (do not forward raw internal metadata or default to ${SILENT_REPLY_TOKEN}).`;
   const subagentOrchestrationGuidance = hasSessionsSpawn
     ? hasSubagents
-      ? '- Sub-agent orchestration → use `sessions_spawn(...)` to start delegated work; omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript; use `subagents(action=list|steer|kill)` to manage already-spawned children.'
-      : '- Sub-agent orchestration → use `sessions_spawn(...)` to start delegated work; omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript.'
+      ? '- Sub-agent orchestration → use `sessions_spawn(...)` for background work the current reply does not depend on (its output never reaches this reply); omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript; use `subagents(action=list|steer|kill)` to manage already-spawned children.'
+      : '- Sub-agent orchestration → use `sessions_spawn(...)` for background work the current reply does not depend on (its output never reaches this reply); omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript.'
     : hasSubagents
       ? "- Sub-agent orchestration → use `subagents(action=list|steer|kill)` to manage already-spawned children."
       : "";
@@ -979,7 +979,12 @@ export function buildAgentSystemPrompt(params: {
           ].join("\n"),
       "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
       `For long waits, avoid rapid poll loops: use ${execToolName} with enough yieldMs or ${processToolName}(action=poll, timeout=<ms>).`,
-      "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
+      // Cron and subagent sessions (minimal mode) collect child results inside
+      // their run; an interactive turn never can, so it must not delegate the
+      // reply's own deliverable. promptMode is part of the stable-prefix key.
+      isMinimal
+        ? "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done."
+        : "Spawn a sub-agent only for background work the user is not waiting on in this reply: its output never reaches the reply you are composing. Completion is push-based: it will auto-announce when done.",
       'Sub-agents start isolated by default. Use `sessions_spawn` with `context:"fork"` only when the child needs the current transcript context; otherwise omit `context` or use `context:"isolated"`.',
       ...nativeCommandGuidanceLines,
       ...(acpHarnessSpawnAllowed

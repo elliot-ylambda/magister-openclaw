@@ -762,13 +762,40 @@ describe("buildAgentSystemPrompt", () => {
     expect(messagingPrompt).not.toContain("subagents(action=list|steer|kill)");
 
     expect(spawnOnlyPrompt).toContain(
-      '- Sub-agent orchestration → use `sessions_spawn(...)` to start delegated work; omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript.',
+      '- Sub-agent orchestration → use `sessions_spawn(...)` for background work the current reply does not depend on (its output never reaches this reply); omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript.',
     );
     expect(spawnOnlyPrompt).not.toContain("manage already-spawned children");
 
     expect(orchestrationPrompt).toContain(
-      '- Sub-agent orchestration → use `sessions_spawn(...)` to start delegated work; omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript; use `subagents(action=list|steer|kill)` to manage already-spawned children.',
+      '- Sub-agent orchestration → use `sessions_spawn(...)` for background work the current reply does not depend on (its output never reaches this reply); omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript; use `subagents(action=list|steer|kill)` to manage already-spawned children.',
     );
+  });
+
+  it("scopes the spawn-a-sub-agent guidance to background work for interactive turns only", () => {
+    // The stable prefix is read before the tool schema; it must not endorse
+    // delegating the current reply's deliverable, which sessions_spawn's
+    // description forbids. Cron and subagent sessions (minimal mode) collect
+    // child results inside their run, so they keep the original guidance.
+    const fullPrompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["sessions_spawn"],
+    });
+    const minimalPrompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["sessions_spawn"],
+      promptMode: "minimal",
+    });
+
+    expect(fullPrompt).toContain(
+      "Spawn a sub-agent only for background work the user is not waiting on in this reply: its output never reaches the reply you are composing",
+    );
+    expect(fullPrompt).not.toContain(
+      "If a task is more complex or takes longer, spawn a sub-agent.",
+    );
+    expect(minimalPrompt).toContain(
+      "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
+    );
+    expect(minimalPrompt).not.toContain("not waiting on in this reply");
   });
 
   it("reapplies provider prompt contributions", () => {

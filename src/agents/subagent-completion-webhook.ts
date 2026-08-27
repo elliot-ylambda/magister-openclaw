@@ -189,12 +189,27 @@ export function registerSubagentCompletionWebhookHook(
 
 const SUBAGENT_WEBHOOK_PLUGIN_ID = "magister-subagent-completion-webhook";
 
+/**
+ * A child the requester killed itself (`subagents kill`) is a deliberate
+ * control action, not a task outcome: the requester already knows, and the
+ * gateway would otherwise render it as a "Background task failed" card in the
+ * user's chat — which the model then re-reads as a failure next turn.
+ */
+export function shouldSkipSubagentCompletionWebhook(
+  event: Pick<PluginHookSubagentEndedEvent, "outcome" | "killedByRequester">,
+): boolean {
+  return event.outcome === "killed" && event.killedByRequester === true;
+}
+
 async function deliverSubagentCompletionWebhook(params: {
   event: PluginHookSubagentEndedEvent;
   ctx: PluginHookSubagentContext;
   url: string;
   token: string;
 }): Promise<void> {
+  if (shouldSkipSubagentCompletionWebhook(params.event)) {
+    return;
+  }
   // The PARENT session is the user's chat session — what we map to chat_sessions.id.
   const openclawSessionKey = params.ctx.requesterSessionKey?.trim();
   if (!openclawSessionKey) {

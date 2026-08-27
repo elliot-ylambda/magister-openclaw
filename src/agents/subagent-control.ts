@@ -197,6 +197,7 @@ async function killSubagentRun(params: {
     runId: params.entry.runId,
     childSessionKey,
     reason: "killed",
+    initiatedBy: "requester",
   });
   const killed = marked > 0 || aborted || cleared.followupCleared > 0 || cleared.laneCleared > 0;
   return { killed, sessionId };

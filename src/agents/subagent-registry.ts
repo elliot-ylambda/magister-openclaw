@@ -1155,6 +1155,8 @@ export function markSubagentRunTerminated(params: {
   runId?: string;
   childSessionKey?: string;
   reason?: string;
+  /** "requester" when the owning session killed its own child (subagents kill). */
+  initiatedBy?: "requester";
 }): number {
   return subagentRunManager.markSubagentRunTerminated(params);
 }

@@ -7,6 +7,7 @@ import {
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
+import { isCronSessionKey } from "../../routing/session-key.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
@@ -255,7 +256,13 @@ export function createSessionsSpawnTool(
     displaySummary: acpAvailable
       ? SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY
       : SESSIONS_SPAWN_SUBAGENT_TOOL_DISPLAY_SUMMARY,
-    description: describeSessionsSpawnTool({ acpAvailable, threadAvailable }),
+    description: describeSessionsSpawnTool({
+      acpAvailable,
+      threadAvailable,
+      // Cron isolated sessions collect child results inside the run; every
+      // other requester's visible reply is the deliverable.
+      foregroundReply: !isCronSessionKey(opts?.agentSessionKey),
+    }),
     parameters: createSessionsSpawnToolSchema({ acpAvailable, threadAvailable }),
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
