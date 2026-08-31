@@ -42,6 +42,7 @@ import { resolvePromptBuildHookResult } from "../pi-embedded-runner/run/attempt.
 import { resolveAttemptPrependSystemContext } from "../pi-embedded-runner/run/attempt.prompt-helpers.js";
 import { composeSystemPromptWithHookContext } from "../pi-embedded-runner/run/attempt.thread-helpers.js";
 import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
+import { resolveSessionStableTaskText } from "../session-task-text.js";
 import { resolveSkillsPromptForRun } from "../skills.js";
 import { resolveSystemPromptOverride } from "../system-prompt-override.js";
 import { buildSystemPromptReport } from "../system-prompt-report.js";
@@ -319,12 +320,18 @@ export async function prepareCliRunContext(
     cwd: process.cwd(),
     moduleUrl: import.meta.url,
   });
+  // Same session-stable keying as the embedded runner: per-turn hint flaps
+  // inside the system prompt forfeit the OpenAI prompt cache.
+  const skillsTaskText = await resolveSessionStableTaskText({
+    sessionFile: params.sessionFile,
+    currentPrompt: params.prompt,
+  });
   const skillsPrompt = resolveSkillsPromptForRun({
     skillsSnapshot: params.skillsSnapshot,
     workspaceDir,
     config: params.config,
     agentId: sessionAgentId,
-    taskText: params.prompt,
+    taskText: skillsTaskText,
     runtimeChannel: normalizeMessageChannel(params.messageChannel ?? params.messageProvider),
   });
   const builtSystemPrompt =
