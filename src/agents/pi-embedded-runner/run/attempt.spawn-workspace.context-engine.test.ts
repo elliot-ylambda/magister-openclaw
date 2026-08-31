@@ -190,6 +190,23 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     }
   });
 
+  it("threads the run sessionId onto the created agent so transports can attach prompt_cache_key", async () => {
+    let agentSessionId: string | undefined;
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      sessionPrompt: async (session) => {
+        agentSessionId = (session.agent as { sessionId?: string }).sessionId;
+        session.messages = [
+          ...session.messages,
+          { role: "assistant", content: "done", timestamp: 2 },
+        ];
+      },
+    });
+    expect(agentSessionId).toBe(embeddedSessionId);
+  });
+
   it("sends transcriptPrompt visibly and queues runtime context as hidden custom context", async () => {
     const seen: { prompt?: string; messages?: unknown[]; systemPrompt?: string } = {};
 

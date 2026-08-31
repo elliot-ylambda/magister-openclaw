@@ -199,6 +199,16 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
     case "webhook.error":
       record.channel = event.channel;
       break;
+    case "webhook.delivery.dead_lettered":
+      record.channel = event.channel;
+      record.failureKind = event.failureKind;
+      assignReasonCode(record, event.failureKind);
+      break;
+    case "http.request.error":
+      record.surface = event.surface;
+      record.failureKind = event.failureKind;
+      assignReasonCode(record, event.failureKind);
+      break;
     case "message.queued":
       record.channel = event.channel;
       record.source = event.source;

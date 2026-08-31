@@ -1693,6 +1693,10 @@ export async function runEmbeddedAttempt(
         throw new Error("Embedded agent session missing");
       }
       session.setActiveToolsByName(sessionToolAllowlist);
+      // createAgentSession never tells the core Agent its session id, so the
+      // loop forwards sessionId=undefined and cache-affinity fields gated on
+      // options.sessionId (prompt_cache_key) silently drop off every request.
+      session.agent.sessionId = params.sessionId;
       const activeSession = session;
       prepStages.mark("agent-session");
       if (isRawModelRun) {

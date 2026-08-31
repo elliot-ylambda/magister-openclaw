@@ -266,6 +266,9 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
         sessionId: "session-1",
       }),
     );
+    // The core Agent forwards this into every stream's options; without it the
+    // OpenAI transports never attach prompt_cache_key.
+    expect((session.agent as { sessionId?: string }).sessionId).toBe("session-1");
     expect(applyExtraParamsToAgentMock).toHaveBeenCalledWith(
       expect.objectContaining({
         streamFn: resolvedStreamFn,

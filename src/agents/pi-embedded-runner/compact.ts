@@ -177,7 +177,7 @@ function createCompactionDiagId(): string {
 }
 
 function prepareCompactionSessionAgent(params: {
-  session: { agent: { streamFn?: unknown } };
+  session: { agent: { streamFn?: unknown; sessionId?: string } };
   providerStreamFn: unknown;
   shouldUseWebSocketTransport: boolean;
   wsApiKey?: string;
@@ -195,6 +195,10 @@ function prepareCompactionSessionAgent(params: {
   agentDir: string;
   runtimePlan?: AgentRuntimePlan;
 }) {
+  // Same gap as the run path: the core Agent is constructed without a session
+  // id, so options.sessionId — and prompt_cache_key with it — never reaches
+  // the transport unless we set it here.
+  params.session.agent.sessionId = params.sessionId;
   params.session.agent.streamFn = resolveEmbeddedAgentStreamFn({
     currentStreamFn: resolveEmbeddedAgentBaseStreamFn({ session: params.session as never }),
     providerStreamFn: params.providerStreamFn as never,
