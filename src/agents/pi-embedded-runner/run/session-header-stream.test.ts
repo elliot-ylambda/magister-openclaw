@@ -13,7 +13,7 @@ describe("wrapStreamFnWithSessionHeader", () => {
     const model = { id: "test-model" } as Parameters<StreamFn>[0];
     const context = { messages: [] } as Parameters<StreamFn>[1];
 
-    wrapped(model, context, {
+    void wrapped(model, context, {
       headers: {
         "X-Existing": "kept",
         "x-session-id": "stale-session",
