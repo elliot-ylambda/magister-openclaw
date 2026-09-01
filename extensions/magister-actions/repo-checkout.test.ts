@@ -1071,6 +1071,40 @@ describe("installing dependencies", () => {
 });
 
 describe("the work layer as evidence", () => {
+  it('a sandbox-only edit is refused by name, not as "nothing to commit"', async () => {
+    // The case the shadow list exists for, and the one path that could not
+    // reach it. A formatter or codegen step that touches only tracked files
+    // leaves the real tree byte-identical, so `git diff --cached` is empty and
+    // prepare threw before any receipt was built — answering "Edit files in
+    // the checkout first" to an agent that had just edited files, and inviting
+    // it to run the same command again. Verified live on 2026-09-01, right
+    // after the work layer became writable at all.
+    const { repoDir } = bareUpstreamAndCheckout();
+    const layer = workLayer(repoDir);
+    fs.mkdirSync(layer.upper, { recursive: true });
+    fs.writeFileSync(path.join(layer.upper, "README.md"), "formatted in the sandbox\n");
+
+    await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("changed by a command in the sandbox"),
+      userAction: expect.stringContaining("README.md"),
+    });
+    // And the real tree is still untouched — the refusal is about visibility,
+    // not about damage.
+    expect(git(repoDir, "status", "--porcelain")).toBe("");
+  });
+
+  it("an empty checkout still says plainly that nothing was edited", async () => {
+    // The generic message must survive for the case it is actually true of,
+    // rather than being replaced by the shadow wording for everyone.
+    const { repoDir } = bareUpstreamAndCheckout();
+    fs.mkdirSync(workLayer(repoDir).upper, { recursive: true });
+    await expect(prepareRepoCommit(prepare())).rejects.toMatchObject({
+      statusCode: 409,
+      userAction: expect.stringContaining("Edit files in the checkout first"),
+    });
+  });
+
   it("a freeze names the tracked files the sandbox shadowed and attaches what was run", async () => {
     const { repoDir, origin } = bareUpstreamAndCheckout();
     const layer = workLayer(repoDir);

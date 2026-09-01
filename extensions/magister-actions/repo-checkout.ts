@@ -99,6 +99,9 @@ const SANDBOX_OUTPUT_TAIL_CHARS = 4_000;
 /** How many run records a freeze attaches as its evidence. */
 export const MAX_VERIFICATION_RECORDS = 20;
 export const MAX_SHADOWED_ENTRIES = 100;
+/** How many shadowed paths a refusal names outright. The full count is in the
+ *  message; this bounds the `user_action` a person actually reads. */
+export const SHADOWED_NAMES_IN_MESSAGE = 10;
 /** The one client the host uses to reach the sandbox supervisor — the same
  *  launcher the exec tool uses, so there is no second privilege path. Read
  *  per call, like `repoRoot()`. */
@@ -1644,6 +1647,25 @@ async function freezeCheckout(
     // with "nothing to commit": the freeze it asked for already happened.
     if (last && last.message === request.message) {
       return await prepareReceipt(repoDir, full, "already_prepared", last);
+    }
+    // "Nothing staged" is precisely the shape a sandbox-only edit takes, and
+    // the reason `shadowed_tracked_files` exists — but that field lives on a
+    // receipt, and this path returns none. A formatter, a codegen step, or an
+    // in-place compiler that touched only tracked files leaves the real tree
+    // byte-identical, so the generic answer below is actively wrong: the agent
+    // did edit files, into a layer this commit cannot see, and telling it to
+    // "edit files first" invites it to do the same thing again.
+    const shadowed = await shadowedTrackedFiles(repoDir, await trackedFiles(repoDir));
+    if (shadowed.length > 0) {
+      const names = shadowed.slice(0, SHADOWED_NAMES_IN_MESSAGE).map((entry) => entry.path);
+      const rest = shadowed.length - names.length;
+      throw new CheckoutError(
+        `There is nothing to commit in ${full}: ${shadowed.length} tracked file(s) were changed by a command in the sandbox rather than by the file tools.`,
+        409,
+        `Those changes live in the checkout's work layer and are never committed: ${names.join(", ")}${
+          rest > 0 ? `, and ${rest} more` : ""
+        }. Re-apply them with the file tools, or discard them with checkout_repo discard_local_changes=true.`,
+      );
     }
     throw new CheckoutError(
       `There is nothing to commit in ${full}.`,
