@@ -398,6 +398,7 @@ const TARGET_KEYS = [
   "agents.defaults.compaction.reserveTokens",
   "agents.defaults.compaction.keepRecentTokens",
   "agents.defaults.compaction.reserveTokensFloor",
+  "agents.defaults.compaction.proactiveThresholdRatio",
   "agents.defaults.compaction.maxHistoryShare",
   "agents.defaults.compaction.identifierPolicy",
   "agents.defaults.compaction.identifierInstructions",

@@ -5040,6 +5040,14 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                     description:
                       "Minimum floor enforced for reserveTokens in Pi compaction paths (0 disables the floor guard). Use a non-zero floor to avoid over-aggressive compression under fluctuating token estimates.",
                   },
+                  proactiveThresholdRatio: {
+                    type: "number",
+                    minimum: 0,
+                    maximum: 1,
+                    title: "Compaction Proactive Threshold Ratio",
+                    description:
+                      "Ratio of the prompt budget (context window minus reserve) above which prior history is compacted at the turn boundary, before the turn's first model call (range 0-1; default 0.5, and 0 or 1 disables). This lets tool-heavy turns start with headroom instead of overflowing mid-run, where the turn's own tool results can no longer be compacted away; the cost is one summarization pass and a prompt-cache reset when it fires.",
+                  },
                   maxHistoryShare: {
                     type: "number",
                     minimum: 0.1,
@@ -27749,6 +27757,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       label: "Compaction Reserve Token Floor",
       help: "Minimum floor enforced for reserveTokens in Pi compaction paths (0 disables the floor guard). Use a non-zero floor to avoid over-aggressive compression under fluctuating token estimates.",
       tags: ["security", "auth"],
+    },
+    "agents.defaults.compaction.proactiveThresholdRatio": {
+      label: "Compaction Proactive Threshold Ratio",
+      help: "Ratio of the prompt budget (context window minus reserve) above which prior history is compacted at the turn boundary, before the turn's first model call (range 0-1; default 0.5, and 0 or 1 disables). This lets tool-heavy turns start with headroom instead of overflowing mid-run, where the turn's own tool results can no longer be compacted away; the cost is one summarization pass and a prompt-cache reset when it fires.",
+      tags: ["advanced"],
     },
     "agents.defaults.compaction.maxHistoryShare": {
       label: "Compaction Max History Share",

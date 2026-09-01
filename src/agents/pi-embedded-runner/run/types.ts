@@ -47,6 +47,12 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   runtimePlan?: AgentRuntimePlan;
   /** Live observer called after wrapped tool outcomes are recorded. */
   onToolOutcome?: ToolOutcomeObserver;
+  /**
+   * True only for the run's first attempt, before any in-turn work exists.
+   * Gates the proactive turn-boundary compaction precheck: later attempts
+   * (failover retries, post-compaction continuations) must never fire it.
+   */
+  proactiveCompactionEligible?: boolean;
   model: Model<Api>;
   authStorage: AuthStorage;
   /** Auth profile store already resolved during startup for this attempt. */

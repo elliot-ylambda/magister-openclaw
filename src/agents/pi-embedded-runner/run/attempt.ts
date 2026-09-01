@@ -345,6 +345,7 @@ import {
 } from "./midturn-precheck.js";
 import {
   PREEMPTIVE_OVERFLOW_ERROR_TEXT,
+  resolveProactiveCompactionThresholdRatio,
   shouldPreemptivelyCompactBeforePrompt,
 } from "./preemptive-compaction.js";
 import {
@@ -2995,6 +2996,9 @@ export async function runEmbeddedAttempt(
               });
           }
 
+          const proactiveCompactRatio = params.proactiveCompactionEligible
+            ? resolveProactiveCompactionThresholdRatio(params.config)
+            : undefined;
           const preemptiveCompaction = shouldPreemptivelyCompactBeforePrompt({
             messages: activeSession.messages,
             ...(contextEnginePromptAuthority === "preassembly_may_overflow"
@@ -3009,6 +3013,7 @@ export async function runEmbeddedAttempt(
               cfg: params.config,
               agentId: sessionAgentId,
             }),
+            ...(proactiveCompactRatio !== undefined ? { proactiveCompactRatio } : {}),
           });
           if (preemptiveCompaction.route === "truncate_tool_results_only") {
             const toolResultMaxChars = resolveLiveToolResultMaxChars({
@@ -3059,7 +3064,9 @@ export async function runEmbeddedAttempt(
             preflightRecovery =
               preemptiveCompaction.route === "compact_then_truncate"
                 ? { route: "compact_then_truncate" }
-                : { route: "compact_only" };
+                : preemptiveCompaction.route === "proactive_compact"
+                  ? { route: "proactive_compact" }
+                  : { route: "compact_only" };
             promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
             promptErrorSource = "precheck";
             log.warn(
@@ -3072,6 +3079,9 @@ export async function runEmbeddedAttempt(
                 `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
                 `reserveTokens=${reserveTokens} ` +
                 `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                (proactiveCompactRatio !== undefined
+                  ? `proactiveCompactRatio=${proactiveCompactRatio} `
+                  : "") +
                 `sessionFile=${params.sessionFile}`,
             );
             skipPromptSubmission = true;

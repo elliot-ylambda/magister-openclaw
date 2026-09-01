@@ -6,6 +6,7 @@ import { estimateToolResultReductionPotential } from "../tool-result-truncation.
 let PREEMPTIVE_OVERFLOW_ERROR_TEXT: typeof import("./preemptive-compaction.js").PREEMPTIVE_OVERFLOW_ERROR_TEXT;
 let estimatePrePromptTokens: typeof import("./preemptive-compaction.js").estimatePrePromptTokens;
 let shouldPreemptivelyCompactBeforePrompt: typeof import("./preemptive-compaction.js").shouldPreemptivelyCompactBeforePrompt;
+let resolveProactiveCompactionThresholdRatio: typeof import("./preemptive-compaction.js").resolveProactiveCompactionThresholdRatio;
 
 beforeAll(async () => {
   vi.resetModules();
@@ -13,6 +14,7 @@ beforeAll(async () => {
     PREEMPTIVE_OVERFLOW_ERROR_TEXT,
     estimatePrePromptTokens,
     shouldPreemptivelyCompactBeforePrompt,
+    resolveProactiveCompactionThresholdRatio,
   } = await import("./preemptive-compaction.js"));
 });
 
@@ -191,6 +193,103 @@ describe("preemptive-compaction", () => {
     expect(result.shouldCompact).toBe(true);
     expect(result.overflowTokens).toBeGreaterThan(0);
     expect(result.toolResultReducibleChars).toBeGreaterThan(0);
+  });
+
+  it("routes to proactive compaction when a fitting prompt crosses the turn-boundary ratio", () => {
+    const messages = [makeAssistantHistory(verboseHistory)];
+    const estimated = estimatePrePromptTokens({
+      messages,
+      systemPrompt: verboseSystem,
+      prompt: verbosePrompt,
+    });
+    expect(estimated).toBeGreaterThan(1_000);
+    const reserveTokens = 500;
+    // Budget leaves 1000 tokens of slack: the prompt fits absolutely, but at
+    // ratio 0.5 the history is over the proactive threshold.
+    const result = shouldPreemptivelyCompactBeforePrompt({
+      messages,
+      systemPrompt: verboseSystem,
+      prompt: verbosePrompt,
+      contextTokenBudget: estimated + 1_000 + reserveTokens,
+      reserveTokens,
+      proactiveCompactRatio: 0.5,
+    });
+
+    expect(result.route).toBe("proactive_compact");
+    expect(result.shouldCompact).toBe(true);
+    expect(result.overflowTokens).toBe(0);
+    expect(result.estimatedPromptTokens).toBeLessThanOrEqual(result.promptBudgetBeforeReserve);
+  });
+
+  it("does not fire proactive compaction below the ratio or when the ratio is disabled", () => {
+    const messages = [makeAssistantHistory(verboseHistory)];
+    const estimated = estimatePrePromptTokens({
+      messages,
+      systemPrompt: verboseSystem,
+      prompt: verbosePrompt,
+    });
+    const reserveTokens = 500;
+    const base = {
+      messages,
+      systemPrompt: verboseSystem,
+      prompt: verbosePrompt,
+      reserveTokens,
+    };
+
+    // Well under the ratio: budget is 4x the estimate.
+    const under = shouldPreemptivelyCompactBeforePrompt({
+      ...base,
+      contextTokenBudget: estimated * 4 + reserveTokens,
+      proactiveCompactRatio: 0.5,
+    });
+    expect(under.route).toBe("fits");
+    expect(under.shouldCompact).toBe(false);
+
+    // Ratio omitted or at a disabling boundary value: never proactive.
+    for (const proactiveCompactRatio of [undefined, 0, 1]) {
+      const result = shouldPreemptivelyCompactBeforePrompt({
+        ...base,
+        contextTokenBudget: estimated + 1_000 + reserveTokens,
+        ...(proactiveCompactRatio !== undefined ? { proactiveCompactRatio } : {}),
+      });
+      expect(result.route).toBe("fits");
+      expect(result.shouldCompact).toBe(false);
+    }
+  });
+
+  it("lets a real overflow route win over the proactive ratio", () => {
+    const result = shouldPreemptivelyCompactBeforePrompt({
+      messages: [makeAssistantHistory(verboseHistory)],
+      systemPrompt: verboseSystem,
+      prompt: verbosePrompt,
+      contextTokenBudget: 500,
+      reserveTokens: 50,
+      proactiveCompactRatio: 0.5,
+    });
+
+    expect(result.route).toBe("compact_only");
+    expect(result.overflowTokens).toBeGreaterThan(0);
+  });
+
+  it("resolves the proactive threshold ratio with a code-side default and config override", () => {
+    const cfgWith = (proactiveThresholdRatio: number | undefined) =>
+      ({
+        agents: { defaults: { compaction: { proactiveThresholdRatio } } },
+      }) as never;
+
+    // Unset anywhere along the path → the code-side default. The default is
+    // deliberately not seeded into deployed config files: the compaction
+    // schema is strict, so a persisted key would invalidate the config under
+    // a rolled-back older bundle.
+    expect(resolveProactiveCompactionThresholdRatio(undefined)).toBe(0.5);
+    expect(resolveProactiveCompactionThresholdRatio({} as never)).toBe(0.5);
+    expect(resolveProactiveCompactionThresholdRatio(cfgWith(undefined))).toBe(0.5);
+    // Explicit boundary values disable; NaN never enables.
+    expect(resolveProactiveCompactionThresholdRatio(cfgWith(0))).toBeUndefined();
+    expect(resolveProactiveCompactionThresholdRatio(cfgWith(1))).toBeUndefined();
+    expect(resolveProactiveCompactionThresholdRatio(cfgWith(Number.NaN))).toBeUndefined();
+    // In-range values override the default.
+    expect(resolveProactiveCompactionThresholdRatio(cfgWith(0.85))).toBe(0.85);
   });
 
   it("treats mixed oversized-plus-aggregate tool tails as cumulative recovery potential", () => {

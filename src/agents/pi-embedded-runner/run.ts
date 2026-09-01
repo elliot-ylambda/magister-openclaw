@@ -790,6 +790,12 @@ export async function runEmbeddedPiAgent(
       let emptyResponseRetryAttempts = 0;
       let compactionContinuationRetryAttempts = 0;
       let sameModelIdleTimeoutRetries = 0;
+      // Proactive turn-boundary compaction is one-shot per run: only the
+      // literal first attempt may fire it (later attempts can carry in-turn
+      // state, where compacting a still-fitting prompt is wrong), and a
+      // proactive compaction that fails must fall open to a normal prompt
+      // instead of re-arming itself.
+      let proactiveCompactionAttempted = false;
       // Cost-runaway breaker for #76293. State lives at the run-loop level
       // on purpose so it survives across attempt boundaries and across
       // profile/auth retries within this embedded run (a wrapper-local
@@ -1326,6 +1332,7 @@ export async function runEmbeddedPiAgent(
               allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
               contextEngine,
               contextTokenBudget: ctxInfo.tokens,
+              proactiveCompactionEligible: !proactiveCompactionAttempted,
               skillsSnapshot: params.skillsSnapshot,
               prompt,
               transcriptPrompt: params.transcriptPrompt,
@@ -1444,6 +1451,9 @@ export async function runEmbeddedPiAgent(
             throw postCompactionAbortError;
           }
           const attempt = normalizeEmbeddedRunAttemptResult(rawAttempt);
+          // From here on the run is past its first attempt: any retry can
+          // carry persisted in-turn state, so proactive compaction stays off.
+          proactiveCompactionAttempted = true;
 
           const {
             aborted,
@@ -1800,6 +1810,7 @@ export async function runEmbeddedPiAgent(
             );
             const isCompactionFailure = isCompactionFailureError(errorText);
             const hadAttemptLevelCompaction = attemptCompactionCount > 0;
+            const proactiveBoundaryCompaction = preflightRecovery?.route === "proactive_compact";
             // If this attempt already compacted (SDK auto-compaction), avoid immediately
             // running another explicit compaction for the same overflow trigger.
             if (
@@ -1832,7 +1843,9 @@ export async function runEmbeddedPiAgent(
               }
               overflowCompactionAttempts++;
               log.warn(
-                `context overflow detected (attempt ${overflowCompactionAttempts}/${MAX_OVERFLOW_COMPACTION_ATTEMPTS}); attempting auto-compaction for ${provider}/${modelId}`,
+                proactiveBoundaryCompaction
+                  ? `[proactive-compaction] prior history crossed the turn-boundary threshold; compacting before the first prompt for ${provider}/${modelId}`
+                  : `context overflow detected (attempt ${overflowCompactionAttempts}/${MAX_OVERFLOW_COMPACTION_ATTEMPTS}); attempting auto-compaction for ${provider}/${modelId}`,
               );
               emitOverflowCompactionEvent({ phase: "start" });
               let compactResult: Awaited<ReturnType<typeof contextEngine.compact>>;
@@ -1866,7 +1879,9 @@ export async function runEmbeddedPiAgent(
                   onCompactionHookMessages,
                   ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
                   runId: params.runId,
-                  trigger: "overflow",
+                  // Proactive boundary compaction is a budget-threshold pass,
+                  // not an overflow: checkpoints record it as auto-threshold.
+                  trigger: proactiveBoundaryCompaction ? "budget" : "overflow",
                   ...(observedOverflowTokens !== undefined
                     ? { currentTokenCount: observedOverflowTokens }
                     : {}),
@@ -1973,6 +1988,17 @@ export async function runEmbeddedPiAgent(
               log.warn(
                 `auto-compaction failed for ${provider}/${modelId}: ${compactResult.reason ?? "nothing to compact"}`,
               );
+              if (proactiveBoundaryCompaction) {
+                // Proactive compaction is an optimization, never a gate: the
+                // prompt still fits the model, so fall open to a normal
+                // submission instead of walking into the overflow terminal.
+                // Return the spent try to the real-overflow budget.
+                overflowCompactionAttempts = Math.max(0, overflowCompactionAttempts - 1);
+                log.warn(
+                  `[proactive-compaction] proceeding with the uncompacted prompt for ${provider}/${modelId}`,
+                );
+                continue;
+              }
             }
             if (!toolResultTruncationAttempted) {
               const contextWindowTokens = ctxInfo.tokens;
