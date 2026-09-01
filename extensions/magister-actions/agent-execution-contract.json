@@ -2533,6 +2533,42 @@
       "transport_modes": ["json_v1"]
     },
     {
+      "capability_id": "canva",
+      "connection_slug": "canva",
+      "delegation_safe_tools": [],
+      "hosted_agent_tools": [
+        {
+          "action": "integration_read",
+          "approval_policy": "none",
+          "idempotency_policy": "safe_retry",
+          "side_effect": "none",
+          "tool_name": "magister_integration_read"
+        },
+        {
+          "action": "integration_change",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "external_write",
+          "tool_name": "magister_integration_change"
+        },
+        {
+          "action": "integration_delete",
+          "approval_policy": "exact_payload",
+          "idempotency_policy": "idempotency_key",
+          "side_effect": "delete",
+          "tool_name": "magister_integration_delete"
+        }
+      ],
+      "mcp_tool_actions": ["proxy:canva"],
+      "minimum_native_action_registry_revision": "30791bc944d1ccf5f4cca926f93c52a3e59ca3f3d95b53f210bb2ca03abc5d76",
+      "proxy_services": ["canva"],
+      "remediation": null,
+      "rollout_service": null,
+      "skill_name": "magister-canva",
+      "status": "typed",
+      "transport_modes": ["json_v1"]
+    },
+    {
       "capability_id": "context_dev",
       "connection_slug": null,
       "delegation_safe_tools": [],
@@ -3897,6 +3933,6 @@
     }
   ],
   "native_action_registry_revision": "30791bc944d1ccf5f4cca926f93c52a3e59ca3f3d95b53f210bb2ca03abc5d76",
-  "registry_revision": "70f42c5315547629831bd2f040962ca4475cf3ece10a0b43a7e05212cea7ad6d",
+  "registry_revision": "c408e1ecaa9d17e09ff7231a89c48b654f894f2cbeb5a847667a9a8ba0df622b",
   "schema_version": 1
 }
