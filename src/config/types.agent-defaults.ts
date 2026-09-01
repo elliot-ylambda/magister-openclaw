@@ -470,6 +470,11 @@ export type AgentCompactionConfig = {
   keepRecentTokens?: number;
   /** Minimum reserve tokens enforced for Pi compaction (0 disables the floor). */
   reserveTokensFloor?: number;
+  /**
+   * Compact prior history before a turn's first prompt once it exceeds this
+   * ratio of the prompt budget (0–1; default 0.5, 0 or 1 disables).
+   */
+  proactiveThresholdRatio?: number;
   /** Max share of context window for history during safeguard pruning (0.1–0.9, default 0.5). */
   maxHistoryShare?: number;
   /** Additional compaction-summary instructions that can preserve language or persona continuity. */

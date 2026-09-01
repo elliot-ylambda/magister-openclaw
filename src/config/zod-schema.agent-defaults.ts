@@ -176,6 +176,7 @@ export const AgentDefaultsSchema = z
         reserveTokens: z.number().int().nonnegative().optional(),
         keepRecentTokens: z.number().int().positive().optional(),
         reserveTokensFloor: z.number().int().nonnegative().optional(),
+        proactiveThresholdRatio: z.number().min(0).max(1).optional(),
         maxHistoryShare: z.number().min(0.1).max(0.9).optional(),
         customInstructions: z.string().optional(),
         identifierPolicy: z
