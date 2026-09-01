@@ -902,7 +902,7 @@ export function formatSkillsCompact(skills: Skill[]): string {
   if (skills.length === 0) return "";
   const lines = [
     "\n\nThe following skills provide specialized instructions for specific tasks.",
-    "Use the read tool to load a skill's file when the task matches its name.",
+    "Before starting work a listed skill covers, use the read tool to load its file and follow the guidance inside.",
     "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
     "",
     "<available_skills>",
@@ -1127,6 +1127,7 @@ function renderTaskSelectedSkillsPrompt(params: {
     : "If no task-selected hint fits, run `openclaw skills list --json` for the complete on-demand index.";
   return [
     "Task-selected skill hints for the current request follow. They are routing hints, not proof that a capability is ready.",
+    selected.length > 0 ? SKILL_READ_NORM : "",
     formatSkillsForPrompt(selected),
     selected.length === 0 ? "No skill description matched the current task deterministically." : "",
     indexGuidance,
@@ -1265,6 +1266,13 @@ function applySkillsPromptLimits(params: {
 const CATALOG_DESC_TRIM_STEPS = [512, 384, 256, 192, 128] as const;
 const CATALOG_TRIM_NOTE =
   "Note: some skill descriptions are trimmed to fit the prompt budget; read the skill's SKILL.md or the skill index file for full text.";
+// The one-line description is an index entry, not the guidance. Stated where
+// the fork assembles skill blocks (not inside formatSkillsForPrompt, which
+// must stay byte-aligned with the upstream formatter — see compact-format
+// parity test): agents that act from the description alone skip the operating
+// rules that only exist in the body.
+const SKILL_READ_NORM =
+  "Before starting work a listed skill covers, read its SKILL.md and follow the guidance inside — the one-line description is an index entry, not the full guidance.";
 
 function trimSkillDescription(description: string, cap: number): string {
   if (description.length <= cap) {
@@ -1289,8 +1297,8 @@ export function renderSkillsCatalogPrompt(params: { skills: Skill[]; maxChars: n
     return "";
   }
   const full = formatSkillsForPrompt(skills);
-  if (full.length <= params.maxChars) {
-    return full;
+  if (full.length + SKILL_READ_NORM.length + 1 <= params.maxChars) {
+    return [SKILL_READ_NORM, full].join("\n");
   }
   for (const cap of CATALOG_DESC_TRIM_STEPS) {
     const trimmed = skills.map((skill) => ({
@@ -1298,8 +1306,11 @@ export function renderSkillsCatalogPrompt(params: { skills: Skill[]; maxChars: n
       description: trimSkillDescription(skill.description ?? "", cap),
     }));
     const rendered = formatSkillsForPrompt(trimmed);
-    if (rendered.length + CATALOG_TRIM_NOTE.length + 1 <= params.maxChars) {
-      return [CATALOG_TRIM_NOTE, rendered].join("\n");
+    if (
+      rendered.length + SKILL_READ_NORM.length + CATALOG_TRIM_NOTE.length + 2 <=
+      params.maxChars
+    ) {
+      return [SKILL_READ_NORM, CATALOG_TRIM_NOTE, rendered].join("\n");
     }
   }
   // Even trimmed descriptions cannot fit — fall back to the compact tiers.
