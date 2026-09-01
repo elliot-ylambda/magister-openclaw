@@ -1314,6 +1314,12 @@ export const FIELD_HELP: Record<string, string> = {
     "Minimum floor enforced for reserveTokens in Pi compaction paths (0 disables the floor guard). Use a non-zero floor to avoid over-aggressive compression under fluctuating token estimates.",
   "agents.defaults.compaction.proactiveThresholdRatio":
     "Ratio of the prompt budget (context window minus reserve) above which prior history is compacted at the turn boundary, before the turn's first model call (range 0-1; default 0.5, and 0 or 1 disables). This lets tool-heavy turns start with headroom instead of overflowing mid-run, where the turn's own tool results can no longer be compacted away; the cost is one summarization pass and a prompt-cache reset when it fires.",
+  "agents.defaults.pasteMaterialization":
+    "Large inline data pastes (fenced blocks or unfenced delimiter-consistent runs) are written to the workspace inbox/ before the model sees the turn, and the prompt names the path, so the agent can compute over a file instead of estimating from the prompt. Default on; `enabled: false` disables it and `minChars` sets the size threshold.",
+  "agents.defaults.pasteMaterialization.enabled":
+    "Default true. Set false to leave pastes inline only; existing inbox/ files are untouched.",
+  "agents.defaults.pasteMaterialization.minChars":
+    "Minimum paste size in characters that earns a file (default 4000, roughly a thousand tokens). Unfenced runs also need at least 20 rows.",
   "agents.defaults.compaction.maxHistoryShare":
     "Maximum fraction of total context budget allowed for retained history after compaction (range 0.1-0.9). Use lower shares for more generation headroom or higher shares for deeper historical continuity.",
   "agents.defaults.compaction.identifierPolicy":

@@ -1,5 +1,6 @@
 import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
 import { buildInboundMediaNote } from "../media-note.js";
+import { buildInboundPasteNote } from "../paste-note.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import { appendUntrustedContext } from "./untrusted-context.js";
 
@@ -17,6 +18,7 @@ export function buildReplyPromptBodies(params: {
 }): {
   mediaNote?: string;
   mediaReplyHint?: string;
+  pasteNote?: string;
   prefixedCommandBody: string;
   queuedBody: string;
   transcriptCommandBody: string;
@@ -35,19 +37,22 @@ export function buildReplyPromptBodies(params: {
   const queueBodyBase = [params.threadContextNote, bodyWithEvents].filter(Boolean).join("\n\n");
   const mediaNote = buildInboundMediaNote(params.ctx);
   const mediaReplyHint = mediaNote ? REPLY_MEDIA_HINT : undefined;
-  const queuedBodyRaw = mediaNote
-    ? [mediaNote, mediaReplyHint, queueBodyBase].filter(Boolean).join("\n").trim()
+  const pasteNote = buildInboundPasteNote(params.ctx);
+  const hasNotes = Boolean(mediaNote || pasteNote);
+  const queuedBodyRaw = hasNotes
+    ? [mediaNote, mediaReplyHint, pasteNote, queueBodyBase].filter(Boolean).join("\n").trim()
     : queueBodyBase;
-  const prefixedCommandBodyRaw = mediaNote
-    ? [mediaNote, mediaReplyHint, prefixedBody].filter(Boolean).join("\n").trim()
+  const prefixedCommandBodyRaw = hasNotes
+    ? [mediaNote, mediaReplyHint, pasteNote, prefixedBody].filter(Boolean).join("\n").trim()
     : prefixedBody;
   const transcriptBody = params.transcriptBody ?? params.effectiveBaseBody;
-  const transcriptCommandBodyRaw = mediaNote
-    ? [mediaNote, transcriptBody].filter(Boolean).join("\n").trim()
+  const transcriptCommandBodyRaw = hasNotes
+    ? [mediaNote, pasteNote, transcriptBody].filter(Boolean).join("\n").trim()
     : transcriptBody;
   return {
     mediaNote,
     mediaReplyHint,
+    pasteNote,
     prefixedCommandBody: annotateInterSessionPromptText(
       prefixedCommandBodyRaw,
       params.sessionCtx.InputProvenance,

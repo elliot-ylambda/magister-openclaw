@@ -40,6 +40,7 @@ import { finalizeInboundContext } from "./inbound-context.js";
 import { hasInboundMedia } from "./inbound-media.js";
 import { emitPreAgentMessageHooks } from "./message-preprocess-hooks.js";
 import { createFastTestModelSelectionState } from "./model-selection.js";
+import { materializeInlinePastes } from "./paste-materializer.js";
 import { initSessionState } from "./session.js";
 import { resolveStoredModelOverride } from "./stored-model-override.js";
 import { createTypingController } from "./typing.js";
@@ -664,6 +665,28 @@ export async function getReplyFromConfig(
       sessionKey,
       workspaceDir,
     });
+  }
+
+  // A large inline paste (a CSV export, a fenced data block) gets a file in
+  // the workspace inbox before the model sees the turn, so the agent can
+  // compute over it instead of estimating from the prompt or hunting the
+  // filesystem for a copy that does not exist. Default on; config is the
+  // override, never the source of the default (agents.defaults.* is strict,
+  // and a key persisted into a machine's config would break an older bundle).
+  if (!useFastTestBootstrap && !opts?.isHeartbeat && !ctx.PasteFiles) {
+    const pasteConfig = cfg.agents?.defaults?.pasteMaterialization;
+    if (pasteConfig?.enabled !== false) {
+      const pastes = await materializeInlinePastes({
+        body: ctx.BodyForAgent ?? ctx.Body,
+        workspaceDir,
+        runId: opts?.runId ?? ctx.MessageSid,
+        minChars: pasteConfig?.minChars,
+      });
+      if (pastes.length > 0) {
+        ctx.PasteFiles = pastes;
+        sessionCtx.PasteFiles = pastes;
+      }
+    }
   }
 
   return runPreparedReply({

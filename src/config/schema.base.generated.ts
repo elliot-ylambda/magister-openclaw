@@ -4992,6 +4992,29 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                 },
                 additionalProperties: false,
               },
+              pasteMaterialization: {
+                type: "object",
+                properties: {
+                  enabled: {
+                    type: "boolean",
+                    title: "Paste Materialization Enabled",
+                    description:
+                      "Default true. Set false to leave pastes inline only; existing inbox/ files are untouched.",
+                  },
+                  minChars: {
+                    type: "integer",
+                    exclusiveMinimum: 0,
+                    maximum: 9007199254740991,
+                    title: "Paste Materialization Minimum Characters",
+                    description:
+                      "Minimum paste size in characters that earns a file (default 4000, roughly a thousand tokens). Unfenced runs also need at least 20 rows.",
+                  },
+                },
+                additionalProperties: false,
+                title: "Paste Materialization",
+                description:
+                  "Large inline data pastes (fenced blocks or unfenced delimiter-consistent runs) are written to the workspace inbox/ before the model sees the turn, and the prompt names the path, so the agent can compute over a file instead of estimating from the prompt.",
+              },
               compaction: {
                 type: "object",
                 properties: {
@@ -27761,6 +27784,21 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
     "agents.defaults.compaction.proactiveThresholdRatio": {
       label: "Compaction Proactive Threshold Ratio",
       help: "Ratio of the prompt budget (context window minus reserve) above which prior history is compacted at the turn boundary, before the turn's first model call (range 0-1; default 0.5, and 0 or 1 disables). This lets tool-heavy turns start with headroom instead of overflowing mid-run, where the turn's own tool results can no longer be compacted away; the cost is one summarization pass and a prompt-cache reset when it fires.",
+      tags: ["advanced"],
+    },
+    "agents.defaults.pasteMaterialization": {
+      label: "Paste Materialization",
+      help: "Large inline data pastes (fenced blocks or unfenced delimiter-consistent runs) are written to the workspace inbox/ before the model sees the turn, and the prompt names the path, so the agent can compute over a file instead of estimating from the prompt.",
+      tags: ["advanced"],
+    },
+    "agents.defaults.pasteMaterialization.enabled": {
+      label: "Paste Materialization Enabled",
+      help: "Default true. Set false to leave pastes inline only; existing inbox/ files are untouched.",
+      tags: ["advanced"],
+    },
+    "agents.defaults.pasteMaterialization.minChars": {
+      label: "Paste Materialization Minimum Characters",
+      help: "Minimum paste size in characters that earns a file (default 4000, roughly a thousand tokens). Unfenced runs also need at least 20 rows.",
       tags: ["advanced"],
     },
     "agents.defaults.compaction.maxHistoryShare": {
