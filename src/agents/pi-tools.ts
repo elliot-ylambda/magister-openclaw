@@ -54,6 +54,7 @@ import {
   wrapToolParamValidation,
 } from "./pi-tools.read.js";
 import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.schema.js";
+import { wrapToolSessionStoreGuard } from "./pi-tools.session-store-guard.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import type { SandboxContext } from "./sandbox.js";
 import {
@@ -521,11 +522,14 @@ export function createOpenClawCodingTools(options?: {
               imageSanitization,
             });
             return [
-              workspaceOnly
-                ? wrapToolWorkspaceRootGuardWithOptions(sandboxed, sandboxRoot, {
-                    containerWorkdir: sandbox.containerWorkdir,
-                  })
-                : sandboxed,
+              wrapToolSessionStoreGuard(
+                workspaceOnly
+                  ? wrapToolWorkspaceRootGuardWithOptions(sandboxed, sandboxRoot, {
+                      containerWorkdir: sandbox.containerWorkdir,
+                    })
+                  : sandboxed,
+                sandboxRoot,
+              ),
             ];
           }
           const freshReadTool = createReadTool(workspaceRoot);
@@ -533,7 +537,12 @@ export function createOpenClawCodingTools(options?: {
             modelContextWindowTokens: options?.modelContextWindowTokens,
             imageSanitization,
           });
-          return [workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped];
+          return [
+            wrapToolSessionStoreGuard(
+              workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped,
+              workspaceRoot,
+            ),
+          ];
         }
         if (tool.name === "bash" || tool.name === execToolName) {
           return [];
@@ -543,14 +552,24 @@ export function createOpenClawCodingTools(options?: {
             return [];
           }
           const wrapped = createHostWorkspaceWriteTool(workspaceRoot, { workspaceOnly });
-          return [workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped];
+          return [
+            wrapToolSessionStoreGuard(
+              workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped,
+              workspaceRoot,
+            ),
+          ];
         }
         if (tool.name === "edit") {
           if (sandboxRoot) {
             return [];
           }
           const wrapped = createHostWorkspaceEditTool(workspaceRoot, { workspaceOnly });
-          return [workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped];
+          return [
+            wrapToolSessionStoreGuard(
+              workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped,
+              workspaceRoot,
+            ),
+          ];
         }
         return [tool];
       })
