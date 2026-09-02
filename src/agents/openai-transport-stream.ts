@@ -52,7 +52,11 @@ import {
   buildGuardedModelFetch,
   resolveModelRequestTimeoutMs,
 } from "./provider-transport-fetch.js";
-import { stripSystemPromptCacheBoundary } from "./system-prompt-cache-boundary.js";
+import {
+  SYSTEM_PROMPT_CACHE_BOUNDARY,
+  splitSystemPromptCacheBoundary,
+  stripSystemPromptCacheBoundary,
+} from "./system-prompt-cache-boundary.js";
 import { transformTransportMessages } from "./transport-message-transform.js";
 import { mergeTransportMetadata, sanitizeTransportPayloadText } from "./transport-stream-shared.js";
 
@@ -1867,6 +1871,60 @@ function injectToolCallThoughtSignatures(
   }
 }
 
+/**
+ * Send the system prompt as two messages, split at the cache boundary.
+ *
+ * The prompt builder already separates a stable prefix (identity, tooling,
+ * skills catalog, project context — ~100k tokens) from a dynamic suffix
+ * (runtime line, channel contract, per-turn context) with
+ * SYSTEM_PROMPT_CACHE_BOUNDARY. The Anthropic-native transport turns that into
+ * two system blocks so the prefix keeps its own cache entry; this transport
+ * used to flatten both halves into one string, so any change in the suffix
+ * (a thinking-level toggle, a workflow step's context) invalidated the whole
+ * prefix on every prompt-cached provider behind the gateway. Two system
+ * messages are standard OpenAI wire format; the gateway puts a cache
+ * breakpoint on each.
+ *
+ * Runs after convertMessages so the halves are already surrogate-sanitized.
+ * A boundary that survives anywhere else is stripped, never sent.
+ */
+export function splitSystemMessagesAtCacheBoundary(messages: unknown[]): void {
+  let split = false;
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const record = message as { role?: unknown; content?: unknown };
+    if (typeof record.content !== "string") {
+      continue;
+    }
+    if (!record.content.includes(SYSTEM_PROMPT_CACHE_BOUNDARY)) {
+      continue;
+    }
+    const isSystemRole = record.role === "system" || record.role === "developer";
+    const parts =
+      isSystemRole && !split ? splitSystemPromptCacheBoundary(record.content) : undefined;
+    if (!parts) {
+      messages[index] = { ...record, content: stripSystemPromptCacheBoundary(record.content) };
+      continue;
+    }
+    const replacements: Array<Record<string, unknown>> = [];
+    for (const text of [parts.stablePrefix, parts.dynamicSuffix]) {
+      const cleaned = stripSystemPromptCacheBoundary(text).trim();
+      if (cleaned.length > 0) {
+        replacements.push(Object.assign({}, record, { content: cleaned }));
+      }
+    }
+    if (replacements.length === 0) {
+      replacements.push(Object.assign({}, record, { content: "" }));
+    }
+    messages.splice(index, 1, ...replacements);
+    index += replacements.length - 1;
+    split = true;
+  }
+}
+
 export function buildOpenAICompletionsParams(
   model: OpenAIModeModel,
   context: Context,
@@ -1874,13 +1932,8 @@ export function buildOpenAICompletionsParams(
 ) {
   const compat = getCompat(model);
   const compatDetection = detectOpenAICompletionsCompat(model);
-  const completionsContext = context.systemPrompt
-    ? {
-        ...context,
-        systemPrompt: stripSystemPromptCacheBoundary(context.systemPrompt),
-      }
-    : context;
-  const messages = convertMessages(model as never, completionsContext, compat as never);
+  const messages = convertMessages(model as never, context, compat as never);
+  splitSystemMessagesAtCacheBoundary(messages as unknown[]);
   injectToolCallThoughtSignatures(messages as unknown[], context, model);
   const cacheRetention = resolveCacheRetention(options?.cacheRetention);
   const params: Record<string, unknown> = {

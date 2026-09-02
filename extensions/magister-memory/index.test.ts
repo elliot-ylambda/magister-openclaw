@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import plugin, { createMemoryTool } from "./index.js";
+import plugin, { buildPromptBuildHookResult, createMemoryTool } from "./index.js";
 
 /**
  * These tests exercise the tool's `execute` function directly by stubbing the
@@ -144,5 +144,18 @@ describe("memory tool dispatch", () => {
 
     const text = (out.content?.[0] as { type: string; text: string } | undefined)?.text ?? "";
     expect(JSON.parse(text)).toMatchObject({ success: true, entries: ["Updated durable fact"] });
+  });
+});
+
+describe("session recall placement", () => {
+  it("appends recall below the cached prefix instead of prepending it", () => {
+    // Prepended context lands at the very front of the system prompt, above
+    // the ~100k-token stable prefix every provider caches; per-session recall
+    // there made each new session a cold cache write.
+    expect(buildPromptBuildHookResult("<magister-recent-conversations/>")).toEqual({
+      appendSystemContext: "<magister-recent-conversations/>",
+    });
+    expect(buildPromptBuildHookResult(undefined)).toBeUndefined();
+    expect(buildPromptBuildHookResult("")).toBeUndefined();
   });
 });

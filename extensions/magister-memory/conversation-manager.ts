@@ -149,13 +149,14 @@ export class ConversationCheckpointManager {
   }
 
   async buildPromptContext(ctx: AgentContext): Promise<string | undefined> {
-    if (this.config.mode !== "active" || !this.isInteractiveContext(ctx)) {
+    if (this.config.mode !== "active") {
       return undefined;
     }
     const identity = this.resolveSessionIdentity(ctx);
     if (!identity) {
       return undefined;
     }
+    const interactive = this.isInteractiveContext(ctx);
     const workspaceDir = this.resolveWorkspaceDir(ctx);
     const sessionHash = hashIdentifier(identity);
     return this.stateQueue.enqueue(`${workspaceDir}:${sessionHash}`, async () => {
@@ -165,7 +166,14 @@ export class ConversationCheckpointManager {
         agentId: ctx.agentId ?? "main",
       });
       if (state.recallFrozen) {
+        // Once a session carries recall it keeps it on every turn, whatever
+        // the trigger. The block is part of the cached system prompt; a turn
+        // that dropped it (approval continuation, cron on the same session)
+        // and the next user turn that restored it each re-wrote the prefix.
         return state.frozenRecall;
+      }
+      if (!interactive) {
+        return undefined;
       }
       const checkpoints = (
         await listRecentCheckpoints({
