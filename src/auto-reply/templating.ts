@@ -134,6 +134,12 @@ export type MsgContext = {
    * client; any later failure only reaches the broadcast channel.
    */
   MediaStaged?: boolean;
+  /**
+   * Large inline data blocks the host wrote into the workspace's `inbox/`
+   * before the model saw this turn (see reply/paste-materializer.ts). The
+   * prompt prelude turns these into a note naming each path.
+   */
+  PasteFiles?: Array<{ path: string; bytes: number; lines: number; name: string }>;
   /** Telegram sticker metadata (emoji, set name, file IDs, cached description). */
   Sticker?: StickerContextMetadata;
   /** True when current-turn sticker media is present in MediaPaths (false for cached-description path). */

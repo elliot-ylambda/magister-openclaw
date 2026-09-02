@@ -292,6 +292,8 @@ export type AgentDefaultsConfig = {
   cliBackends?: Record<string, CliBackendConfig>;
   /** Opt-in: prune old tool results from the LLM context to reduce token usage. */
   contextPruning?: AgentContextPruningConfig;
+  /** Large inline pastes become `inbox/` files the agent can compute from (default on). */
+  pasteMaterialization?: AgentPasteMaterializationConfig;
   /** Compaction tuning and pre-compaction memory flush behavior. */
   compaction?: AgentCompactionConfig;
   /** Embedded Pi runner hardening and compatibility controls. */
@@ -459,6 +461,14 @@ export type AgentCompactionMidTurnPrecheckConfig = {
    * and before the next Pi model call. Default: false.
    */
   enabled?: boolean;
+};
+
+/** Inline data pastes written to the workspace inbox before the model sees a turn. */
+export type AgentPasteMaterializationConfig = {
+  /** Default true. Set false to leave pastes inline only. */
+  enabled?: boolean;
+  /** Minimum paste size, in characters, that earns a file (default 4000). */
+  minChars?: number;
 };
 
 export type AgentCompactionConfig = {

@@ -169,6 +169,13 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    pasteMaterialization: z
+      .object({
+        enabled: z.boolean().optional(),
+        minChars: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
     compaction: z
       .object({
         mode: z.union([z.literal("default"), z.literal("safeguard")]).optional(),
