@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
   DEFAULT_PASTE_MIN_CHARS,
+  DEFAULT_TABULAR_MIN_CHARS,
   detectInlinePastes,
+  looksTabular,
   materializeInlinePastes,
   materializeInlinePastesForTurn,
   sanitizePasteName,
@@ -20,6 +22,100 @@ function csvRows(rows: number): string {
   }
   return lines.join("\n");
 }
+
+/** The shape of the benchmark's `campaigns.csv`: wide rows, a text column, weekly grain. */
+function campaignRows(rows: number): string {
+  const lines = [
+    "campaign,objective,week_start,spend_usd,impressions,clicks,conversions,revenue_usd,frequency,notes",
+  ];
+  for (let i = 0; i < rows; i += 1) {
+    lines.push(
+      `Prospecting - Broad ${i},conversions,2026-07-${String((i % 28) + 1).padStart(2, "0")},1200,200000,3600,60,4080,2.0,"week ${i} of the always-on prospecting flight"`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function tsvRows(rows: number): string {
+  return csvRows(rows).replace(/,/g, "\t");
+}
+
+function markdownTable(rows: number): string {
+  const lines = ["| campaign | spend_usd | clicks | conversions |", "|---|---|---|---|"];
+  for (let i = 0; i < rows; i += 1) {
+    lines.push(`| Prospecting - Broad ${i} | ${(100 + i).toFixed(2)} | ${20 + i} | ${i % 5} |`);
+  }
+  return lines.join("\n");
+}
+
+/** One sentence per line with the comma counts real prose has: none, one, several. */
+function prose(minChars: number): string {
+  const sentences = [
+    "The quarter opened slowly, with brand search flat and prospecting spend drifting upward.",
+    "Retargeting held its CPA through the whole period.",
+    "By week three, creative fatigue showed up in frequency, click-through, and cost per click alike, which is the usual order.",
+    "We paused two ad sets and moved the budget into the broad audience.",
+    "The founder asked for a plan, a budget, and a bounded test, in that order.",
+  ];
+  const lines: string[] = [];
+  let length = 0;
+  for (let i = 0; length < minChars; i += 1) {
+    const line = sentences[i % sentences.length] ?? "";
+    lines.push(line);
+    length += line.length + 1;
+  }
+  return lines.join("\n");
+}
+
+/** A 1,500-character single-line JSON document: never tabular, so it only ever earns a file by size. */
+const jsonPayload = JSON.stringify({
+  rows: Array.from({ length: 120 }, (_, i) => ({ i, v: i * 2 })),
+});
+
+describe("looksTabular", () => {
+  it("needs six rows and 400 characters before shape earns a file", () => {
+    const fiveWideLines = campaignRows(4);
+    expect(fiveWideLines.split("\n")).toHaveLength(5);
+    expect(fiveWideLines.length).toBeGreaterThan(DEFAULT_TABULAR_MIN_CHARS);
+    expect(looksTabular(fiveWideLines)).toBeNull();
+
+    const sixShortLines = csvRows(5);
+    expect(sixShortLines.split("\n")).toHaveLength(6);
+    expect(sixShortLines.length).toBeLessThan(DEFAULT_TABULAR_MIN_CHARS);
+    expect(looksTabular(sixShortLines)).toBeNull();
+
+    expect(looksTabular(campaignRows(5))).toEqual({ delimiter: ",", ext: "csv" });
+  });
+
+  it("maps the delimiter the rows agree on to an extension", () => {
+    expect(looksTabular(tsvRows(10))).toEqual({ delimiter: "\t", ext: "tsv" });
+    expect(looksTabular(markdownTable(10))).toEqual({ delimiter: "|", ext: "md" });
+    const pipes = csvRows(10).replace(/,/g, "|");
+    expect(looksTabular(pipes)).toEqual({ delimiter: "|", ext: "txt" });
+  });
+
+  it("tolerates a minority of rows with quoted commas and rejects a block that mostly disagrees", () => {
+    const rows = csvRows(9).split("\n");
+    const quoteComma = (row: string) => row.replace("brand-search", '"brand, search"');
+    const oneOff = rows.map((row, index) => (index === 3 ? quoteComma(row) : row));
+    expect(looksTabular(oneOff.join("\n"))).toEqual({ delimiter: ",", ext: "csv" });
+
+    const fourOff = rows.map((row, index) =>
+      [2, 4, 6, 8].includes(index) ? quoteComma(row) : row,
+    );
+    expect(looksTabular(fourOff.join("\n"))).toBeNull();
+  });
+
+  it("reads uniformly comma-punctuated prose as prose", () => {
+    const listy = Array.from(
+      { length: 30 },
+      (_, i) => `Point ${i}: first, second, third, and so on.`,
+    ).join("\n");
+    expect(listy.length).toBeGreaterThan(DEFAULT_TABULAR_MIN_CHARS);
+    expect(looksTabular(listy)).toBeNull();
+    expect(looksTabular(prose(3800))).toBeNull();
+  });
+});
 
 describe("detectInlinePastes", () => {
   it("finds an unfenced CSV under a heading and names it from the heading", () => {
@@ -42,12 +138,57 @@ describe("detectInlinePastes", () => {
     expect(pastes[0]?.text).toBe(payload);
   });
 
-  it("ignores prose with commas, short tables, and small fenced blocks", () => {
-    const prose = Array.from(
+  it("names a bare-fenced table by its delimiter instead of txt", () => {
+    expect(detectInlinePastes(`\`\`\`\n${csvRows(120)}\n\`\`\``)[0]?.ext).toBe("csv");
+    expect(detectInlinePastes(`\`\`\`\n${tsvRows(10)}\n\`\`\``)[0]?.ext).toBe("tsv");
+    expect(detectInlinePastes(`\`\`\`\n${markdownTable(10)}\n\`\`\``)[0]?.ext).toBe("md");
+    // An explicit language still wins over the shape.
+    expect(detectInlinePastes(`\`\`\`text\n${csvRows(120)}\n\`\`\``)[0]?.ext).toBe("txt");
+  });
+
+  it("materializes a 17-row CSV under the size cutoff, as the benchmark supplies it", () => {
+    const csv = campaignRows(16);
+    expect(csv.split("\n")).toHaveLength(17);
+    expect(csv.length).toBeLessThan(DEFAULT_PASTE_MIN_CHARS);
+    const body = `You are analyzing four weeks of Meta campaign data.\n\n## Supplied source: campaigns.csv\n\n${csv}\n\nProduce the analysis.`;
+    const pastes = detectInlinePastes(body);
+    expect(pastes).toHaveLength(1);
+    expect(pastes[0]).toMatchObject({ kind: "delimited", ext: "csv", name: "campaigns.csv" });
+    expect(pastes[0]?.text).toBe(csv);
+  });
+
+  it("materializes a 3,800-character table but not 3,800 characters of prose", () => {
+    const csv = csvRows(75);
+    expect(csv.length).toBeGreaterThan(3700);
+    expect(csv.length).toBeLessThan(DEFAULT_PASTE_MIN_CHARS);
+    expect(detectInlinePastes(csv)).toHaveLength(1);
+    expect(detectInlinePastes(`\`\`\`\n${csv}\n\`\`\``)).toHaveLength(1);
+
+    const text = prose(3800);
+    expect(text.length).toBeGreaterThan(3700);
+    expect(text.length).toBeLessThan(DEFAULT_PASTE_MIN_CHARS);
+    expect(detectInlinePastes(text)).toEqual([]);
+    expect(detectInlinePastes(`\`\`\`\n${text}\n\`\`\``)).toEqual([]);
+  });
+
+  it("materializes an unfenced markdown table", () => {
+    const table = markdownTable(10);
+    const body = `Here are the numbers:\n\n${table}\n\nWhat stands out?`;
+    const pastes = detectInlinePastes(body);
+    expect(pastes).toHaveLength(1);
+    expect(pastes[0]).toMatchObject({ kind: "delimited", ext: "md" });
+    expect(pastes[0]?.text).toBe(table);
+  });
+
+  it("ignores prose with commas, tables under six rows, and small fenced blocks", () => {
+    const listy = Array.from(
       { length: 30 },
       (_, i) => `Point ${i}: first, second, third, and so on.`,
     ).join("\n");
-    const body = `${prose}\n\n${csvRows(8)}\n\n\`\`\`csv\na,b,c\n1,2,3\n\`\`\``;
+    const threeWideLines = campaignRows(2);
+    expect(threeWideLines.split("\n")).toHaveLength(3);
+    expect(threeWideLines.length).toBeGreaterThan(300);
+    const body = `${listy}\n\n${threeWideLines}\n\n${csvRows(3)}\n\n\`\`\`csv\na,b,c\n1,2,3\n\`\`\``;
     expect(detectInlinePastes(body)).toEqual([]);
   });
 
@@ -66,9 +207,13 @@ describe("detectInlinePastes", () => {
     expect(detectInlinePastes(body)[0]?.name).toBe("shadow.csv");
   });
 
-  it("honors a lower threshold", () => {
-    expect(detectInlinePastes(csvRows(25), { minChars: 500 })).toHaveLength(1);
-    expect(detectInlinePastes(csvRows(25), { minChars: 50_000 })).toEqual([]);
+  it("honors the size threshold for a non-tabular paste and exempts a table from it", () => {
+    const fenced = `\`\`\`json\n${jsonPayload}\n\`\`\``;
+    expect(jsonPayload.length).toBeLessThan(DEFAULT_PASTE_MIN_CHARS);
+    expect(detectInlinePastes(fenced)).toEqual([]);
+    expect(detectInlinePastes(fenced, { minChars: 500 })).toHaveLength(1);
+    expect(detectInlinePastes(fenced, { minChars: 50_000 })).toEqual([]);
+    expect(detectInlinePastes(csvRows(25), { minChars: 50_000 })).toHaveLength(1);
   });
 });
 
@@ -95,6 +240,16 @@ describe("materializeInlinePastes", () => {
     const onDisk = await fs.readFile(path.join(workspaceDir, written[0]?.path ?? ""), "utf8");
     expect(onDisk).toBe(`${csvRows(120)}\n`);
     expect(written[0]?.bytes).toBe(Buffer.byteLength(onDisk));
+  });
+
+  it("writes a small table under the size cutoff", async () => {
+    const body = `## Supplied source: campaigns.csv\n\n${campaignRows(16)}\n`;
+    const written = await materializeInlinePastes({ body, workspaceDir, runId: "abc" });
+    expect(written.map((paste) => paste.path)).toEqual(["inbox/campaigns-abc.csv"]);
+    expect(written[0]?.lines).toBe(17);
+    await expect(
+      fs.readFile(path.join(workspaceDir, "inbox/campaigns-abc.csv"), "utf8"),
+    ).resolves.toBe(`${campaignRows(16)}\n`);
   });
 
   it("dedupes two pastes that infer the same name within one message", async () => {
@@ -166,7 +321,7 @@ describe("materializeInlinePastesForTurn", () => {
   });
 
   it("takes the size threshold from the config", async () => {
-    const small = `## Supplied source: tiny.csv\n\n${csvRows(25)}`;
+    const small = `## Supplied source: tiny.json\n\n\`\`\`json\n${jsonPayload}\n\`\`\``;
     expect(small.length).toBeLessThan(DEFAULT_PASTE_MIN_CHARS);
     await expect(
       materializeInlinePastesForTurn({ cfg: {} as OpenClawConfig, body: small, workspaceDir }),
@@ -175,6 +330,6 @@ describe("materializeInlinePastesForTurn", () => {
       agents: { defaults: { pasteMaterialization: { minChars: 500 } } },
     } as OpenClawConfig;
     const pastes = await materializeInlinePastesForTurn({ cfg, body: small, workspaceDir });
-    expect(pastes.map((paste) => paste.name)).toEqual(["tiny.csv"]);
+    expect(pastes.map((paste) => paste.name)).toEqual(["tiny.json"]);
   });
 });
