@@ -138,6 +138,25 @@ describe("materializeInlinePastesForTurn", () => {
     );
   });
 
+  it("leaves the file and directory readable by the sandbox user", async () => {
+    // The agent's shell runs as a different uid than the host process that
+    // writes the file. 0600/0750 under the host umask is what shipped first;
+    // the agent got "Permission denied" and burned 23 execs working around
+    // it. vitest workers cannot change the umask, so the directory is
+    // pre-created as restrictively as a umask could leave it.
+    await fs.mkdir(path.join(workspaceDir, "inbox"), { mode: 0o700 });
+    const pastes = await materializeInlinePastesForTurn({
+      cfg: {} as OpenClawConfig,
+      body,
+      workspaceDir,
+      runId: "chatcmpl_4b5ae6dc-eb98-42fa-97de-9bc5dbc5626b",
+    });
+    const file = await fs.stat(path.join(workspaceDir, pastes[0].path));
+    const dir = await fs.stat(path.join(workspaceDir, "inbox"));
+    expect((file.mode & 0o777).toString(8)).toBe("644");
+    expect((dir.mode & 0o777).toString(8)).toBe("755");
+  });
+
   it("writes nothing when the config disables it", async () => {
     const cfg = {
       agents: { defaults: { pasteMaterialization: { enabled: false } } },
