@@ -3,7 +3,10 @@ import { streamSimple } from "@mariozechner/pi-ai";
 import { createAnthropicVertexStreamFnForModel } from "../anthropic-vertex-stream.js";
 import { createOpenAIWebSocketStreamFn } from "../openai-ws-stream.js";
 import { getModelProviderRequestTransport } from "../provider-request-config.js";
-import { createBoundaryAwareStreamFnForModel } from "../provider-transport-stream.js";
+import {
+  createBoundaryAwareStreamFnForModel,
+  isBoundaryAwareTransportStreamFn,
+} from "../provider-transport-stream.js";
 import { stripSystemPromptCacheBoundary } from "../system-prompt-cache-boundary.js";
 import type { EmbeddedRunAttemptParams } from "./run/types.js";
 
@@ -41,10 +44,11 @@ export function describeEmbeddedAgentStreamStrategy(params: {
   if (params.model.provider === "anthropic-vertex") {
     return "anthropic-vertex";
   }
+  if (createBoundaryAwareStreamFnForModel(params.model)) {
+    return `boundary-aware:${params.model.api}`;
+  }
   if (params.currentStreamFn === undefined || params.currentStreamFn === streamSimple) {
-    return createBoundaryAwareStreamFnForModel(params.model)
-      ? `boundary-aware:${params.model.api}`
-      : "stream-simple";
+    return "stream-simple";
   }
   return "session-custom";
 }
@@ -73,18 +77,19 @@ export function resolveEmbeddedAgentStreamFn(params: {
   authStorage?: { getApiKey(provider: string): Promise<string | undefined> };
 }): StreamFn {
   if (params.providerStreamFn) {
+    // A plugin-owned stream does not know the cache-boundary marker, so it is
+    // stripped before the prompt reaches one. registerProviderStreamForModel
+    // also hands back OpenClaw's own transport when a provider carries
+    // request.proxy/request.tls overrides; that transport splits on the
+    // marker, so it must see the prompt intact.
     return wrapEmbeddedAgentStreamFn(params.providerStreamFn, {
       runSignal: params.signal,
       resolvedApiKey: params.resolvedApiKey,
       authStorage: params.authStorage,
       providerId: params.model.provider,
-      transformContext: (context) =>
-        context.systemPrompt
-          ? {
-              ...context,
-              systemPrompt: stripSystemPromptCacheBoundary(context.systemPrompt),
-            }
-          : context,
+      transformContext: isBoundaryAwareTransportStreamFn(params.providerStreamFn)
+        ? undefined
+        : stripCacheBoundaryFromContext,
     });
   }
 
@@ -104,24 +109,34 @@ export function resolveEmbeddedAgentStreamFn(params: {
     return createAnthropicVertexStreamFnForModel(params.model);
   }
 
-  if (params.currentStreamFn === undefined || params.currentStreamFn === streamSimple) {
-    const boundaryAwareStreamFn = createBoundaryAwareStreamFnForModel(params.model);
-    if (boundaryAwareStreamFn) {
-      // Boundary-aware transports read credentials from options.apiKey just
-      // like provider-owned streams, but the embedded run layer never gets to
-      // inject the resolved runtime key for them. Without this wrap, OAuth
-      // providers (e.g. openai-codex/gpt-5.5) hit the Responses API with an
-      // empty bearer and fail with 401 Missing bearer auth header.
-      return wrapEmbeddedAgentStreamFn(boundaryAwareStreamFn, {
-        runSignal: params.signal,
-        resolvedApiKey: params.resolvedApiKey,
-        authStorage: params.authStorage,
-        providerId: params.model.provider,
-      });
-    }
+  // OpenClaw's own transport is the default for every api it supports. The
+  // session's stream is never a signal to skip it: pi-coding-agent installs
+  // its own wrapper around streamSimple on every session it creates, so an
+  // identity check against streamSimple matched nothing and every
+  // openai-completions run fell through to PI's native client, which sent the
+  // system prompt verbatim - cache-boundary marker included - as one message.
+  const boundaryAwareStreamFn = createBoundaryAwareStreamFnForModel(params.model);
+  if (boundaryAwareStreamFn) {
+    // Boundary-aware transports read credentials from options.apiKey just
+    // like provider-owned streams, but the embedded run layer never gets to
+    // inject the resolved runtime key for them. Without this wrap, OAuth
+    // providers (e.g. openai-codex/gpt-5.5) hit the Responses API with an
+    // empty bearer and fail with 401 Missing bearer auth header.
+    return wrapEmbeddedAgentStreamFn(boundaryAwareStreamFn, {
+      runSignal: params.signal,
+      resolvedApiKey: params.resolvedApiKey,
+      authStorage: params.authStorage,
+      providerId: params.model.provider,
+    });
   }
 
   return currentStreamFn;
+}
+
+function stripCacheBoundaryFromContext(context: Parameters<StreamFn>[1]): Parameters<StreamFn>[1] {
+  return context.systemPrompt
+    ? { ...context, systemPrompt: stripSystemPromptCacheBoundary(context.systemPrompt) }
+    : context;
 }
 
 function wrapEmbeddedAgentStreamFn(

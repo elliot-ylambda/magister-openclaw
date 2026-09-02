@@ -2,6 +2,7 @@ import type { StreamFn } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import * as providerTransportStream from "../provider-transport-stream.js";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../system-prompt-cache-boundary.js";
 import {
   describeEmbeddedAgentStreamStrategy,
   resolveEmbeddedAgentApiKey,
@@ -71,15 +72,32 @@ describe("describeEmbeddedAgentStreamStrategy", () => {
     ).toBe("boundary-aware:openai-codex-responses");
   });
 
-  it("keeps custom session streams labeled as custom", () => {
+  it("prefers the boundary-aware transport over the session's default stream", () => {
+    // pi-coding-agent installs its own wrapper on every session, so the
+    // session stream is never streamSimple in practice. That must not demote
+    // a supported api to the session stream.
     expect(
       describeEmbeddedAgentStreamStrategy({
         currentStreamFn: vi.fn() as never,
         shouldUseWebSocketTransport: false,
         model: {
-          api: "openai-responses",
-          provider: "openai",
-          id: "gpt-5.4",
+          api: "openai-completions",
+          provider: "magister-gateway",
+          id: "openai/gpt-5.6-sol",
+        } as never,
+      }),
+    ).toBe("boundary-aware:openai-completions");
+  });
+
+  it("keeps custom session streams labeled as custom for apis without a transport", () => {
+    expect(
+      describeEmbeddedAgentStreamStrategy({
+        currentStreamFn: vi.fn() as never,
+        shouldUseWebSocketTransport: false,
+        model: {
+          api: "bedrock-converse-stream",
+          provider: "amazon-bedrock",
+          id: "anthropic.claude-sonnet",
         } as never,
       }),
     ).toBe("session-custom");
@@ -356,6 +374,113 @@ describe("resolveEmbeddedAgentStreamFn", () => {
     const systemPrompt = "intro<<openclaw-cache-boundary>>tail";
     await expect(
       streamFn({ provider: "openai-codex", id: "gpt-5.5" } as never, { systemPrompt } as never, {}),
+    ).resolves.toMatchObject({ systemPrompt });
+  });
+
+  it("routes a session whose stream is the SDK default through the boundary-aware transport", async () => {
+    // Regression: the session stream pi-coding-agent installs is a wrapper
+    // around streamSimple, not streamSimple itself. The old identity guard
+    // therefore never matched and every openai-completions run used PI's
+    // native client, which sent the system prompt verbatim with the cache
+    // boundary marker inside it.
+    const sdkDefaultStreamFn = vi.fn(async () => {
+      throw new Error("session stream must not be used");
+    });
+    const transportStreamFn = vi.fn(async (_model, context, options) => ({ context, options }));
+    overrideBoundaryAwareStreamFnOnce(transportStreamFn as never);
+    const streamFn = resolveEmbeddedAgentStreamFn({
+      currentStreamFn: sdkDefaultStreamFn as never,
+      shouldUseWebSocketTransport: false,
+      sessionId: "session-1",
+      model: {
+        api: "openai-completions",
+        provider: "magister-gateway",
+        id: "openai/gpt-5.6-sol",
+      } as never,
+      resolvedApiKey: "gateway-token",
+    });
+
+    const systemPrompt = `stable${SYSTEM_PROMPT_CACHE_BOUNDARY}volatile`;
+    await expect(
+      streamFn(
+        { provider: "magister-gateway", id: "openai/gpt-5.6-sol" } as never,
+        { systemPrompt } as never,
+        {},
+      ),
+    ).resolves.toMatchObject({
+      context: { systemPrompt },
+      options: { apiKey: "gateway-token" },
+    });
+    expect(transportStreamFn).toHaveBeenCalledTimes(1);
+    expect(sdkDefaultStreamFn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the session stream for apis without a boundary-aware transport", () => {
+    const sessionStreamFn = vi.fn();
+    const streamFn = resolveEmbeddedAgentStreamFn({
+      currentStreamFn: sessionStreamFn as never,
+      shouldUseWebSocketTransport: false,
+      sessionId: "session-1",
+      model: {
+        api: "bedrock-converse-stream",
+        provider: "amazon-bedrock",
+        id: "anthropic.claude-sonnet",
+      } as never,
+    });
+
+    expect(streamFn).toBe(sessionStreamFn);
+  });
+
+  it("strips the cache boundary before a plugin-owned provider stream", async () => {
+    const providerStreamFn = vi.fn(async (_model, context, _options) => context);
+    const streamFn = resolveEmbeddedAgentStreamFn({
+      currentStreamFn: undefined,
+      providerStreamFn,
+      shouldUseWebSocketTransport: false,
+      sessionId: "session-1",
+      model: {
+        api: "openai-completions",
+        provider: "ollama",
+        id: "qwen",
+      } as never,
+    });
+
+    await expect(
+      streamFn(
+        { provider: "ollama", id: "qwen" } as never,
+        { systemPrompt: `stable${SYSTEM_PROMPT_CACHE_BOUNDARY}volatile` } as never,
+        {},
+      ),
+    ).resolves.toMatchObject({ systemPrompt: "stable\nvolatile" });
+  });
+
+  it("leaves the cache boundary intact for OpenClaw's own transport handed in as a provider stream", async () => {
+    // registerProviderStreamForModel returns OpenClaw's transport when a
+    // provider carries request.proxy/request.tls overrides. That transport
+    // splits the prompt on the marker, so stripping it here would silently
+    // defeat the split.
+    const transportStreamFn = providerTransportStream.markBoundaryAwareTransportStreamFn(
+      vi.fn(async (_model, context, _options) => context) as never,
+    );
+    const streamFn = resolveEmbeddedAgentStreamFn({
+      currentStreamFn: undefined,
+      providerStreamFn: transportStreamFn,
+      shouldUseWebSocketTransport: false,
+      sessionId: "session-1",
+      model: {
+        api: "openai-completions",
+        provider: "magister-gateway",
+        id: "openai/gpt-5.6-sol",
+      } as never,
+    });
+
+    const systemPrompt = `stable${SYSTEM_PROMPT_CACHE_BOUNDARY}volatile`;
+    await expect(
+      streamFn(
+        { provider: "magister-gateway", id: "openai/gpt-5.6-sol" } as never,
+        { systemPrompt } as never,
+        {},
+      ),
     ).resolves.toMatchObject({ systemPrompt });
   });
 });

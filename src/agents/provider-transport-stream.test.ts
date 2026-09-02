@@ -6,6 +6,7 @@ import {
   createBoundaryAwareStreamFnForModel,
   createOpenClawTransportStreamFnForModel,
   createTransportAwareStreamFnForModel,
+  isBoundaryAwareTransportStreamFn,
   isTransportAwareApiSupported,
   prepareTransportAwareSimpleModel,
   resolveTransportAwareSimpleApi,
@@ -34,6 +35,20 @@ function buildModel<TApi extends Api>(
 }
 
 describe("provider transport stream contracts", () => {
+  it("marks every OpenClaw-built transport as boundary-aware", () => {
+    const model = buildModel("openai-completions", {
+      id: "openai/gpt-5.6-sol",
+      provider: "magister-gateway",
+      baseUrl: "http://127.0.0.1:18796/llm/v1",
+    });
+    const boundaryAware = createBoundaryAwareStreamFnForModel(model);
+    const explicit = createOpenClawTransportStreamFnForModel(model);
+    expect(isBoundaryAwareTransportStreamFn(boundaryAware)).toBe(true);
+    expect(isBoundaryAwareTransportStreamFn(explicit)).toBe(true);
+    expect(isBoundaryAwareTransportStreamFn(() => undefined as never)).toBe(false);
+    expect(isBoundaryAwareTransportStreamFn(undefined)).toBe(false);
+  });
+
   it("covers the supported transport api alias matrix", () => {
     const cases = [
       {

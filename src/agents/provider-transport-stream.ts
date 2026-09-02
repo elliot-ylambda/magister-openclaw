@@ -35,6 +35,23 @@ type ProviderTransportStreamContext = {
   env?: NodeJS.ProcessEnv;
 };
 
+// Every stream function built here understands SYSTEM_PROMPT_CACHE_BOUNDARY:
+// the OpenAI-family and Anthropic transports split or strip it themselves, and
+// the Google plugin transport strips it. The embedded runner strips the marker
+// before handing a prompt to a provider-owned stream it cannot vouch for; this
+// set lets it recognise its own transports and leave the marker in place so
+// the split can happen.
+const boundaryAwareTransportStreamFns = new WeakSet<StreamFn>();
+
+export function markBoundaryAwareTransportStreamFn(streamFn: StreamFn): StreamFn {
+  boundaryAwareTransportStreamFns.add(streamFn);
+  return streamFn;
+}
+
+export function isBoundaryAwareTransportStreamFn(streamFn: StreamFn | undefined): boolean {
+  return streamFn !== undefined && boundaryAwareTransportStreamFns.has(streamFn);
+}
+
 function createProviderOwnedGoogleTransportStreamFn(
   model: Model<Api>,
   ctx?: ProviderTransportStreamContext,
@@ -73,6 +90,14 @@ function createProviderOwnedGoogleTransportStreamFn(
 }
 
 function createSupportedTransportStreamFn(
+  model: Model<Api>,
+  ctx?: ProviderTransportStreamContext,
+): StreamFn | undefined {
+  const streamFn = createSupportedTransportStreamFnUnmarked(model, ctx);
+  return streamFn ? markBoundaryAwareTransportStreamFn(streamFn) : undefined;
+}
+
+function createSupportedTransportStreamFnUnmarked(
   model: Model<Api>,
   ctx?: ProviderTransportStreamContext,
 ): StreamFn | undefined {
@@ -139,8 +164,10 @@ export function createBoundaryAwareStreamFnForModel(
   model: Model<Api>,
   ctx?: ProviderTransportStreamContext,
 ): StreamFn | undefined {
-  // Default embedded-runner fallback. Keep OpenAI-family APIs here until PI's
-  // native HTTP streams preserve the same OpenClaw request contract.
+  // Default embedded-runner transport for every api listed above. PI's native
+  // HTTP streams send the system prompt verbatim, cache-boundary marker
+  // included, so they can neither split the prompt for caching nor keep the
+  // marker off the wire; the embedded runner prefers these whenever they exist.
   if (!isTransportAwareApiSupported(model.api)) {
     return undefined;
   }
