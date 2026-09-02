@@ -56,6 +56,13 @@ export async function summarizeCheckpoint(params: {
       disableTools: true,
       disableMessageTool: true,
       bootstrapContextMode: "lightweight",
+      // Identity line only. Without this the run inherits the full agent
+      // system prompt — tooling, ~50k-char skills catalog, task-selected
+      // skill hints — for a <=12k-char transcript: ~27k tokens per summary,
+      // cache-written at 1.25x and almost never read back (17.2M cache-write
+      // tokens against 2.7M reads on Haiku 4.5 in the 14 days to
+      // 2026-09-01). The summary instructions live in `prompt`.
+      promptMode: "none",
       verboseLevel: "off",
       reasoningLevel: "off",
       // Let the configured provider choose its supported temperature. The

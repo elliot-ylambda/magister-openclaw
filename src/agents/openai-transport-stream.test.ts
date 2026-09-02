@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildOpenAIResponsesParams,
   buildOpenAICompletionsParams,
+  splitSystemMessagesAtCacheBoundary,
   createOpenAICompletionsTransportStreamFn,
   parseTransportChunkUsage,
   resolveAzureOpenAIApiVersion,
@@ -2089,7 +2090,7 @@ describe("openai transport stream", () => {
     expect(params.messages?.[0]).toMatchObject({ role: "system" });
   });
 
-  it("strips the internal cache boundary from OpenAI completions system prompts", () => {
+  it("splits an OpenAI completions system prompt into stable and dynamic messages at the cache boundary", () => {
     const params = buildOpenAICompletionsParams(
       {
         id: "gpt-4.1",
@@ -2105,13 +2106,61 @@ describe("openai transport stream", () => {
       } satisfies Model<"openai-completions">,
       {
         systemPrompt: `Stable prefix${SYSTEM_PROMPT_CACHE_BOUNDARY}Dynamic suffix`,
-        messages: [],
+        messages: [{ role: "user", content: "Hello", timestamp: 1 }],
         tools: [],
       } as never,
       undefined,
-    ) as { messages?: Array<{ content?: string }> };
+    ) as { messages?: Array<{ role?: string; content?: string }> };
 
-    expect(params.messages?.[0]?.content).toBe("Stable prefix\nDynamic suffix");
+    // Two system messages, marker gone: the gateway gives each its own cache
+    // breakpoint, so a change in the dynamic half no longer re-writes the
+    // stable prefix.
+    expect(params.messages?.slice(0, 3)).toEqual([
+      { role: "system", content: "Stable prefix" },
+      { role: "system", content: "Dynamic suffix" },
+      { role: "user", content: "Hello" },
+    ]);
+    expect(JSON.stringify(params.messages)).not.toContain("OPENCLAW_CACHE_BOUNDARY");
+  });
+
+  it("keeps a system prompt without a cache boundary as one message", () => {
+    const params = buildOpenAICompletionsParams(
+      {
+        id: "gpt-4.1",
+        name: "GPT-4.1",
+        api: "openai-completions",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      } satisfies Model<"openai-completions">,
+      {
+        systemPrompt: "Only prefix",
+        messages: [{ role: "user", content: "Hello", timestamp: 1 }],
+        tools: [],
+      } as never,
+      undefined,
+    ) as { messages?: Array<{ role?: string; content?: string }> };
+
+    expect(params.messages?.filter((message) => message.role === "system")).toEqual([
+      { role: "system", content: "Only prefix" },
+    ]);
+  });
+
+  it("strips a stray cache boundary from a non-system message instead of splitting it", () => {
+    const messages: unknown[] = [
+      { role: "system", content: `A${SYSTEM_PROMPT_CACHE_BOUNDARY}B` },
+      { role: "user", content: `quoted${SYSTEM_PROMPT_CACHE_BOUNDARY}marker` },
+    ];
+    splitSystemMessagesAtCacheBoundary(messages);
+    expect(messages).toEqual([
+      { role: "system", content: "A" },
+      { role: "system", content: "B" },
+      { role: "user", content: "quoted\nmarker" },
+    ]);
   });
 
   it("uses shared stream reasoning as OpenAI completions effort", () => {

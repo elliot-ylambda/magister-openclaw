@@ -85,6 +85,10 @@ describe("conversation checkpoint integration", () => {
         provider: "magister-gateway",
         model: "anthropic/claude-haiku-4-5",
         disableTools: true,
+        // Identity line only: the summary must not carry the agent's skills
+        // catalog and tooling prompt (~27k tokens) for a 12k-char transcript.
+        promptMode: "none",
+        bootstrapContextMode: "lightweight",
         reasoningLevel: "off",
         streamParams: { maxTokens: 512 },
         cleanupBundleMcpOnRunEnd: true,
@@ -109,6 +113,17 @@ describe("conversation checkpoint integration", () => {
     expect(recall).toContain("Recent chats:");
     expect(recall).toContain("independent dental practices");
     expect(await manager.buildPromptContext(newContext)).toBe(recall);
+    // Frozen recall is part of the cached prompt prefix: a non-user turn on
+    // the same session must keep it, not drop and later restore it.
+    expect(await manager.buildPromptContext({ ...newContext, trigger: "manual" })).toBe(recall);
+    // A session that never froze recall still gets none from a non-user turn.
+    expect(
+      await manager.buildPromptContext({
+        ...newContext,
+        sessionId: "session-three",
+        trigger: "manual",
+      }),
+    ).toBeUndefined();
   });
 
   it("excludes the current session while allowing late recall from another session", async () => {

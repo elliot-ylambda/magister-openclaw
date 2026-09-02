@@ -13,6 +13,23 @@ import { ConversationCheckpointManager } from "./conversation-manager.js";
 import { MemoryStore, type MemoryTarget } from "./memory-store.js";
 import { memoryOperationId, withHostMutationBoundary } from "./mutation-boundary.js";
 
+/**
+ * Where session recall lands in the system prompt.
+ *
+ * `appendSystemContext`, never `prependSystemContext`: the hook runner puts a
+ * prepended block at the very front of the prompt, above the ~100k-token
+ * stable prefix that every provider caches. Recall differs per session (it
+ * excludes the current one), so at the front it made every new session a cold
+ * cache write and, when a non-user turn dropped it, re-wrote the prefix
+ * mid-session. Appended, it sits below the cache boundary with the other
+ * per-session context, where a change costs the small dynamic block only.
+ */
+export function buildPromptBuildHookResult(
+  recentContext: string | undefined,
+): { appendSystemContext: string } | undefined {
+  return recentContext ? { appendSystemContext: recentContext } : undefined;
+}
+
 const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
 const DEFAULT_USER_CHAR_LIMIT = 1375;
 
@@ -197,7 +214,7 @@ export default definePluginEntry({
     api.on("before_prompt_build", async (_event, ctx) => {
       try {
         const recentContext = await checkpointManager.buildPromptContext(ctx);
-        return recentContext ? { prependSystemContext: recentContext } : undefined;
+        return buildPromptBuildHookResult(recentContext);
       } catch {
         api.logger.warn("magister-memory: recent conversation recall failed");
         return undefined;
