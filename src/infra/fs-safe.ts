@@ -91,6 +91,18 @@ const OPEN_APPEND_CREATE_FLAGS =
   fsConstants.O_CREAT |
   fsConstants.O_EXCL |
   (SUPPORTS_NOFOLLOW ? fsConstants.O_NOFOLLOW : 0);
+/**
+ * Mode for files this module creates when the caller does not pass one.
+ *
+ * It is a umask input, not a final mode: the process umask (0027 on project
+ * machines) reduces 0o666 to 0640, which is what every plain `fs.writeFile`
+ * in the codebase already produces. The sandboxed shell runs as a different
+ * uid but with the host's gid, so group-read is what makes host-written
+ * files — the agent's own `write`/`edit` output, staged media, materialized
+ * pastes, memory files — readable there; a hard-coded 0600 was the one mode
+ * nothing in the sandbox could read. Existing files keep their mode.
+ */
+export const DEFAULT_NEW_FILE_MODE = 0o666;
 
 const ensureTrailingSep = (value: string) => (value.endsWith(path.sep) ? value : value + path.sep);
 
@@ -533,7 +545,7 @@ export async function openWritableFileWithinRoot(params: {
     }
   }
 
-  const fileMode = params.mode ?? 0o600;
+  const fileMode = params.mode ?? DEFAULT_NEW_FILE_MODE;
 
   let handle: FileHandle;
   let createdForWrite = false;
@@ -860,7 +872,7 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
   if (!basename || basename === "." || basename === "/") {
     throw new SafeOpenError("invalid-path", "invalid target path");
   }
-  let mode = 0o600;
+  let mode = DEFAULT_NEW_FILE_MODE;
   try {
     const opened = await openFileWithinRoot({
       rootDir: params.rootDir,
@@ -888,7 +900,7 @@ async function resolvePinnedWriteTargetWithinRoot(params: {
     relativeParentPath:
       path.posix.dirname(relativePosix) === "." ? "" : path.posix.dirname(relativePosix),
     basename,
-    mode: mode || 0o600,
+    mode: mode || DEFAULT_NEW_FILE_MODE,
   };
 }
 
@@ -1048,7 +1060,7 @@ async function writeFileWithinRootLegacy(params: {
       tempPath,
       data: params.data,
       encoding: params.encoding,
-      mode: targetMode || 0o600,
+      mode: targetMode || DEFAULT_NEW_FILE_MODE,
     });
     await fs.rename(tempPath, destinationPath);
     tempPath = null;
@@ -1099,7 +1111,11 @@ async function copyFileWithinRootLegacy(
     targetClosedByUs = true;
 
     tempPath = buildAtomicWriteTempPath(destinationPath);
-    tempHandle = await fs.open(tempPath, OPEN_WRITE_CREATE_FLAGS, targetMode || 0o600);
+    tempHandle = await fs.open(
+      tempPath,
+      OPEN_WRITE_CREATE_FLAGS,
+      targetMode || DEFAULT_NEW_FILE_MODE,
+    );
     const sourceStream = source.handle.createReadStream();
     const targetStream = tempHandle.createWriteStream();
     sourceStream.once("close", () => {
