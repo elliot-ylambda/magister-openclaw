@@ -10,6 +10,7 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Paste materialization now runs on the gateway's chat path (webchat, the OpenAI- and OpenResponses-compatible endpoints), not only on channel auto-replies: the agent command writes the inbox file and prefixes the paste note onto the prompt body. The previous release only covered channel messages, so Magister web turns never got the file. (#80)
 - Agents/inbound: a large inline data paste (a fenced block, or an unfenced delimiter-consistent run of 20+ rows, over 4,000 characters) is written to `workspace/inbox/<name>-<run>.<ext>` before the model sees the turn and the prompt names the path, so the agent computes from a file instead of estimating from the prompt or hunting the filesystem for a copy that does not exist. `agents.defaults.pasteMaterialization` (`enabled`, `minChars`) overrides.
 - Agents/subagents: state the `sessions_spawn` fire-and-forget contract at the decision point for interactive sessions (tool description, spawn note with a callable `subagents(action="kill", target="last")` recovery, `sessions_yield`, and the system prompt), keep the cron in-turn wait protocol, stop interpolating `undefined` into the fork-fallback spawn note, and stop reporting a requester-initiated `subagents kill` to the Magister completion webhook as a failed background task.
 - Agents/runtime resilience: add independent, run-scoped terminal-failure, user-denial, and browser-launch circuit breakers, plus one tool-free truthful partial-summary attempt when the final model retry ceiling is exhausted.

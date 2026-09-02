@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { OpenClawConfig } from "../../config/config.js";
 import { logVerbose } from "../../globals.js";
 import { writeFileWithinRoot } from "../../infra/fs-safe.js";
 
@@ -223,7 +224,10 @@ export function detectInlinePastes(
 }
 
 function runSuffix(runId: string | undefined): string {
-  const cleaned = (runId ?? "").replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
+  // The tail, not the head: gateway run ids are `chatcmpl_<uuid>`, so the first
+  // eight characters are the same literal prefix on every turn and a later
+  // paste would overwrite an earlier one under the same name.
+  const cleaned = (runId ?? "").replace(/[^A-Za-z0-9]/g, "").slice(-8);
   return cleaned || Date.now().toString(36);
 }
 
@@ -253,6 +257,31 @@ function formatFileName(
  * skipped with a verbose log, because the reply must not fail on a
  * convenience file.
  */
+/**
+ * The config-gated entry every turn path shares: the auto-reply pipeline
+ * (channel messages) and the gateway's agent command (webchat, the OpenAI- and
+ * OpenResponses-compatible HTTP endpoints, cron). Default on; the
+ * `agents.defaults.pasteMaterialization` block is the override, never the
+ * source of the default, so a machine config without the key keeps working.
+ */
+export async function materializeInlinePastesForTurn(params: {
+  cfg: OpenClawConfig;
+  body: string | undefined;
+  workspaceDir: string;
+  runId?: string;
+}): Promise<MaterializedPaste[]> {
+  const pasteConfig = params.cfg.agents?.defaults?.pasteMaterialization;
+  if (pasteConfig?.enabled === false) {
+    return [];
+  }
+  return await materializeInlinePastes({
+    body: params.body,
+    workspaceDir: params.workspaceDir,
+    runId: params.runId,
+    minChars: pasteConfig?.minChars,
+  });
+}
+
 export async function materializeInlinePastes(params: {
   body: string | undefined;
   workspaceDir: string;
