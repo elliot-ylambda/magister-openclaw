@@ -1,3 +1,5 @@
+import { prependInboundPasteNote } from "../auto-reply/paste-note.js";
+import { materializeInlinePastesForTurn } from "../auto-reply/reply/paste-materializer.js";
 import {
   formatThinkingLevels,
   isThinkingLevelSupported,
@@ -403,10 +405,21 @@ async function prepareAgentCommandExecution(
         sessionKey,
       })
     : null;
-  const body =
-    !isRawModelRun && acpResolution?.kind === "ready"
-      ? resolveAcpPromptBody(message, opts.internalEvents)
-      : prependInternalEventContext(message, opts.internalEvents);
+  const acpReady = !isRawModelRun && acpResolution?.kind === "ready";
+  const rawBody = acpReady
+    ? resolveAcpPromptBody(message, opts.internalEvents)
+    : prependInternalEventContext(message, opts.internalEvents);
+  // A large inline paste (a CSV export, a fenced data block) becomes a
+  // workspace inbox file before the model sees the turn. This is the entry
+  // the gateway's chat endpoints use, and it never passes through the
+  // auto-reply prelude, so the note is prefixed onto the prompt body here.
+  // The transcript keeps the message as sent. Raw model runs, heartbeats, and
+  // ACP-backed sessions (whose cwd may not be this workspace) are left alone.
+  const pasteFiles =
+    isRawModelRun || acpReady || opts.bootstrapContextRunKind === "heartbeat"
+      ? []
+      : await materializeInlinePastesForTurn({ cfg, body: message, workspaceDir, runId });
+  const body = prependInboundPasteNote(rawBody, pasteFiles);
   const transcriptBody =
     opts.transcriptMessage ?? resolveInternalEventTranscriptBody(message, opts.internalEvents);
 

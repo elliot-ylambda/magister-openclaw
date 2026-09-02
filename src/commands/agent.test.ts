@@ -966,3 +966,70 @@ describe("agentCommand", () => {
     });
   });
 });
+
+describe("agentCommand paste materialization", () => {
+  function bigCsv(): string {
+    const lines = ["date,campaign,adset,spend_usd,impressions,clicks,conversions"];
+    for (let i = 0; i < 120; i += 1) {
+      lines.push(
+        `2026-03-${String((i % 28) + 1).padStart(2, "0")},brand-search,bs-exact,${(100 + i).toFixed(2)},${6000 + i},${100 + i},${i % 7}`,
+      );
+    }
+    return lines.join("\n");
+  }
+
+  it("writes the paste into the workspace inbox and prefixes the prompt with the note", async () => {
+    await withTempHome(async (home) => {
+      const store = path.join(home, "sessions.json");
+      const cfg = mockConfig(home, store);
+      const workspaceDir = cfg.agents!.defaults!.workspace!;
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      const csv = bigCsv();
+      const message = `Review the quarter.\n\n## Supplied source: ads_daily.csv\n\n${csv}\n\nWrite the review.`;
+
+      await agentCommandFromIngress(
+        {
+          message,
+          to: "+1222",
+          senderIsOwner: true,
+          allowModelOverride: false,
+          runId: "chatcmpl_4b5ae6dc-eb98-42fa-97de-9bc5dbc5626b",
+        },
+        runtime,
+      );
+
+      const prompt = String(getLastEmbeddedCall()?.prompt);
+      const match =
+        /^\[pasted data saved: (inbox\/ads_daily-[a-z0-9]{8}\.csv) \(121 lines, [0-9.]+ KB\); the same content is inline below; compute from the file rather than from the chat text\]\n\n/.exec(
+          prompt,
+        );
+      expect(match).not.toBeNull();
+      expect(prompt.endsWith(message)).toBe(true);
+      expect(fs.readFileSync(path.join(workspaceDir, match![1]), "utf8")).toBe(`${csv}\n`);
+    });
+  });
+
+  it("leaves a short message and the heartbeat run untouched", async () => {
+    await withTempHome(async (home) => {
+      const store = path.join(home, "sessions.json");
+      const cfg = mockConfig(home, store);
+      const workspaceDir = cfg.agents!.defaults!.workspace!;
+      fs.mkdirSync(workspaceDir, { recursive: true });
+
+      await agentCommand({ message: "ping", to: "+1222" }, runtime);
+      expect(getLastEmbeddedCall()?.prompt).toBe("ping");
+
+      const csv = bigCsv();
+      await agentCommand(
+        {
+          message: `## Supplied source: ads_daily.csv\n\n${csv}`,
+          to: "+1222",
+          bootstrapContextRunKind: "heartbeat",
+        },
+        runtime,
+      );
+      expect(getLastEmbeddedCall()?.prompt).toBe(`## Supplied source: ads_daily.csv\n\n${csv}`);
+      expect(fs.existsSync(path.join(workspaceDir, "inbox"))).toBe(false);
+    });
+  });
+});

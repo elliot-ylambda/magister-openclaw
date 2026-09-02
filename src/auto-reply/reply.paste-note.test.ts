@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPasteSize } from "./paste-note.js";
+import { formatPasteSize, prependInboundPasteNote } from "./paste-note.js";
 import { finalizeInboundContext } from "./reply/inbound-context.js";
 import { buildReplyPromptBodies } from "./reply/prompt-prelude.js";
 
@@ -70,5 +70,25 @@ describe("paste note plumbing", () => {
     expect(formatPasteSize(512)).toBe("512 B");
     expect(formatPasteSize(55_500)).toBe("54.2 KB");
     expect(formatPasteSize(3 * 1024 * 1024)).toBe("3.0 MB");
+  });
+});
+
+describe("prependInboundPasteNote", () => {
+  const paste = {
+    path: "inbox/ads_daily-3f2a9c1e.csv",
+    bytes: 55_500,
+    lines: 785,
+    name: "ads_daily.csv",
+  };
+
+  it("prefixes the body with the note when a paste was written", () => {
+    expect(prependInboundPasteNote("Review the quarter.", [paste])).toBe(
+      "[pasted data saved: inbox/ads_daily-3f2a9c1e.csv (785 lines, 54.2 KB); the same content is inline below; compute from the file rather than from the chat text]\n\nReview the quarter.",
+    );
+  });
+
+  it("leaves the body alone when nothing was materialized", () => {
+    expect(prependInboundPasteNote("Review the quarter.", [])).toBe("Review the quarter.");
+    expect(prependInboundPasteNote("Review the quarter.", undefined)).toBe("Review the quarter.");
   });
 });

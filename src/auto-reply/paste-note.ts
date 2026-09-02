@@ -44,3 +44,19 @@ export function buildInboundPasteNote(ctx: Pick<MsgContext, "PasteFiles">): stri
   });
   return lines.join("\n");
 }
+
+/**
+ * The same note for prompt paths that have no prelude slot (the gateway's
+ * agent command builds the prompt body directly): prefix the body, leave the
+ * body alone when nothing was materialized.
+ */
+export function prependInboundPasteNote(
+  body: string,
+  pastes: MsgContext["PasteFiles"] | undefined,
+): string {
+  const note = buildInboundPasteNote({ PasteFiles: pastes });
+  if (!note) {
+    return body;
+  }
+  return body.trim() ? `${note}\n\n${body}` : note;
+}
