@@ -140,11 +140,11 @@ describe("materializeInlinePastesForTurn", () => {
 
   it("leaves the file and directory readable by the sandbox user", async () => {
     // The agent's shell runs as a different uid than the host process that
-    // writes the file. 0600/0750 under the host umask is what shipped first;
-    // the agent got "Permission denied" and burned 23 execs working around
-    // it. vitest workers cannot change the umask, so the directory is
-    // pre-created as restrictively as a umask could leave it.
-    await fs.mkdir(path.join(workspaceDir, "inbox"), { mode: 0o700 });
+    // writes the file, but with the host's gid. 0600 under the host umask is
+    // what shipped first; the agent got "Permission denied" and burned 23
+    // execs working around it. The exact mode depends on the umask the test
+    // runs under (0640/0750 on machines, 0644/0755 on a 022 dev box), so the
+    // assertion is on the group bits the sandbox needs.
     const pastes = await materializeInlinePastesForTurn({
       cfg: {} as OpenClawConfig,
       body,
@@ -153,8 +153,8 @@ describe("materializeInlinePastesForTurn", () => {
     });
     const file = await fs.stat(path.join(workspaceDir, pastes[0].path));
     const dir = await fs.stat(path.join(workspaceDir, "inbox"));
-    expect((file.mode & 0o777).toString(8)).toBe("644");
-    expect((dir.mode & 0o777).toString(8)).toBe("755");
+    expect(file.mode & 0o040, "inbox file is not group-readable").not.toBe(0);
+    expect(dir.mode & 0o010, "inbox directory is not group-traversable").not.toBe(0);
   });
 
   it("writes nothing when the config disables it", async () => {

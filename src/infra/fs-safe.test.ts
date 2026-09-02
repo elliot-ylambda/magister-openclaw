@@ -13,10 +13,12 @@ import {
   appendFileWithinRoot,
   copyFileWithinRoot,
   createRootScopedReadFile,
+  DEFAULT_NEW_FILE_MODE,
   mkdirPathWithinRoot,
   resolveOpenedFileRealPathForHandle,
   SafeOpenError,
   openFileWithinRoot,
+  openWritableFileWithinRoot,
   readFileWithinRoot,
   readPathWithinRoot,
   readLocalFileSafely,
@@ -340,6 +342,70 @@ describe("fs-safe", () => {
       data: "hello",
     });
     await expect(fs.readFile(path.join(root, "nested", "out.txt"), "utf8")).resolves.toBe("hello");
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "creates new files at the umask-derived default mode",
+    async () => {
+      // 0o666 under the process umask: 0640 on project machines (umask 0027),
+      // 0644 on a 022 dev box. Either is group-readable, which is what the
+      // sandboxed shell (a different uid with the host's gid) needs to read
+      // the agent's own write/edit output. A hard 0600 was not.
+      const root = await tempDirs.make("openclaw-fs-safe-root-");
+      const expectedMode = DEFAULT_NEW_FILE_MODE & ~process.umask();
+      await writeFileWithinRoot({
+        rootDir: root,
+        relativePath: "nested/written.txt",
+        data: "hello",
+      });
+      await appendFileWithinRoot({
+        rootDir: root,
+        relativePath: "nested/appended.txt",
+        data: "hello",
+      });
+      const sourcePath = path.join(await tempDirs.make("openclaw-fs-safe-source-"), "in.txt");
+      await fs.writeFile(sourcePath, "hello");
+      await copyFileWithinRoot({
+        sourcePath,
+        rootDir: root,
+        relativePath: "nested/copied.txt",
+      });
+
+      for (const name of ["written.txt", "appended.txt", "copied.txt"]) {
+        const mode = (await fs.stat(path.join(root, "nested", name))).mode & 0o777;
+        expect(mode, name).toBe(expectedMode);
+        expect(mode & 0o040, `${name} is not group-readable`).not.toBe(0);
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")("keeps an existing file's mode on rewrite", async () => {
+    const root = await tempDirs.make("openclaw-fs-safe-root-");
+    const targetPath = path.join(root, "nested", "out.txt");
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.writeFile(targetPath, "seed", { mode: 0o600 });
+    await fs.chmod(targetPath, 0o600);
+
+    await writeFileWithinRoot({
+      rootDir: root,
+      relativePath: "nested/out.txt",
+      data: "next",
+    });
+
+    expect((await fs.stat(targetPath)).mode & 0o777).toBe(0o600);
+    await expect(fs.readFile(targetPath, "utf8")).resolves.toBe("next");
+  });
+
+  it.runIf(process.platform !== "win32")("honors an explicit mode on writable open", async () => {
+    const root = await tempDirs.make("openclaw-fs-safe-root-");
+    const opened = await openWritableFileWithinRoot({
+      rootDir: root,
+      relativePath: "private.txt",
+      mode: 0o600,
+    });
+    await opened.handle.close();
+
+    expect((await fs.stat(path.join(root, "private.txt"))).mode & 0o777).toBe(0o600);
   });
 
   it("appends to a file within root safely", async () => {

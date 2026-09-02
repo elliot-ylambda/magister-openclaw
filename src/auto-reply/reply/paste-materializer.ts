@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "../../config/config.js";
 import { logVerbose } from "../../globals.js";
@@ -17,12 +16,6 @@ import { writeFileWithinRoot } from "../../infra/fs-safe.js";
  */
 
 export const INBOX_DIR = "inbox";
-// The model's shell runs in the sandbox as the separate `agent-tool` user
-// (bwrap `--uid`/`--gid` both set to that uid), so a file only the host user
-// can read is a file the agent cannot compute from. fs-safe writes 0600 under
-// the host umask; the rest of the workspace is 0644/0755, and so is the inbox.
-export const INBOX_DIR_MODE = 0o755;
-export const INBOX_FILE_MODE = 0o644;
 /** Below this the model reads the paste fine inline; above it, arithmetic by eye starts failing. */
 export const DEFAULT_PASTE_MIN_CHARS = 4000;
 /** Matches the media store's inbound cap; a chat paste past this is not a paste. */
@@ -328,10 +321,9 @@ export async function materializeInlinePastes(params: {
         encoding: "utf8",
         mkdir: true,
       });
-      // fs-safe writes 0600 under the host umask (027 on machines) and mkdir
-      // makes the directory under it too; chmod is what the sandbox user sees.
-      await fs.chmod(path.join(params.workspaceDir, relativePath), INBOX_FILE_MODE);
-      await fs.chmod(path.join(params.workspaceDir, INBOX_DIR), INBOX_DIR_MODE);
+      // The model's shell runs in the sandbox as a different uid with the
+      // host's gid; fs-safe creates the file and the directory group-readable
+      // under the host umask (0640/0750 on machines), which is what it reads.
     } catch (error) {
       logVerbose(`paste-materializer: could not write ${relativePath}: ${String(error)}`);
       continue;
