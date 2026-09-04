@@ -341,6 +341,67 @@ describe("buildGuardedModelFetch", () => {
     expect(items).toEqual([{ ok: true }]);
   });
 
+  it("keeps pulling past comment-only keepalives and split events instead of stranding the stream", async () => {
+    // sse-starlette, the Magister gateway's SSE layer, writes a `: ping` comment
+    // every 15s. Handed over as its own read, the sanitizer dropped it, enqueued
+    // nothing, and was never pulled again: the consumer's read() hung while the
+    // rest of the reply sat unread in the socket. Same for an event whose first
+    // segment carries no boundary yet.
+    const encoder = new TextEncoder();
+    const frames = [
+      'data: {"n": 1}\r\n\r\n',
+      ": ping - 2026-09-03 23:46:20+00:00\r\n\r\n",
+      'data: {"n"',
+      ': 2}\r\n\r\ndata: {"n": 3}\r\n\r\n',
+      "data: [DONE]\r\n\r\n",
+    ];
+    let next = 0;
+    fetchWithSsrFGuardMock.mockResolvedValue({
+      response: new Response(
+        new ReadableStream({
+          // One frame per read, the way a quiet socket hands them over.
+          pull(controller) {
+            if (next < frames.length) {
+              controller.enqueue(encoder.encode(frames[next++]));
+            } else {
+              controller.close();
+            }
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+      finalUrl: "https://api.openai.com/v1/chat/completions",
+      release: vi.fn(async () => undefined),
+    });
+
+    const { buildGuardedModelFetch } = await import("./provider-transport-fetch.js");
+    const model = {
+      id: "gpt-5.6-luna",
+      provider: "magister-gateway",
+      api: "openai-completions",
+      baseUrl: "https://api.openai.com/v1",
+    } as unknown as Model<"openai-completions">;
+
+    const response = await buildGuardedModelFetch(model)(
+      "https://api.openai.com/v1/chat/completions",
+      { method: "POST" },
+    );
+    const items: unknown[] = [];
+    const consumed = (async () => {
+      for await (const item of Stream.fromSSEResponse(response, new AbortController())) {
+        items.push(item);
+      }
+      return "done";
+    })();
+    const outcome = await Promise.race([
+      consumed,
+      new Promise<string>((resolve) => setTimeout(() => resolve("stranded"), 2_000)),
+    ]);
+
+    expect(outcome).toBe("done");
+    expect(items).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+  });
+
   it("refreshes the guarded timeout while consuming streaming response chunks", async () => {
     const encoder = new TextEncoder();
     const refreshTimeout = vi.fn();
